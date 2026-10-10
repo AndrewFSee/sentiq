@@ -10,7 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -185,6 +185,35 @@ class ScoringConfig(_Strict):
     live_lookback_hours: float = Field(48, gt=0)
 
 
+class FeaturesConfig(_Strict):
+    """Per (ticker, as-of time T, window w) aggregates over events in (T - w, T]."""
+
+    windows_hours: dict[str, float] = Field(
+        default_factory=lambda: {"1h": 1, "1d": 24, "5d": 168}  # 5d = one calendar week
+    )
+    half_life_hours: dict[str, float] = Field(
+        default_factory=lambda: {"1h": 0.5, "1d": 6, "5d": 36}
+    )
+    min_relevance: Literal["primary", "secondary", "passing"] = "secondary"
+    baseline_days: int = Field(60, gt=1)  # abnormal-volume baseline length
+    volume_sigma_floor: float = Field(0.5, gt=0)  # avoids infinite z on quiet tickers
+    grid: Literal["session_close", "session_open"] = "session_close"
+    decision_lag_minutes: float = Field(10, ge=0)  # close: T = close - lag; open: T = open + lag
+    lm_dictionary: Path = Path("data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv")
+    # sources whose coverage a window must have (else its features are null, not zero)
+    coverage_sources: list[str] = Field(default_factory=lambda: ["edgar"])
+    finbert: bool = False  # needs `uv sync --extra finbert`
+    finbert_model: str = "ProsusAI/finbert"
+
+    @field_validator("half_life_hours")
+    @classmethod
+    def _same_keys(cls, v: dict[str, float], info: Any) -> dict[str, float]:
+        windows = info.data.get("windows_hours", {})
+        if set(v) != set(windows):
+            raise ValueError("half_life_hours must have the same keys as windows_hours")
+        return v
+
+
 class Secrets(BaseSettings):
     """Read from environment / .env. Never logged, never hashed into config_hash."""
 
@@ -216,6 +245,7 @@ class AppConfig(_Strict):
     collect: CollectConfig = Field(default_factory=CollectConfig)
     dedupe: DedupeConfig = Field(default_factory=DedupeConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
+    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     pricing: PricingConfig
 
     def config_hash(self) -> str:
@@ -235,7 +265,10 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
     if not news.fixture_path.is_absolute():  # fixtures ship with the code: resolve vs. project
         news = news.model_copy(update={"fixture_path": PROJECT_ROOT / news.fixture_path})
     sources = cfg.sources.model_copy(update={"news_api": news})
-    return cfg.model_copy(update={"paths": paths, "sources": sources})
+    feats = cfg.features
+    if not feats.lm_dictionary.is_absolute():  # reference data lives with the project
+        feats = feats.model_copy(update={"lm_dictionary": PROJECT_ROOT / feats.lm_dictionary})
+    return cfg.model_copy(update={"paths": paths, "sources": sources, "features": feats})
 
 
 def load_secrets() -> Secrets:
