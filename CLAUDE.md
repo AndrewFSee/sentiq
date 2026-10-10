@@ -247,7 +247,18 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   only its membership window (+45 days); `build_panel` falls back to Tiingo when Tradier has
   < 50% of the window's sessions (e.g. DISCA→WBD: WBD history starts 2022-04).
 - Delisted: after the last real bar, up to 25 synthetic sessions at the last close (cash).
-  Caveat: bankruptcies' final recovery may be below the last exchange trade.
+  Caveats: bankruptcies' final recovery may be below the last exchange trade; stock-for-stock
+  deals ignore the acquirer's returns after the close. Non-current series that don't reach
+  back to their window start are dropped (unpriced), not padded.
+- Vendor facts (verified 2026-10-10): Tradier has deterministic gaps for some *listed* names
+  (NOC none before 2020-08-24, CSX missing 2024-06..2026-06, BEN/TDG/ROK/DG/AIG start late)
+  → any Tradier series that starts late or is < 98% dense is replaced by Tiingo's if better.
+  Tiingo files a security under its *last* ticker (FRC→FRCB, SIVB→SIVBQ, CDAY→DAY,
+  COG→CTRA, DISCA→WBD, HCP/PEAK→DOC); same-CIK tickers and Tiingo name search are tried
+  automatically, the rest are `eval.price_overrides` (each verified against a known price).
+- Unpriced (no free source): APC, NFX, SCG, STI, INFO, VIAC (2019-12..2022-02), WRK, and
+  FOX/FOXA before 2019-03-12 (then 21st Century Fox) — ~13 of ~3700 member ticker-years.
+  `scripts/prefetch_prices.py` warms both caches and writes `data/reports/prices-prefetch.csv`.
 - Tiingo bars are unadjusted + `divCash`/`splitFactor`; converted to Tradier's convention
   (split-adjusted bars and dividends, no dividend adjustment). Free tier: 50 req/hour, 1000/day,
   500 symbols/month → `eval.tiingo_requests_per_hour: 48`. Cache: `data/ref/prices_tiingo/`.

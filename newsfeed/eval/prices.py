@@ -414,7 +414,14 @@ def build_panel(
                     pl.col("date") <= rt.end
                 )
                 padded = p.height - before
-        if p.height:
+        # a fragment that doesn't reach back to the window start (WestRock: one bar on its
+        # last day) is not a price history; padding it would fabricate flat returns
+        dropped = (
+            bool(p.height)
+            and rt.reason not in ("current", "benchmark")
+            and not (_starts_ok(p.filter(~pl.col("synthetic")), rt, sessions))
+        )
+        if p.height and not dropped:
             frames.append(p)
         real = p.filter(~pl.col("synthetic"))
         # density of real bars from the window start to the last real bar (a delisted name
@@ -437,6 +444,7 @@ def build_panel(
                 "first": p["date"].min() if p.height else None,
                 "last_real": p.filter(~pl.col("synthetic"))["date"].max() if p.height else None,
                 "padded": padded,
+                "dropped": dropped,
             }
         )
         if n_exp and (not starts or cov < 0.9):
@@ -501,8 +509,9 @@ def pad_delisted(
     """After a delisted symbol's last bar, hold cash: append up to ``max_pad`` sessions with
     open = close = last close, no volume/dividends (``synthetic`` = True). Forward returns whose
     exit falls after delisting then equal the move up to the last trade (e.g. the deal price
-    for an acquired company). Caveat: for bankruptcies the last exchange trade may overstate
-    the final recovery."""
+    for an acquired company). Caveats: for bankruptcies the last exchange trade may overstate
+    the final recovery; in stock-for-stock deals holders keep bearing the acquirer's returns,
+    which the flat price ignores (only labels ending <= 20 sessions after delisting)."""
     out = [panel.with_columns(pl.lit(False).alias("synthetic"))]
     for sym in sorted(delisted):
         bars = panel.filter(pl.col("symbol") == sym)

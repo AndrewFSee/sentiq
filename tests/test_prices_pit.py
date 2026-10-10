@@ -317,3 +317,11 @@ def test_gappy_tradier_series_replaced_by_tiingo_without_padding(tmp_path):
     panel, report, _ = build_panel([rt], caches, days)
     assert report[0]["source"] == "tiingo" and panel.height == 38
     assert report[0]["padded"] == 0  # a current listing is never padded with cash
+
+
+def test_fragment_of_delisted_series_is_dropped(tmp_path):
+    days = weekdays(date(2021, 1, 4), 40)
+    tiingo = MemSource({"WRK": bars(days[30:31], [50.0])})  # one bar on its last day
+    rt = PriceRoute("WRK", "WRK", "tiingo", days[0], days[-1], "WestRock", "delisted")
+    panel, report, _ = build_panel([rt], {"tiingo": CachedPrices(tiingo, tmp_path)}, days)
+    assert panel.height == 0 and report[0]["dropped"]
