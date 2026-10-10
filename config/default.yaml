@@ -190,8 +190,12 @@ eval:
     FRC: "tiingo:FRCB"     # First Republic, seized 2023-05-01
     SIVB: "tiingo:SIVBQ"   # SVB Financial, failed 2023-03-10
     HFC: "tradier:DINO"    # HollyFrontier -> HF Sinclair (new CIK, same listing history)
+    DISCA: "tiingo:WBD"    # Tradier's WBD starts 2022-04; Tiingo's carries DISCA (checked)
+    HCP: "tiingo:DOC"      # Healthpeak: HCP -> PEAK -> DOC; Tiingo's DOC has its history
+    PEAK: "tiingo:DOC"     #   (2019-01-02 close 26.98, not Physicians Realty's old DOC)
   # No free price history found (Tradier, Tiingo, successors), left unpriced: APC, NFX, SCG,
-  # STI, INFO, VIAC (2019-12..2022-02), WRK -- ~13 of ~3700 member ticker-years.
+  # STI, INFO, VIAC (2019-12..2022-02), WRK -- ~13 of ~3700 member ticker-years. Also
+  # FOX/FOXA before 2019-03-12: the tickers then belonged to 21st Century Fox (other CIK).
   market_etf: SPY
   sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
                 JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}
