@@ -9,8 +9,18 @@ paths:
   ref_dir: data/ref         # reference data (ticker maps)
 
 universe:
-  # Development universe. NOTE: a present-day ticker list is survivorship-biased for backfills.
-  tickers: [AAPL, MSFT, NVDA, AMZN, GOOGL, GOOG, META, JPM, XOM, JNJ, WMT, BRK-B]
+  # sp500_pit: point-in-time S&P 500 membership (`newsfeed universe build`): fja05680/sp500 +
+  # monthly Wikipedia snapshots for CIK and GICS sector. static: just the `tickers` list.
+  mode: sp500_pit
+  pit_dir: data/ref/universe
+  pit_start: "2019-01-01"
+  fja_sha: a2430f2af0c79ddf0748e91de11bdeb1616ab5a7
+  ingest_margin_before_days: 90
+  ingest_margin_after_days: 30
+  name_linking: aliases_only        # names of 500+ companies collide with ordinary words
+  # Original development universe (static mode); in sp500_pit mode an optional subset only.
+  tickers: []
+  # static dev set was: [AAPL, MSFT, NVDA, AMZN, GOOGL, GOOG, META, JPM, XOM, JNJ, WMT, BRK-B]
   aliases:   # case-sensitive, word-boundary; the cleaned SEC name is added automatically
     AAPL: [Apple]
     MSFT: [Microsoft]
@@ -170,3 +180,29 @@ features:
   novelty_sim_threshold: 0.85
   finbert: false                             # true needs `uv sync --extra finbert` (~2 GB)
   finbert_model: ProsusAI/finbert
+
+eval:
+  tradier_base_url: https://api.tradier.com      # TRADIER_TOKEN / TRADIER_API_TOKEN in .env
+  tradier_requests_per_second: 1.5
+  tiingo_requests_per_hour: 48     # TIINGO_TOKEN; free tier 50/hour, 1000/day
+  # Tiingo files delisted securities under their last (often OTC) ticker
+  price_overrides:
+    FRC: "tiingo:FRCB"     # First Republic, seized 2023-05-01
+    SIVB: "tiingo:SIVBQ"   # SVB Financial, failed 2023-03-10
+  market_etf: SPY
+  sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
+                JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}
+  horizons: [1, 2, 5, 10, 20]       # trading sessions after entry
+  entries: [close, next_open]       # decision at session close - 10 min (= NYSE MOC cutoff)
+  adjustments: [market, sector]     # forward return minus SPY / the sector ETF (same window)
+  holdout_start: "2026-07-01"       # frozen: eval refuses data from here on without --use-holdout
+  sample: news                      # evaluate ticker-days with >= 1 story in sample_window
+  sample_window: 1d
+  cv: {mode: walk_forward, n_folds: 5, embargo_sessions: 5, min_train_sessions: 60}
+  models:
+    ridge_alpha: 10.0
+    lgbm: {n_estimators: 200, learning_rate: 0.03, num_leaves: 7, min_child_samples: 20,
+           subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.8, random_state: 7}
+  fdr_q: 0.10                       # Benjamini-Hochberg across every cell of the grid
+  bootstrap_reps: 1000
+  seed: 7

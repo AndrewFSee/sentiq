@@ -69,7 +69,10 @@ class Target:
 
 def canonical_tickers(cfg: AppConfig, cik_to_tickers: dict[int, list[str]]) -> dict[int, str]:
     order = {t: i for i, t in enumerate(cfg.universe.tickers)}
-    return {cik: min(ts, key=lambda t: order.get(t, 10**6)) for cik, ts in cik_to_tickers.items()}
+    # config order first (static universe), then alphabetical -- deterministic either way
+    return {
+        cik: min(ts, key=lambda t: (order.get(t, 10**6), t)) for cik, ts in cik_to_tickers.items()
+    }
 
 
 def candidate_pairs(

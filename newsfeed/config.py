@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -39,7 +40,18 @@ class PathsConfig(_Strict):
 
 
 class UniverseConfig(_Strict):
-    tickers: list[str]
+    # static: the `tickers` list below. sp500_pit: point-in-time S&P 500 membership built by
+    # `newsfeed universe build` (universe_pit.py); `tickers` is then only an optional subset.
+    mode: Literal["static", "sp500_pit"] = "static"
+    tickers: list[str] = Field(default_factory=list)
+    pit_dir: Path = Path("data/ref/universe")
+    pit_start: date = date(2019, 1, 1)
+    fja_sha: str = "a2430f2af0c79ddf0748e91de11bdeb1616ab5a7"  # github.com/fja05680/sp500
+    ingest_margin_before_days: int = Field(90, ge=0)  # history before joining (baselines)
+    ingest_margin_after_days: int = Field(30, ge=0)
+    # sec_names: also match cleaned company names; aliases_only: only `aliases` (safer for a
+    # 500-name universe where names like "Target" or "Ball" collide with ordinary words)
+    name_linking: Literal["sec_names", "aliases_only"] = "sec_names"
     # Company-name aliases for text linking, matched case-sensitively on word boundaries.
     # A cleaned SEC company name is added automatically.
     aliases: dict[str, list[str]] = Field(default_factory=dict)
@@ -219,6 +231,72 @@ class FeaturesConfig(_Strict):
         return v
 
 
+class CVConfig(_Strict):
+    mode: Literal["walk_forward", "blocked"] = "walk_forward"
+    n_folds: int = Field(5, ge=2)
+    embargo_sessions: int = Field(5, ge=0)  # gap after each test block (blocked mode)
+    min_train_sessions: int = Field(60, ge=1)  # walk-forward: first fold needs this history
+
+
+class ModelsConfig(_Strict):
+    ridge_alpha: float = Field(10.0, gt=0)
+    lgbm: dict[str, float | int] = Field(
+        default_factory=lambda: {
+            "n_estimators": 200,
+            "learning_rate": 0.03,
+            "num_leaves": 7,
+            "min_child_samples": 20,
+            "subsample": 0.8,
+            "subsample_freq": 1,
+            "colsample_bytree": 0.8,
+            "random_state": 7,
+        }
+    )
+
+
+class EvalConfig(_Strict):
+    tradier_base_url: str = "https://api.tradier.com"
+    tradier_requests_per_second: float = Field(1.5, gt=0)  # account limit is 120/min
+    # Tiingo free tier: 50 requests/hour, 1000/day, 500 unique symbols/month
+    tiingo_requests_per_hour: float = Field(48, gt=0)
+    # universe ticker -> "tradier:SYM" | "tiingo:SYM" where routing by SEC CIK gets it wrong
+    price_overrides: dict[str, str] = Field(default_factory=dict)
+    market_etf: str = "SPY"
+    sector_etfs: dict[str, str] = Field(default_factory=dict)  # ticker -> SPDR sector ETF
+    # sp500_pit mode: point-in-time GICS sector -> SPDR sector ETF (overrides sector_etfs)
+    gics_sector_etfs: dict[str, str] = Field(
+        default_factory=lambda: {
+            "Information Technology": "XLK",
+            "Financials": "XLF",
+            "Health Care": "XLV",
+            "Consumer Discretionary": "XLY",
+            "Consumer Staples": "XLP",
+            "Energy": "XLE",
+            "Industrials": "XLI",
+            "Materials": "XLB",
+            "Utilities": "XLU",
+            "Real Estate": "XLRE",
+            "Communication Services": "XLC",
+            "Communications Services": "XLC",  # one Wikipedia revision's spelling
+        }
+    )
+    horizons: list[int] = Field(default_factory=lambda: [1, 2, 5, 10, 20])  # sessions
+    entries: list[Literal["close", "next_open"]] = Field(
+        default_factory=lambda: ["close", "next_open"]
+    )
+    adjustments: list[Literal["market", "sector"]] = Field(
+        default_factory=lambda: ["market", "sector"]
+    )
+    holdout_start: date  # data on/after this date is frozen; eval refuses it without a flag
+    sample: Literal["news", "all"] = "news"  # news = ticker-days with >= 1 story in the window
+    sample_window: str = "1d"
+    cv: CVConfig = Field(default_factory=CVConfig)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
+    fdr_q: float = Field(0.10, gt=0, lt=1)  # Benjamini-Hochberg level across the grid
+    bootstrap_reps: int = Field(1000, ge=100)
+    seed: int = 7
+
+
 class Secrets(BaseSettings):
     """Read from environment / .env. Never logged, never hashed into config_hash."""
 
@@ -230,6 +308,9 @@ class Secrets(BaseSettings):
     anthropic_api_key: str | None = None
     tradier_token: str | None = Field(
         None, validation_alias=AliasChoices("TRADIER_TOKEN", "TRADIER_API_TOKEN")
+    )
+    tiingo_token: str | None = Field(
+        None, validation_alias=AliasChoices("TIINGO_TOKEN", "TIINGO_API_TOKEN", "TIINGO_API_KEY")
     )
 
     def require_sec_user_agent(self) -> str:
@@ -253,6 +334,7 @@ class AppConfig(_Strict):
     dedupe: DedupeConfig = Field(default_factory=DedupeConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    eval: EvalConfig
     pricing: PricingConfig
 
     def config_hash(self) -> str:
@@ -273,10 +355,15 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
         news = news.model_copy(update={"fixture_path": PROJECT_ROOT / news.fixture_path})
     sources = cfg.sources.model_copy(update={"news_api": news})
     feats = cfg.features
+    uni = cfg.universe
+    if not uni.pit_dir.is_absolute():
+        uni = uni.model_copy(update={"pit_dir": (root or PROJECT_ROOT) / uni.pit_dir})
     for key in ("lm_dictionary", "embedding_cache"):  # reference data lives with the project
         if not getattr(feats, key).is_absolute():
             feats = feats.model_copy(update={key: PROJECT_ROOT / getattr(feats, key)})
-    return cfg.model_copy(update={"paths": paths, "sources": sources, "features": feats})
+    return cfg.model_copy(
+        update={"paths": paths, "sources": sources, "features": feats, "universe": uni}
+    )
 
 
 def load_secrets() -> Secrets:

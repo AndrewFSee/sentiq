@@ -78,9 +78,14 @@ class HttpClient:
         limiter: RateLimiter | None = None,
         retry_wait_initial: float = 1.0,
         retry_wait_max: float = 60.0,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self._client = httpx.Client(
-            headers={"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate"},
+            headers={
+                "User-Agent": user_agent,
+                "Accept-Encoding": "gzip, deflate",
+                **(headers or {}),
+            },
             timeout=timeout,
             transport=transport,
             follow_redirects=True,

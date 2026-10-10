@@ -19,6 +19,20 @@ from newsfeed.timeutil import MarketCalendar, get_calendar
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EDGAR_FIXTURES = FIXTURES / "edgar"
+DEV_TICKERS = [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "GOOGL",
+    "GOOG",
+    "META",
+    "JPM",
+    "XOM",
+    "JNJ",
+    "WMT",
+    "BRK-B",
+]
 EMPTY_FEED = b'<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>'
 
 
@@ -60,7 +74,11 @@ def cfg(tmp_path: Path) -> AppConfig:
     feats = c.features.model_copy(
         update={"lm_dictionary": FIXTURES / "lm" / "mini_lm.csv", "embeddings": False}
     )
-    return c.model_copy(update={"features": feats})
+    # hermetic: tests use the original static dev universe regardless of default.yaml's mode
+    uni = c.universe.model_copy(
+        update={"mode": "static", "tickers": DEV_TICKERS, "name_linking": "sec_names"}
+    )
+    return c.model_copy(update={"features": feats, "universe": uni})
 
 
 @pytest.fixture
