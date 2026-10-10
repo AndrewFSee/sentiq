@@ -213,7 +213,8 @@ class TiingoPrices:
         self.http = HttpClient(
             user_agent="newsfeed-research",
             rate_per_sec=rate_per_sec,
-            headers={"Content-Type": "application/json"},
+            # header auth keeps the token out of URLs (httpx logs URLs at INFO)
+            headers={"Content-Type": "application/json", "Authorization": f"Token {token}"},
         )
         self._divs: dict[str, pl.DataFrame] = {}
         self._splits: dict[str, pl.DataFrame] = {}
@@ -221,7 +222,7 @@ class TiingoPrices:
     def daily_bars(self, symbol: str, start: date, end: date) -> pl.DataFrame:
         url = (
             f"https://api.tiingo.com/tiingo/daily/{symbol.lower()}/prices?startDate={start}"
-            f"&endDate={end}&token={self.token}"
+            f"&endDate={end}"
         )
         try:
             rows = self.http.get(url).json() or []
@@ -289,8 +290,13 @@ def route_prices(
     hi: date,
     *,
     after_days: int = 45,
+    overrides: dict[str, str] | None = None,
 ) -> list[PriceRoute]:
     """One route per member ticker active in [lo, hi).
+
+    ``overrides`` (ticker -> "source:SYMBOL", reason ``override``) wins over the rules below;
+    needed where a vendor files a security under a later ticker (Tiingo: First Republic under
+    its OTC ticker FRCB, not FRC).
 
     * ``current``: SEC's current ticker map still gives this ticker to one of its member CIKs
       -> Tradier under the ticker itself.
@@ -324,6 +330,10 @@ def route_prices(
             continue
         ciks = {int(c) for c in r["cik"]}
         t = r["ticker"]
+        if t in (overrides or {}):
+            src, sym = (overrides or {})[t].split(":", 1)
+            routes.append(PriceRoute(t, sym, src, s, e, r["name"], "override"))
+            continue
         if current_t2c.get(t) in ciks:
             routes.append(PriceRoute(t, t, "tradier", s, e, r["name"], "current"))
             continue

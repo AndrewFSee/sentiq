@@ -184,6 +184,11 @@ features:
 eval:
   tradier_base_url: https://api.tradier.com      # TRADIER_TOKEN / TRADIER_API_TOKEN in .env
   tradier_requests_per_second: 1.5
+  tiingo_requests_per_hour: 48     # TIINGO_TOKEN; free tier 50/hour, 1000/day
+  # Tiingo files delisted securities under their last (often OTC) ticker
+  price_overrides:
+    FRC: "tiingo:FRCB"     # First Republic, seized 2023-05-01
+    SIVB: "tiingo:SIVBQ"   # SVB Financial, failed 2023-03-10
   market_etf: SPY
   sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
                 JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}

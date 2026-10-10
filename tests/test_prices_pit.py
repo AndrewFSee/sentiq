@@ -65,13 +65,14 @@ def test_tiingo_split_and_dividend_adjustment():
         return httpx.Response(200, json=rows)
 
     src = TiingoPrices("tok")
+    assert src.http._client.headers["Authorization"] == "Token tok"
     src.http = mock_http(handler)
     bars = src.daily_bars("XYZ", date(2020, 1, 1), date(2020, 1, 10))
     assert bars["close"].to_list() == [50.0, 51.0, 51.0]
     assert bars["volume"].to_list() == [2000.0, 2000.0, 2000.0]
     assert src.dividends("XYZ").rows() == [(date(2020, 1, 3), 0.5)]
     assert src.splits("XYZ").rows() == [(date(2020, 1, 6), 2.0)]
-    assert seen[0].params["token"] == "tok" and seen[0].params["startDate"] == "2020-01-01"
+    assert seen[0].params["startDate"] == "2020-01-01" and "token" not in seen[0].params
     # unknown ticker -> empty frames, not an exception
     assert src.daily_bars("NOPE", date(2020, 1, 1), date(2020, 1, 10)).height == 0
     assert src.dividends("NOPE").height == 0 and src.splits("NOPE").height == 0
@@ -262,3 +263,11 @@ def test_pit_sector_etfs_and_targets(caplog):
     t = adjusted_targets(fwd, ["AAA"], "SPY", f).sort("date")
     # before the first snapshot -> first known sector (XLK); from 2021-02-01 -> XLC
     assert t["ret_sector"].to_list() == pytest.approx([0.09, 0.06])
+
+
+def test_route_price_overrides():
+    routes = route_prices(
+        MEMBERS, {"KEEP": 1}, date(2019, 6, 1), date(2026, 1, 1), overrides={"GONE": "tiingo:GONEQ"}
+    )
+    gone = next(r for r in routes if r.ticker == "GONE")
+    assert (gone.source, gone.fetch_symbol, gone.reason) == ("tiingo", "GONEQ", "override")

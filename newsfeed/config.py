@@ -259,6 +259,8 @@ class EvalConfig(_Strict):
     tradier_requests_per_second: float = Field(1.5, gt=0)  # account limit is 120/min
     # Tiingo free tier: 50 requests/hour, 1000/day, 500 unique symbols/month
     tiingo_requests_per_hour: float = Field(48, gt=0)
+    # universe ticker -> "tradier:SYM" | "tiingo:SYM" where routing by SEC CIK gets it wrong
+    price_overrides: dict[str, str] = Field(default_factory=dict)
     market_etf: str = "SPY"
     sector_etfs: dict[str, str] = Field(default_factory=dict)  # ticker -> SPDR sector ETF
     # sp500_pit mode: point-in-time GICS sector -> SPDR sector ETF (overrides sector_etfs)

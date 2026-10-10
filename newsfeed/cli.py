@@ -824,7 +824,9 @@ def eval_cmd(
         if pit:
             bench += sorted(set(ec.gics_sector_etfs.values()) - set(bench))
             members = ctx.pit.members.filter(pl.col("ticker").is_in(tickers))
-            routes = route_prices(members, ctx.tmap.ticker_to_cik, lo, end)
+            routes = route_prices(
+                members, ctx.tmap.ticker_to_cik, lo, end, overrides=ec.price_overrides
+            )
         else:
             routes = [PriceRoute(t, t, "tradier", lo, end, "", "current") for t in tickers]
         routes += [PriceRoute(b, b, "tradier", lo, end, b, "benchmark") for b in bench]
