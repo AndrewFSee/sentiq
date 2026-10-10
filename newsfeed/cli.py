@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from collections.abc import Callable
@@ -13,9 +14,17 @@ from typing import Annotated, Any
 import polars as pl
 import typer
 
+from newsfeed import coverage
 from newsfeed.collect import Collector, check_states
 from newsfeed.config import AppConfig, load_config, load_secrets
 from newsfeed.derive import derive as run_derive
+from newsfeed.features.aggregate import (
+    FeatureSources,
+    as_of_grid,
+    build_features,
+    feature_set_id,
+)
+from newsfeed.features.baselines import load_lm_dictionary
 from newsfeed.ingest.base import SourceAdapter
 from newsfeed.ingest.edgar import PARSER_VERSION as EDGAR_PARSER_VERSION
 from newsfeed.ingest.edgar import EdgarAdapter
@@ -219,6 +228,12 @@ def backfill(
             stats=stats,
         )
         stats["adapter"] = dict(getattr(adapter, "stats", {}))
+        covered = sorted({t for ts in adapter.universe.cik_to_tickers.values() for t in ts})
+        lag = timedelta(seconds=cfg.timing.lag_for(source))
+        coverage.record_backfill(
+            ctx.store, source, covered, t0, t1, lag=lag, calendar=ctx.calendar, run_id=run_id
+        )
+        stats["covered_tickers"] = covered
         if ctx._http is not None:
             stats["http_requests"] = ctx._http.request_count
         stats["derive"] = ctx.derive_fn(run_id)()
@@ -535,6 +550,98 @@ def cost(
     typer.echo(f"total: ${total['usd'][0] or 0:.4f} (pricing as of {cfg.pricing.as_of})")
 
 
+def feature_sources(ctx: Context) -> FeatureSources:
+    cfg = ctx.cfg
+    job = ctx.scoring_job("features", None, None)
+    try:
+        lm_version: str | None = load_lm_dictionary(cfg.features.lm_dictionary).version
+    except FileNotFoundError:
+        lm_version = None
+    return FeatureSources(
+        llm_model=cfg.scoring.model,
+        llm_prompt_hash=job.prompt_hash,
+        lm_version=lm_version,
+        finbert_version=cfg.features.finbert_model if cfg.features.finbert else None,
+        embedding_model=cfg.features.embedding_model if cfg.features.embeddings else None,
+    )
+
+
+@app.command()
+def features(
+    start: Annotated[str, typer.Option(help="First session date (UTC), YYYY-MM-DD")],
+    end: Annotated[str, typer.Option(help="Exclusive end date")],
+    tickers: TickersOpt = None,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Build point-in-time features on the session grid (features.grid) and store them."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        fc = cfg.features
+        grid = as_of_grid(
+            ctx.calendar,
+            date.fromisoformat(start),
+            date.fromisoformat(end),
+            fc.grid,
+            fc.decision_lag_minutes,
+        )
+        src = feature_sources(ctx)
+        set_id = feature_set_id(cfg, src)
+        c2t = ctx.universe(full=True).cik_to_tickers
+        df = build_features(
+            ctx.store, cfg, grid, c2t, src, tickers=[t.upper() for t in _split(tickers)] or None
+        )
+        with ctx.store.ops() as con:
+            con.execute(
+                "INSERT OR IGNORE INTO experiments VALUES ('feature_set', ?, ?, ?, ?)",
+                [
+                    set_id,
+                    utcnow(),
+                    run_id,
+                    json.dumps({**src.__dict__, "features": fc.model_dump(mode="json")}),
+                ],
+            )
+        stats["feature_set_id"] = set_id
+        stats["rows"] = ctx.store.write_features(df, set_id, run_id)
+        stats["as_of_times"] = len(grid)
+        if df.height:
+            nonzero = {
+                c: round(float((df[c].fill_null(0) != 0).mean()), 3)
+                for c in ("1d_n_stories", "1d_llm_n", "1d_lm_n", "5d_n_stories")
+                if c in df.columns
+            }
+            stats["share_nonzero"] = nonzero
+        typer.echo(f"feature set {set_id}: {stats['rows']} rows ({len(grid)} as-of times)")
+
+    _run("features", cfg, {"start": start, "end": end, "tickers": tickers}, body, tickers)
+
+
+@app.command("coverage")
+def coverage_cmd(
+    rebuild_from_runs: Annotated[
+        bool, typer.Option("--rebuild-from-runs", help="Recreate backfill coverage from runs")
+    ] = False,
+    config: ConfigOpt = None,
+) -> None:
+    """Show collected coverage (tradable-time ranges) per source and ticker."""
+    cfg = load_config(config)
+    with Store(cfg.paths) as store:
+        if rebuild_from_runs:
+            cal = get_calendar(cfg.market.calendar, cfg.market.calendar_start)
+            n = coverage.rebuild_from_runs(
+                store, cal, cfg.timing.backfill_lag_seconds, cfg.universe.tickers
+            )
+            typer.echo(f"rebuilt backfill coverage from {n} runs")
+        sources = store.ops_query("SELECT DISTINCT source FROM coverage")["source"].to_list()
+        for src in sorted(sources):
+            typer.echo(f"== {src}")
+            for tk, ivs in sorted(coverage.merged(store, src).items()):
+                spans = ", ".join(f"{s:%Y-%m-%d %H:%M} .. {e:%Y-%m-%d %H:%M}" for s, e in ivs)
+                typer.echo(f"  {tk:6s} {spans}")
+
+
 def _later(milestone: int) -> Callable[[], None]:
     def cmd() -> None:
         typer.echo(f"Not implemented yet (Milestone {milestone}).")
@@ -543,7 +650,6 @@ def _later(milestone: int) -> Callable[[], None]:
     return cmd
 
 
-app.command("features", help="Point-in-time feature build (Milestone 4)")(_later(4))
 app.command("eval", help="Evaluation (Milestone 5)")(_later(5))
 
 

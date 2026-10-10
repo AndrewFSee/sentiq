@@ -3,8 +3,8 @@
 Turns financial news and SEC filings into **point-in-time-correct**, LLM-scored features, to test
 whether news carries incremental tradable signal. A research tool, not a trading system.
 
-Status: **Milestones 1–3** done (ingestion, live collection, dedupe, ticker linking, LLM
-scoring). See `CLAUDE.md` for conventions and the PIT rules.
+Status: **Milestones 1–4** done (ingestion, live collection, dedupe, ticker linking, LLM
+scoring, baselines, point-in-time features). See `CLAUDE.md` for conventions and the PIT rules.
 
 ## Setup
 ```bash
@@ -113,8 +113,28 @@ used; copy it to `score_v2.md` and set `scoring.prompt_version` (every variant i
 uv run newsfeed reparse    # rebuild EDGAR items from cached raw documents; timing unchanged
 ```
 
-### 7. Features (M4), eval (M5)
-Not yet implemented; `newsfeed features|eval` currently exit with a notice.
+### 7. Baselines and features
+Baselines are computed automatically by `derive` (and therefore after every backfill/collect):
+- **Loughran-McDonald** tone per story: download the Master Dictionary CSV from
+  [SRAF](https://sraf.nd.edu/loughranmcdonald-master-dictionary/) (free for academic use)
+  to `data/ref/lm/` (path in `features.lm_dictionary`).
+- **FinBERT** (optional): `uv sync --extra finbert` (~2 GB), then `features.finbert: true`.
+
+```bash
+uv run newsfeed coverage                                   # what was collected, per ticker
+uv run newsfeed coverage --rebuild-from-runs               # for data ingested before M4
+uv run newsfeed features --start 2025-01-01 --end 2026-10-01
+```
+One row per (ticker, session) at the session close minus 10 minutes, with columns per window
+(`1h_`, `1d_`, `5d_`): `n_items`, `n_stories`, `n_outlets`, `volume_z` (vs the trailing 60
+days), `llm_n`, `llm_coverage`, `llm_sent_decay` (exponentially decayed sum), `llm_sent_cwmean`
+(confidence-weighted mean), `llm_sent_maxabs`, `llm_sent_disp`, `llm_evt_<type>` counts, and
+the same aggregates for `lm_tone_*` (plus `finbert_*` when enabled). Windows not covered by
+collected data are null, not zero. Read a stored set with
+`Store(...).features("<feature_set_id>")`.
+
+### 8. Eval (M5)
+Not yet implemented; `newsfeed eval` currently exits with a notice.
 
 ## Inspecting
 ```bash
@@ -129,6 +149,8 @@ data/lake/item_story/ym=<YYYY-MM>/stories.parquet         # stories (view: item_
 data/raw/<source>/<id>/*.gz                               # verbatim source documents
 data/newsfeed.duckdb                                      # runs, failures, alerts
 data/lake/scores/part-*.parquet                           # LLM scores (views: scores, scores_all)
+data/lake/baselines/part-*.parquet                        # LM / FinBERT scores (view: baselines)
+data/lake/features/set=<feature_set_id>/part-*.parquet    # built feature tables
 data/state/                                               # collector state, heartbeat, locks
 data/ref/company_tickers.json                             # cached SEC ticker map
 ```

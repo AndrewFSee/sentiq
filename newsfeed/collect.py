@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from newsfeed import coverage
 from newsfeed.config import AppConfig
 from newsfeed.ingest.base import SourceAdapter
 from newsfeed.ingest.runner import ingest, make_error_recorder, new_stats
@@ -187,6 +188,15 @@ class Collector:
             st.last_error = repr(exc)[:500]
         else:
             done = self.clock()
+            prev_ok = _dt(st.last_poll_ok_at)
+            max_gap = timedelta(
+                seconds=self.cfg.collect.stalled_after_intervals * self.cfg.collect.interval_seconds
+            )
+            universe = getattr(adapter, "universe", None)
+            if prev_ok is not None and done - prev_ok <= max_gap and universe is not None:
+                # watched continuously since the previous successful poll
+                tickers = [t for ts in universe.cik_to_tickers.values() for t in ts]
+                coverage.record_live(self.store, source, tickers, prev_ok, done, self.run_id)
             st.consecutive_failures = 0
             st.last_error = None
             st.last_poll_ok_at = _iso(done)

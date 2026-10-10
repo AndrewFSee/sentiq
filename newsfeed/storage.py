@@ -154,6 +154,40 @@ SCORES_SCHEMA = pa.schema(
     ]
 )
 
+BASELINES_SCHEMA = pa.schema(
+    [
+        ("item_id", pa.string()),
+        ("text_hash", pa.string()),
+        ("method", pa.string()),  # lm | finbert
+        ("method_version", pa.string()),  # LM csv sha256[:12] | model name
+        ("computed_at", TS),
+        ("score", pa.float64()),  # lm_tone or p_pos - p_neg, in [-1, 1]
+        ("n_words", pa.int64()),
+        ("n_positive", pa.int64()),
+        ("n_negative", pa.int64()),
+        ("n_uncertainty", pa.int64()),
+        ("n_litigious", pa.int64()),
+        ("neg_prop", pa.float64()),
+        ("pos_prop", pa.float64()),
+        ("unc_prop", pa.float64()),
+        ("lit_prop", pa.float64()),
+        ("p_positive", pa.float64()),
+        ("p_negative", pa.float64()),
+        ("p_neutral", pa.float64()),
+    ]
+)
+
+EMBEDDINGS_SCHEMA = pa.schema(
+    [
+        ("item_id", pa.string()),
+        ("text_hash", pa.string()),
+        ("model", pa.string()),
+        ("dim", pa.int32()),
+        ("vector", pa.list_(pa.float32())),
+        ("computed_at", TS),
+    ]
+)
+
 _OPS_DDL = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id VARCHAR PRIMARY KEY,
@@ -214,6 +248,17 @@ CREATE TABLE IF NOT EXISTS llm_batch_requests (
     custom_id VARCHAR NOT NULL,
     cache_key VARCHAR NOT NULL,
     target JSON NOT NULL          -- everything needed to build the score row on collection
+);
+-- collected ranges on the tradable_at axis, [start_at, end_at) -- see coverage.py
+CREATE TABLE IF NOT EXISTS coverage (
+    source VARCHAR NOT NULL,
+    ticker VARCHAR NOT NULL,
+    start_at TIMESTAMPTZ NOT NULL,   -- backfill: published-time start; live: tradable time
+    end_at TIMESTAMPTZ NOT NULL,
+    tradable_start_at TIMESTAMPTZ NOT NULL,  -- backfill: push(start + lag); live: = start_at
+    kind VARCHAR NOT NULL,        -- backfill | live
+    run_id VARCHAR,
+    recorded_at TIMESTAMPTZ NOT NULL
 );
 -- every prompt variant / feature variant ever tried (multiple-testing accounting)
 CREATE TABLE IF NOT EXISTS experiments (
@@ -351,11 +396,17 @@ class Store:
         self.tickers_dir = self.lake / "item_tickers"
         self.story_dir = self.lake / "item_story"
         self.scores_dir = self.lake / "scores"
+        self.baselines_dir = self.lake / "baselines"
+        self.embeddings_dir = self.lake / "embeddings"
+        self.features_dir = self.lake / "features"
         self.state_dir = paths.data_dir / "state"
         for d in (
             self.items_dir,
             self.tickers_dir,
             self.story_dir,
+            self.baselines_dir,
+            self.embeddings_dir,
+            self.features_dir,
             self.scores_dir,
             self.state_dir,
         ):
@@ -447,6 +498,24 @@ class Store:
         self.q.execute(f"CREATE OR REPLACE VIEW item_story AS SELECT * FROM {story_src}")
         # scores_all: every attempt; scores: one row per cache_key -- the first `ok` draw if any
         # (re-tries of invalid/refused rows can only add, never replace, a canonical result).
+        base_src = self._source_sql("baselines", self.baselines_dir, BASELINES_SCHEMA)
+        self.q.execute(
+            f"""
+            CREATE OR REPLACE VIEW baselines AS SELECT * FROM {base_src}
+            QUALIFY row_number() OVER (
+                PARTITION BY item_id, text_hash, method, method_version ORDER BY computed_at
+            ) = 1
+            """
+        )
+        emb_src = self._source_sql("embeddings", self.embeddings_dir, EMBEDDINGS_SCHEMA)
+        self.q.execute(
+            f"""
+            CREATE OR REPLACE VIEW embeddings AS SELECT * FROM {emb_src}
+            QUALIFY row_number() OVER (
+                PARTITION BY item_id, text_hash, model ORDER BY computed_at
+            ) = 1
+            """
+        )
         scores_src = self._source_sql("scores", self.scores_dir, SCORES_SCHEMA)
         self.q.execute(f"CREATE OR REPLACE VIEW scores_all AS SELECT * FROM {scores_src}")
         self.q.execute(
@@ -519,6 +588,47 @@ class Store:
             return 0
         table = pa.Table.from_pylist(list(rows), schema=ITEM_TICKERS_SCHEMA)
         write_table_atomic(table, self._part_path(self.tickers_dir, run_id))
+        self.refresh_views()
+        return len(rows)
+
+    def write_features(self, df: pl.DataFrame, feature_set_id: str, run_id: str) -> int:
+        """Append a built feature table (wide; schema varies by feature set)."""
+        if df.height == 0:
+            return 0
+        out = df.with_columns(
+            pl.lit(feature_set_id).alias("feature_set_id"),
+            pl.lit(run_id).alias("build_run_id"),
+            pl.lit(utcnow()).dt.convert_time_zone("UTC").alias("built_at"),
+        )
+        d = self.features_dir / f"set={feature_set_id}"
+        write_table_atomic(out.to_arrow(), self._part_path(d, run_id))
+        return out.height
+
+    def features(self, feature_set_id: str) -> pl.DataFrame:
+        """Latest build per (ticker, as_of) for one feature set."""
+        files = list((self.features_dir / f"set={feature_set_id}").glob("*.parquet"))
+        if not files:
+            return pl.DataFrame()
+        glob = (self.features_dir / f"set={feature_set_id}" / "*.parquet").as_posix()
+        return self.q.execute(
+            f"""SELECT * FROM read_parquet('{glob}', union_by_name = true)
+                QUALIFY row_number() OVER (PARTITION BY ticker, as_of ORDER BY built_at DESC) = 1
+                ORDER BY as_of, ticker"""
+        ).pl()
+
+    def write_embeddings(self, rows: Sequence[dict[str, Any]], run_id: str) -> int:
+        if not rows:
+            return 0
+        table = pa.Table.from_pylist(list(rows), schema=EMBEDDINGS_SCHEMA)
+        write_table_atomic(table, self._part_path(self.embeddings_dir, run_id))
+        self.refresh_views()
+        return len(rows)
+
+    def write_baselines(self, rows: Sequence[dict[str, Any]], run_id: str) -> int:
+        if not rows:
+            return 0
+        table = pa.Table.from_pylist(list(rows), schema=BASELINES_SCHEMA)
+        write_table_atomic(table, self._part_path(self.baselines_dir, run_id))
         self.refresh_views()
         return len(rows)
 

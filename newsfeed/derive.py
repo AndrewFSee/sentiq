@@ -8,10 +8,14 @@ rebuilds across processes (``collect`` loop and a concurrent ``backfill``).
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from newsfeed.config import AppConfig
 from newsfeed.dedupe import rebuild_stories
+from newsfeed.features.baselines import compute_baselines, load_lm_dictionary, make_finbert
+from newsfeed.features.embeddings import Embedder, FastEmbedder, compute_embeddings
 from newsfeed.storage import FileLock, Store
 from newsfeed.tickers import TickerLinker
 from newsfeed.timeutil import utcnow
@@ -81,9 +85,10 @@ def derive(
     *,
     full_stories: bool = False,
     wait: bool = False,
+    embedder: Embedder | None = None,
 ) -> dict[str, Any]:
-    """Relink + rebuild stories. If another process holds the lock, skip (or raise if
-    ``wait``) -- the next cycle will catch up, since both steps are self-healing."""
+    """Relink, rebuild stories, compute text baselines for story founders. If another process
+    holds the lock, skip (or raise if ``wait``) -- every step is self-healing next cycle."""
     lock = FileLock(store.state_dir / "derive.lock")
     if not lock.acquire():
         if wait:
@@ -93,6 +98,37 @@ def derive(
     try:
         linked = relink(store, linker, run_id)
         stories = rebuild_stories(store, cfg.dedupe, linker.linker_id, full=full_stories)
-        return {"linked": linked, **stories}
+        return {
+            "linked": linked,
+            **stories,
+            "baselines": derive_baselines(store, cfg, run_id),
+            "embeddings": derive_embeddings(store, cfg, run_id, embedder),
+        }
     finally:
         lock.release()
+
+
+def derive_baselines(store: Store, cfg: AppConfig, run_id: str) -> dict[str, int]:
+    fc = cfg.features
+    try:
+        lm = load_lm_dictionary(fc.lm_dictionary)
+    except FileNotFoundError as exc:
+        log.warning("LM baseline skipped: %s", exc)
+        lm = None
+    fb = (fc.finbert_model, make_finbert(fc.finbert_model)) if fc.finbert else None
+    return compute_baselines(store, lm=lm, finbert=fb, run_id=run_id)
+
+
+@lru_cache(maxsize=2)
+def _fast_embedder(model: str, cache_dir: str) -> FastEmbedder:
+    return FastEmbedder(model, Path(cache_dir))  # model load takes seconds: once per process
+
+
+def derive_embeddings(
+    store: Store, cfg: AppConfig, run_id: str, embedder: Embedder | None = None
+) -> int:
+    fc = cfg.features
+    if not fc.embeddings:
+        return 0
+    emb = embedder or _fast_embedder(fc.embedding_model, str(fc.embedding_cache))
+    return compute_embeddings(store, emb, run_id)

@@ -10,7 +10,8 @@ speed and polish.** It is not a trading system.
 - Status: **M1 done** (scaffold, config, storage, EDGAR 8-K). **M2 done** (collect loop +
   heartbeat/outage detection, news adapter on fixtures, ticker linking, dedupe/stories,
   multi-process safety). **M3 done** (LLM scoring: structured outputs, cache, batches, cost,
-  masking/replicate/validation studies, re-parse). Next: M4 features/baselines → M5 eval.
+  masking/replicate/validation studies, re-parse). **M4 done** (coverage tracking, LM/FinBERT
+  baselines, point-in-time features with frozen-store causality tests). Next: M5 eval.
 - Every command that calls the model costs money: run `score --dry-run` first; jobs estimated
   above `scoring.confirm_above_usd` need `--yes`. Never run paid jobs without the user's OK.
 
@@ -32,6 +33,8 @@ uv run newsfeed score --model claude-sonnet-5-5 --sample 100   # validation
 uv run newsfeed score-batches [--wait]    # collect submitted batches
 uv run newsfeed agreement --compare masked|model|replicates
 uv run newsfeed cost                      # spend per run from the usage ledger
+uv run newsfeed coverage [--rebuild-from-runs]   # collected ranges per source/ticker
+uv run newsfeed features --start 2025-01-01 --end 2026-10-01   # build + store a feature set
 uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (needs network)
 ```
 
@@ -149,6 +152,39 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   but in live use it only exists at `scored_at`; features for the live/holdout period should use
   max(tradable_at, scored_at).
 
+## Coverage (`coverage.py`)
+- "No rows" must not be read as "no news": the ops `coverage` table records what was collected.
+  Backfills store their published-time range; merged per ticker on that axis, a range [S, E)
+  covers tradable time [push(S + lag), E). Live polls extend [previous ok poll, now]; stalls
+  leave gaps. `backfill` records coverage automatically; `coverage --rebuild-from-runs`
+  recreates it from the runs log (assumes the configured universe hasn't changed).
+- Feature windows (lo, hi] outside coverage of every `features.coverage_sources` are null;
+  volume_z needs its whole baseline covered.
+
+## Features (`features/`)
+- `build_features(store, cfg, as_of_times, …)` → one row per (ticker, as_of), columns
+  `<window>_<feature>` for windows `features.windows_hours` (1h, 1d, 5d = one calendar week),
+  each over (T − w, T]. Grid: each session close − `decision_lag_minutes` (or open + lag).
+- Events: volume from all qualified links (same link policy as scoring) fanned out to all share
+  classes; LLM/LM/FinBERT from story founders. Availability: items at `tradable_at`; LLM
+  scores at `tradable_at` (backfill) or max(tradable_at, scored_at) (live); baselines instant.
+- LLM sentiment aggregates skip relevance < `features.min_relevance`; `llm_coverage` = share of
+  founder events in the window with a score (refusals etc. show up here).
+- Loads via `items_as_of(T_max)` then slices per T. Tests: a frozen-store test rebuilds the
+  whole pipeline from items tradable by T and requires identical features, with the full store
+  built over a multi-T grid (so per-T slicing, not the loader, must hide the future); boundary
+  tests at T and T − 1µs; future-perturbation invariance; live scored_at. Mutations (1h
+  look-ahead, ignoring scored_at) are caught — keep it that way.
+- Fixed dtypes (counts Int64, else Float64) so all-null columns don't change the schema.
+- `feature_set_id` = hash(FEATURE_VERSION, features config, link policy, LLM model + prompt hash,
+  LM version, FinBERT model); every built set is recorded in `experiments`.
+- Baselines (`features/baselines.py`): LM tone (pos − neg)/(pos + neg) with negation rule,
+  removed words excluded; current dictionary for all dates (small look-ahead for words added
+  after 2009 — irrelevant for 2024+ data). FinBERT optional (`features.finbert: true`,
+  `uv sync --extra finbert`). Both document-level, computed in `derive` for story founders,
+  keyed by (item_id, text_hash, method, method_version). LM CSV lives in `data/ref/lm/`
+  (free for academic use, not committed); tests use a 34-word excerpt fixture.
+
 ## Re-parsing
 - Items are append-only; `reparse` writes a new row per item with the current parser, copying
   `published_at`, `published_at_raw`, `first_seen_at`, `ingest_mode`, `tradable_at`,
@@ -199,3 +235,9 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
 - 2026-10-09 (M3): masking covers names, tickers, products, people, places (not dates).
 - 2026-10-09 (M3): EDGAR parser v2 fixes table-of-contents filings (20/252 items had truncated
   or TOC-only bodies); items re-parsed with timing preserved.
+- 2026-10-10 (M3 studies, n = 150/200/60): re-draw noise floor sentiment r 0.989 (MAE 0.020);
+  masked vs unmasked r 0.939 (MAE 0.053, mean diff 0.000); Sonnet vs Haiku r 0.915 (Haiku
+  +0.04 more positive). Novelty is the noisiest field (kappa 0.69 re-draw, 0.18 vs Sonnet).
+- 2026-10-10 (M4): windows 1h/1d/5d(=168h) wall-clock; LLM aggregates exclude 'passing';
+  features null outside coverage. Feature set 58e14e54d4af was built before coverage gating
+  (volume_z wrong in early 2025) — superseded by 95e2118e52e1; both count as tried variants.

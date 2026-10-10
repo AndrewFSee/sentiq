@@ -10,10 +10,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -185,6 +185,40 @@ class ScoringConfig(_Strict):
     live_lookback_hours: float = Field(48, gt=0)
 
 
+class FeaturesConfig(_Strict):
+    """Per (ticker, as-of time T, window w) aggregates over events in (T - w, T]."""
+
+    windows_hours: dict[str, float] = Field(
+        default_factory=lambda: {"1h": 1, "1d": 24, "5d": 168}  # 5d = one calendar week
+    )
+    half_life_hours: dict[str, float] = Field(
+        default_factory=lambda: {"1h": 0.5, "1d": 6, "5d": 36}
+    )
+    min_relevance: Literal["primary", "secondary", "passing"] = "secondary"
+    baseline_days: int = Field(60, gt=1)  # abnormal-volume baseline length
+    volume_sigma_floor: float = Field(0.5, gt=0)  # avoids infinite z on quiet tickers
+    grid: Literal["session_close", "session_open"] = "session_close"
+    decision_lag_minutes: float = Field(10, ge=0)  # close: T = close - lag; open: T = open + lag
+    lm_dictionary: Path = Path("data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv")
+    # sources whose coverage a window must have (else its features are null, not zero)
+    coverage_sources: list[str] = Field(default_factory=lambda: ["edgar"])
+    embeddings: bool = True  # local fastembed model; vectors for story founders
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_cache: Path = Path("data/ref/models")
+    novelty_lookback_days: float = Field(30, gt=0)
+    novelty_sim_threshold: float = Field(0.85, gt=0, le=1)  # max_sim below this = novel
+    finbert: bool = False  # needs `uv sync --extra finbert`
+    finbert_model: str = "ProsusAI/finbert"
+
+    @field_validator("half_life_hours")
+    @classmethod
+    def _same_keys(cls, v: dict[str, float], info: Any) -> dict[str, float]:
+        windows = info.data.get("windows_hours", {})
+        if set(v) != set(windows):
+            raise ValueError("half_life_hours must have the same keys as windows_hours")
+        return v
+
+
 class Secrets(BaseSettings):
     """Read from environment / .env. Never logged, never hashed into config_hash."""
 
@@ -194,7 +228,9 @@ class Secrets(BaseSettings):
 
     sec_user_agent: str | None = None
     anthropic_api_key: str | None = None
-    tradier_token: str | None = None
+    tradier_token: str | None = Field(
+        None, validation_alias=AliasChoices("TRADIER_TOKEN", "TRADIER_API_TOKEN")
+    )
 
     def require_sec_user_agent(self) -> str:
         ua = (self.sec_user_agent or "").strip()
@@ -216,6 +252,7 @@ class AppConfig(_Strict):
     collect: CollectConfig = Field(default_factory=CollectConfig)
     dedupe: DedupeConfig = Field(default_factory=DedupeConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
+    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     pricing: PricingConfig
 
     def config_hash(self) -> str:
@@ -235,7 +272,11 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
     if not news.fixture_path.is_absolute():  # fixtures ship with the code: resolve vs. project
         news = news.model_copy(update={"fixture_path": PROJECT_ROOT / news.fixture_path})
     sources = cfg.sources.model_copy(update={"news_api": news})
-    return cfg.model_copy(update={"paths": paths, "sources": sources})
+    feats = cfg.features
+    for key in ("lm_dictionary", "embedding_cache"):  # reference data lives with the project
+        if not getattr(feats, key).is_absolute():
+            feats = feats.model_copy(update={key: PROJECT_ROOT / getattr(feats, key)})
+    return cfg.model_copy(update={"paths": paths, "sources": sources, "features": feats})
 
 
 def load_secrets() -> Secrets:

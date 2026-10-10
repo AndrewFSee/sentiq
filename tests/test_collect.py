@@ -210,3 +210,27 @@ def test_derive_failure_does_not_kill_cycle(setup, cfg, store, calendar):
     c = Collector(cfg, store, {"edgar": adapter}, calendar, "run", derive_fn=boom, clock=clock)
     adapter.activity = clock.t
     assert c.cycle() == []
+
+
+def test_live_polls_record_coverage_and_stalls_leave_gaps(setup, store):
+    from newsfeed import coverage
+    from newsfeed.tickers import Universe
+
+    make, adapter, clock = setup
+    adapter.universe = Universe({1: ["AAPL"]})
+    adapter.activity = clock.t
+    t0 = clock.t
+    make().cycle()  # first poll: nothing to cover yet
+    clock.t += timedelta(minutes=1)
+    make().cycle()
+    clock.t += timedelta(minutes=1)
+    make().cycle()
+    assert coverage.merged(store, "edgar")["AAPL"] == [(t0, t0 + timedelta(minutes=2))]
+    clock.t += timedelta(minutes=30)  # stalled (> 3 intervals): the gap is not covered
+    make().cycle()
+    clock.t += timedelta(minutes=1)
+    make().cycle()
+    assert coverage.merged(store, "edgar")["AAPL"] == [
+        (t0, t0 + timedelta(minutes=2)),
+        (t0 + timedelta(minutes=32), t0 + timedelta(minutes=33)),
+    ]
