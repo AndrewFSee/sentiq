@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from datetime import date
 
 import polars as pl
@@ -27,6 +28,7 @@ from newsfeed.universe_pit import PitUniverse
 
 
 def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", default="2019-01-02")
     args = ap.parse_args()

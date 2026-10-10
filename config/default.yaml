@@ -189,6 +189,9 @@ eval:
   price_overrides:
     FRC: "tiingo:FRCB"     # First Republic, seized 2023-05-01
     SIVB: "tiingo:SIVBQ"   # SVB Financial, failed 2023-03-10
+    HFC: "tradier:DINO"    # HollyFrontier -> HF Sinclair (new CIK, same listing history)
+  # No free price history found (Tradier, Tiingo, successors), left unpriced: APC, NFX, SCG,
+  # STI, INFO, VIAC (2019-12..2022-02), WRK -- ~13 of ~3700 member ticker-years.
   market_etf: SPY
   sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
                 JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}

@@ -378,10 +378,10 @@ def build_panel(
     sessions: list[date],
     *,
     refresh: bool = False,
-    min_coverage: float = 0.5,
 ) -> tuple[pl.DataFrame, list[dict], dict[str, pl.DataFrame]]:
-    """Fetch every route (Tiingo as fallback when Tradier has < ``min_coverage`` of the
-    window's sessions), pad delisted series with cash, and report what was used per ticker.
+    """Fetch every route (Tiingo when the Tradier series starts late or has gaps and Tiingo's
+    is better; then same-CIK / name-search candidates on Tiingo), pad series that stop trading
+    inside a non-current window with cash, and report what was used per ticker.
     Also returns, per ticker, the splits its bars are adjusted for (for market caps)."""
     frames, report = [], []
     splits: dict[str, pl.DataFrame] = {}
@@ -389,9 +389,11 @@ def build_panel(
         n_exp = sum(1 for d in sessions if rt.start <= d <= rt.end)
         used, sym = rt.source, rt.fetch_symbol
         p = price_panel(caches[used], [sym], rt.start, rt.end, refresh=refresh)
-        if p.height < min_coverage * n_exp and used == "tradier" and "tiingo" in caches:
+        if used == "tradier" and "tiingo" in caches and n_exp and not _good(p, rt, sessions):
+            # Tradier lacks old history for some renamed names (WBD before 2022-04) and has
+            # deterministic gaps for some listed ones (NOC before 2020-08, CSX 2024-06..2026-06)
             alt = price_panel(caches["tiingo"], [rt.ticker], rt.start, rt.end, refresh=refresh)
-            if alt.height > p.height:
+            if _quality(alt, rt, sessions) > _quality(p, rt, sessions):
                 p, used, sym = alt, "tiingo", rt.ticker
         if used == "tiingo" and n_exp and not _starts_ok(p, rt, sessions):
             for cand in _tiingo_candidates(rt, caches["tiingo"], exclude={sym}):
@@ -404,7 +406,7 @@ def build_panel(
         if p.height:
             splits[rt.ticker] = caches[used].splits(sym, refresh=refresh)
         padded = 0
-        if p.height and used == "tiingo":
+        if p.height and used == "tiingo" and rt.reason not in ("current", "benchmark"):
             last = p["date"].max()
             if any(last < d <= rt.end for d in sessions):  # stopped trading inside window
                 before = p.height
@@ -458,6 +460,19 @@ def _starts_ok(p: pl.DataFrame, rt: PriceRoute, sessions: list[date], slack: int
     """Bars begin within ``slack`` days of the window's first session."""
     first = next((d for d in sessions if d >= rt.start), None)
     return bool(p.height) and first is not None and p["date"].min() <= first + timedelta(slack)
+
+
+def _quality(p: pl.DataFrame, rt: PriceRoute, sessions: list[date]) -> tuple[bool, int]:
+    return _starts_ok(p, rt, sessions), p.height
+
+
+def _good(p: pl.DataFrame, rt: PriceRoute, sessions: list[date], min_density: float = 0.98) -> bool:
+    """Starts on time and has >= ``min_density`` of the sessions up to its last bar."""
+    if not _starts_ok(p, rt, sessions):
+        return False
+    last = p["date"].max()
+    span = sum(1 for d in sessions if rt.start <= d <= last)
+    return p.height >= min_density * span
 
 
 def _tiingo_candidates(rt: PriceRoute, cache: CachedPrices, exclude: set[str]) -> list[str]:
