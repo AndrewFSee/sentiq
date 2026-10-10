@@ -1,0 +1,4 @@
+# Keep repository bytes exact: LF everywhere, fixtures byte-for-byte (recorded SEC data).
+* text=auto eol=lf
+tests/fixtures/** -text
+*.parquet binary
