@@ -177,6 +177,17 @@ BASELINES_SCHEMA = pa.schema(
     ]
 )
 
+EMBEDDINGS_SCHEMA = pa.schema(
+    [
+        ("item_id", pa.string()),
+        ("text_hash", pa.string()),
+        ("model", pa.string()),
+        ("dim", pa.int32()),
+        ("vector", pa.list_(pa.float32())),
+        ("computed_at", TS),
+    ]
+)
+
 _OPS_DDL = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id VARCHAR PRIMARY KEY,
@@ -386,6 +397,7 @@ class Store:
         self.story_dir = self.lake / "item_story"
         self.scores_dir = self.lake / "scores"
         self.baselines_dir = self.lake / "baselines"
+        self.embeddings_dir = self.lake / "embeddings"
         self.features_dir = self.lake / "features"
         self.state_dir = paths.data_dir / "state"
         for d in (
@@ -393,6 +405,7 @@ class Store:
             self.tickers_dir,
             self.story_dir,
             self.baselines_dir,
+            self.embeddings_dir,
             self.features_dir,
             self.scores_dir,
             self.state_dir,
@@ -491,6 +504,15 @@ class Store:
             CREATE OR REPLACE VIEW baselines AS SELECT * FROM {base_src}
             QUALIFY row_number() OVER (
                 PARTITION BY item_id, text_hash, method, method_version ORDER BY computed_at
+            ) = 1
+            """
+        )
+        emb_src = self._source_sql("embeddings", self.embeddings_dir, EMBEDDINGS_SCHEMA)
+        self.q.execute(
+            f"""
+            CREATE OR REPLACE VIEW embeddings AS SELECT * FROM {emb_src}
+            QUALIFY row_number() OVER (
+                PARTITION BY item_id, text_hash, model ORDER BY computed_at
             ) = 1
             """
         )
@@ -593,6 +615,14 @@ class Store:
                 QUALIFY row_number() OVER (PARTITION BY ticker, as_of ORDER BY built_at DESC) = 1
                 ORDER BY as_of, ticker"""
         ).pl()
+
+    def write_embeddings(self, rows: Sequence[dict[str, Any]], run_id: str) -> int:
+        if not rows:
+            return 0
+        table = pa.Table.from_pylist(list(rows), schema=EMBEDDINGS_SCHEMA)
+        write_table_atomic(table, self._part_path(self.embeddings_dir, run_id))
+        self.refresh_views()
+        return len(rows)
 
     def write_baselines(self, rows: Sequence[dict[str, Any]], run_id: str) -> int:
         if not rows:

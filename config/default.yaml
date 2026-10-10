@@ -163,5 +163,10 @@ features:
   decision_lag_minutes: 10
   lm_dictionary: data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv  # free for academic use
   coverage_sources: [edgar]                  # windows outside collected coverage -> null features
+  embeddings: true                           # local ONNX model via fastembed (no API key)
+  embedding_model: BAAI/bge-small-en-v1.5
+  embedding_cache: data/ref/models
+  novelty_lookback_days: 30                  # novelty = 1 - max cosine sim to the ticker's prior stories
+  novelty_sim_threshold: 0.85
   finbert: false                             # true needs `uv sync --extra finbert` (~2 GB)
   finbert_model: ProsusAI/finbert

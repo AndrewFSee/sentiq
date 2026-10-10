@@ -562,6 +562,7 @@ def feature_sources(ctx: Context) -> FeatureSources:
         llm_prompt_hash=job.prompt_hash,
         lm_version=lm_version,
         finbert_version=cfg.features.finbert_model if cfg.features.finbert else None,
+        embedding_model=cfg.features.embedding_model if cfg.features.embeddings else None,
     )
 
 

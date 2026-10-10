@@ -38,6 +38,7 @@ import polars as pl
 
 from newsfeed import coverage
 from newsfeed.config import AppConfig
+from newsfeed.features.embeddings import max_prior_similarity
 from newsfeed.scoring.schema import EVENT_TYPES
 from newsfeed.scoring.targets import canonical_tickers
 from newsfeed.storage import Store
@@ -56,6 +57,7 @@ class FeatureSources:
     llm_prompt_hash: str
     lm_version: str | None
     finbert_version: str | None
+    embedding_model: str | None = None
 
 
 def feature_set_id(cfg: AppConfig, src: FeatureSources) -> str:
@@ -171,6 +173,12 @@ def load_events(
             {"m": method, "v": version},
         ).rename(cols)
         ev = ev.join(b, on=["item_id", "text_hash"], how="left")
+    if src.embedding_model is not None:
+        emb = store.query(
+            "SELECT item_id, text_hash, vector FROM embeddings WHERE model = $m",
+            {"m": src.embedding_model},
+        )
+        ev = ev.join(emb, on=["item_id", "text_hash"], how="left")
     return volume, ev
 
 
@@ -267,6 +275,7 @@ def build_features(
             if founders.height
             else np.array([], dtype=bool),
         }
+        per_ticker[tk].update(_novelty(tk, e, src, fc, covered))
 
     rows = []
     for T_dt in as_of:
@@ -318,6 +327,13 @@ def build_features(
                     row[p + "finbert_n"] = st["n"]
                     row[p + "finbert_decay"] = st["decay"]
                     row[p + "finbert_mean"] = st["mean"]
+                if src.embedding_model is not None:
+                    es = _slice(d["emb_t"], lo, T)
+                    sims = d["emb_sim"][es]
+                    sims = sims[~np.isnan(sims)]
+                    row[p + "emb_n"] = len(sims)
+                    row[p + "emb_novelty_mean"] = float(np.mean(1 - sims)) if len(sims) else None
+                    row[p + "emb_n_novel"] = int(np.sum(sims < fc.novelty_sim_threshold))
                 if not covered(tk, lo, T):  # not collected: unknown, not "no news"
                     row.update({c: None for c in row if c.startswith(p)})
             rows.append(row)
@@ -336,9 +352,16 @@ def build_features(
 
 def _is_count(col: str) -> bool:
     name = col.split("_", 1)[1]
-    return name in ("n_items", "n_stories", "n_outlets", "llm_n", "lm_n", "finbert_n") or (
-        name.startswith("llm_evt_")
-    )
+    return name in (
+        "n_items",
+        "n_stories",
+        "n_outlets",
+        "llm_n",
+        "lm_n",
+        "finbert_n",
+        "emb_n",
+        "emb_n_novel",
+    ) or (name.startswith("llm_evt_"))
 
 
 def _volume_z(f_t: np.ndarray, T: int, w_us: int, k: int, sigma_floor: float) -> float | None:
@@ -353,3 +376,21 @@ def _volume_z(f_t: np.ndarray, T: int, w_us: int, k: int, sigma_floor: float) ->
     counts = np.diff(idx)  # each bucket (edge_i, edge_{i+1}]
     mu, sigma = float(np.mean(counts)), float(np.std(counts))
     return (n_now - mu) / max(sigma, sigma_floor)
+
+
+def _novelty(
+    tk: str, e: pl.DataFrame, src: FeatureSources, fc: Any, covered: Any
+) -> dict[str, np.ndarray]:
+    """Event-level max prior similarity for one ticker (NaN when the look-back isn't covered)."""
+    empty = {"emb_t": np.array([], dtype=np.int64), "emb_sim": np.array([], dtype=np.float64)}
+    if src.embedding_model is None or not e.height or "vector" not in e.columns:
+        return empty
+    ev = e.filter(pl.col("vector").is_not_null()).sort("t_trad")
+    if not ev.height:
+        return empty
+    t = ev["t_trad"].to_numpy()
+    vecs = np.asarray(ev["vector"].to_list(), dtype=np.float32)
+    lookback = int(fc.novelty_lookback_days * 86400 * _US)
+    sims = max_prior_similarity(t, vecs, lookback)
+    ok = np.array([covered(tk, int(ti) - lookback, int(ti)) for ti in t])
+    return {"emb_t": t, "emb_sim": np.where(ok, sims, np.nan)}

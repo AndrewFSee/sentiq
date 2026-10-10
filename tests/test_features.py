@@ -27,7 +27,13 @@ from newsfeed.ingest.runner import build_row
 from newsfeed.storage import Store
 
 from .fake_llm import FakeLLM, default_output, user_text
-from .news_env import copy_items, ingest_corpus, make_env, record_corpus_coverage
+from .news_env import (
+    HashEmbedder,
+    copy_items,
+    ingest_corpus,
+    make_env,
+    record_corpus_coverage,
+)
 
 US = 1_000_000
 
@@ -39,6 +45,7 @@ def utc(*a: int) -> datetime:
 @pytest.fixture
 def env(cfg, store, calendar, ticker_map):
     e = make_env(cfg, store, ticker_map)
+    e.embedder = HashEmbedder()
     ingest_corpus(e, calendar)
     e.derive()
     e.score_all()
@@ -192,6 +199,7 @@ def test_features_equal_a_store_frozen_at_T(env, cfg, calendar, ticker_map, tmp_
         | {"db_path": tmp_path / "frozen" / "ops.duckdb"}
     )
     frozen = make_env(cfg.model_copy(update={"paths": paths}), Store(paths), ticker_map)
+    frozen.embedder = HashEmbedder()
     n = copy_items(env.store, frozen.store, "tradable_at <= $T", {"T": T})
     record_corpus_coverage(frozen, calendar)
     assert 0 < n < env.store.query("SELECT count(*) AS n FROM items")["n"][0]
@@ -413,3 +421,41 @@ def test_rebuild_coverage_from_runs(store, cfg, calendar):
     assert m["AAPL"] == [(utc(2025, 1, 2, 14, 30), utc(2026, 2, 1))]  # 1 Jan holiday
     assert m["JPM"] == [(utc(2026, 1, 2, 14, 30), utc(2026, 2, 1))]
     assert coverage.rebuild_from_runs(store, calendar, {"edgar": 60}, ["AAPL"]) == 2  # idempotent
+
+
+# ------------------------------------------------------------------ embeddings / novelty
+def test_max_prior_similarity_is_strictly_backward():
+    from newsfeed.features.embeddings import max_prior_similarity
+
+    t = np.array([0, 10, 10, 50, 200]) * US
+    v = np.eye(3, dtype=np.float32)[[0, 0, 0, 1, 0]]
+    sims = max_prior_similarity(t, v, lookback_us=100 * US)
+    # t=0: no prior. t=10 (x2): see t=0 (same vector) but not each other (not strictly earlier).
+    # t=50: priors exist but are orthogonal. t=200: look-back [100, 200) is empty.
+    assert sims.tolist() == [0.0, 1.0, 1.0, 0.0, 0.0]
+
+
+def test_embeddings_incremental(env):
+    from newsfeed.features.embeddings import compute_embeddings
+
+    founders = env.store.query("SELECT count(*) AS n FROM item_story WHERE story_id = item_id")
+    assert env.store.query("SELECT count(*) AS n FROM embeddings")["n"][0] == founders["n"][0]
+    assert compute_embeddings(env.store, env.embedder, "again") == 0
+    v = env.store.query("SELECT vector FROM embeddings LIMIT 1")["vector"][0]
+    assert abs(np.linalg.norm(np.array(v)) - 1) < 1e-5
+
+
+def test_novelty_features(env):
+    T = utc(2026, 7, 31, 14, 10)  # a1 (13:30, first Apple story) and a5 (14:10, follow-up)
+    r = row(feats(env, [T], ["AAPL"]), "AAPL", T)
+    assert r["1h_emb_n"] == 2
+    vecs = env.store.query(
+        "SELECT i.native_id, e.vector FROM embeddings e JOIN items i USING (item_id) "
+        "WHERE i.native_id IN ('fixture:a1', 'fixture:a5') ORDER BY i.native_id"
+    )["vector"].to_list()
+    sim = float(np.dot(vecs[0], vecs[1]))
+    assert r["1h_emb_novelty_mean"] == pytest.approx(((1 - 0.0) + (1 - sim)) / 2, rel=1e-5)
+    assert r["1h_emb_n_novel"] == (1 + (sim < env.cfg.features.novelty_sim_threshold))
+    # look-back not covered (corpus coverage starts 2026-07-01): novelty is unknown
+    early = utc(2026, 7, 2, 18, 0)
+    assert row(feats(env, [early], ["AAPL"]), "AAPL", early)["5d_emb_novelty_mean"] is None

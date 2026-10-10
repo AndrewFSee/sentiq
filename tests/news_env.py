@@ -14,6 +14,7 @@ from newsfeed.dedupe import rebuild_stories
 from newsfeed.derive import derive_baselines, relink
 from newsfeed.features.aggregate import FeatureSources
 from newsfeed.features.baselines import load_lm_dictionary
+from newsfeed.features.embeddings import compute_embeddings
 from newsfeed.ingest.news_api import FixtureVendor, NewsApiAdapter
 from newsfeed.ingest.runner import ingest, new_stats
 from newsfeed.scoring.mask import MaskLexicon
@@ -33,6 +34,7 @@ class NewsEnv:
     store: Store
     universe: Universe
     linker: TickerLinker
+    embedder: Any = None  # tests opt in with HashEmbedder
 
     @property
     def c2t(self) -> dict[int, list[str]]:
@@ -53,6 +55,8 @@ class NewsEnv:
         relink(self.store, self.linker, "derive")
         rebuild_stories(self.store, self.cfg.dedupe, self.linker.linker_id)
         derive_baselines(self.store, self.cfg, "derive")
+        if self.embedder is not None:
+            compute_embeddings(self.store, self.embedder, "derive")
 
     def score_all(self, llm: FakeLLM | None = None) -> None:
         j = self.job(llm or FakeLLM())
@@ -66,6 +70,7 @@ class NewsEnv:
             llm_prompt_hash=self.job().prompt_hash,
             lm_version=load_lm_dictionary(self.cfg.features.lm_dictionary).version,
             finbert_version=None,
+            embedding_model=self.embedder.name if self.embedder is not None else None,
         )
 
 
@@ -136,3 +141,20 @@ def copy_items(src: Store, dst: Store, rows_where: str, params: dict[str, Any]) 
         f"SELECT * EXCLUDE (text_hash) FROM items WHERE {rows_where}", params
     ).to_dicts()
     return dst.write_items(list(rows), "copy")
+
+
+class HashEmbedder:
+    """Deterministic bag-of-words hashing embedder: similar wording -> similar vectors."""
+
+    name = "test-hash-64"
+
+    def embed(self, texts: list[str]) -> Any:
+        import hashlib
+
+        import numpy as np
+
+        out = np.zeros((len(texts), 64), dtype=np.float32)
+        for i, t in enumerate(texts):
+            for w in t.lower().split():
+                out[i, int(hashlib.md5(w.encode()).hexdigest(), 16) % 64] += 1.0
+        return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-12)

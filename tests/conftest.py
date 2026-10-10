@@ -56,7 +56,10 @@ class FakeClock:
 def cfg(tmp_path: Path) -> AppConfig:
     c = load_config(root=tmp_path)  # all data paths land in tmp
     # hermetic: a 34-word excerpt of the LM Master Dictionary instead of the 9 MB download
-    feats = c.features.model_copy(update={"lm_dictionary": FIXTURES / "lm" / "mini_lm.csv"})
+    # embeddings off by default (no model download in tests); tests opt in with a fake embedder
+    feats = c.features.model_copy(
+        update={"lm_dictionary": FIXTURES / "lm" / "mini_lm.csv", "embeddings": False}
+    )
     return c.model_copy(update={"features": feats})
 
 

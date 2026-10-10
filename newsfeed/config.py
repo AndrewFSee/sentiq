@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -202,6 +202,11 @@ class FeaturesConfig(_Strict):
     lm_dictionary: Path = Path("data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv")
     # sources whose coverage a window must have (else its features are null, not zero)
     coverage_sources: list[str] = Field(default_factory=lambda: ["edgar"])
+    embeddings: bool = True  # local fastembed model; vectors for story founders
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_cache: Path = Path("data/ref/models")
+    novelty_lookback_days: float = Field(30, gt=0)
+    novelty_sim_threshold: float = Field(0.85, gt=0, le=1)  # max_sim below this = novel
     finbert: bool = False  # needs `uv sync --extra finbert`
     finbert_model: str = "ProsusAI/finbert"
 
@@ -223,7 +228,9 @@ class Secrets(BaseSettings):
 
     sec_user_agent: str | None = None
     anthropic_api_key: str | None = None
-    tradier_token: str | None = None
+    tradier_token: str | None = Field(
+        None, validation_alias=AliasChoices("TRADIER_TOKEN", "TRADIER_API_TOKEN")
+    )
 
     def require_sec_user_agent(self) -> str:
         ua = (self.sec_user_agent or "").strip()
@@ -266,8 +273,9 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
         news = news.model_copy(update={"fixture_path": PROJECT_ROOT / news.fixture_path})
     sources = cfg.sources.model_copy(update={"news_api": news})
     feats = cfg.features
-    if not feats.lm_dictionary.is_absolute():  # reference data lives with the project
-        feats = feats.model_copy(update={"lm_dictionary": PROJECT_ROOT / feats.lm_dictionary})
+    for key in ("lm_dictionary", "embedding_cache"):  # reference data lives with the project
+        if not getattr(feats, key).is_absolute():
+            feats = feats.model_copy(update={key: PROJECT_ROOT / getattr(feats, key)})
     return cfg.model_copy(update={"paths": paths, "sources": sources, "features": feats})
 
 
