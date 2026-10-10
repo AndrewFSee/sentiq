@@ -281,6 +281,8 @@ class EdgarAdapter:
         self.forms = set(cfg.forms)
         self.stats: dict[str, int] = {}
         self.last_activity_at: datetime | None = None
+        # sp500_pit: per-CIK ingestion windows; None = every CIK over the requested range
+        self.cik_windows: dict[int, tuple[datetime, datetime]] | None = None
         self._feed_high_water: datetime | None = None  # newest feed entry seen by last poll
 
     # ---- listing
@@ -326,20 +328,39 @@ class EdgarAdapter:
             refs = [r for r in refs if r.accepted_upper_bound < ensure_utc(end) + margin]
         return refs
 
+    def window_for(
+        self, cik: int, start: datetime | None, end: datetime | None
+    ) -> tuple[datetime | None, datetime | None] | None:
+        """[start, end) clipped to the CIK's ingestion window (``cik_windows``), or None if
+        they don't overlap."""
+        if self.cik_windows is None:
+            return start, end
+        w = self.cik_windows.get(cik)
+        if w is None:
+            return None
+        s = w[0] if start is None else max(w[0], ensure_utc(start))
+        e = w[1] if end is None else min(w[1], ensure_utc(end))
+        return (s, e) if e > s else None
+
     def _gather(
         self, start: datetime | None, end: datetime | None
-    ) -> list[tuple[FilingRef, list[str]]]:
-        """List filings for every universe CIK; merge co-registrant filings by accession."""
-        by_acc: dict[str, tuple[FilingRef, set[str]]] = {}
+    ) -> list[tuple[FilingRef, list[str], list[tuple[datetime, datetime]]]]:
+        """List filings for every universe CIK (inside its window, if any); merge co-registrant
+        filings by accession, keeping each filer CIK's window for the exact time filter."""
+        by_acc: dict[str, tuple[FilingRef, set[str], list]] = {}
         for cik in self.universe.ciks:
-            for ref in self.list_filings(cik, start, end):
+            win = self.window_for(cik, start, end)
+            if win is None:
+                continue
+            for ref in self.list_filings(cik, *win):
                 tick = set(self.universe.tickers_for(cik))
                 if ref.accession in by_acc:
                     by_acc[ref.accession][1].update(tick)
+                    by_acc[ref.accession][2].append(win)
                 else:
-                    by_acc[ref.accession] = (ref, tick)
+                    by_acc[ref.accession] = (ref, tick, [win])
         ordered = sorted(by_acc.values(), key=lambda x: x[0].accepted_upper_bound)
-        return [(ref, sorted(t)) for ref, t in ordered]
+        return [(ref, sorted(t), w) for ref, t, w in ordered]
 
     # ---- fetching
     def _get_raw(self, ref: FilingRef, name: str) -> bytes:
@@ -494,7 +515,7 @@ class EdgarAdapter:
         on_error: ErrorFn | None = None,
     ) -> Iterator[RawItem]:
         start, end = ensure_utc(start, name="start"), ensure_utc(end, name="end")
-        for ref, tickers in self._gather(start, end):
+        for ref, tickers, wins in self._gather(start, end):
             if skip(ref.item_id):
                 continue
             try:
@@ -506,7 +527,8 @@ class EdgarAdapter:
                     raise
                 on_error(ref.accession, exc)
                 continue
-            if start <= item.published_at < end:  # exact filter on authoritative time
+            # exact filter on the authoritative time, inside a window of one of its filers
+            if any(ws <= item.published_at < we for ws, we in wins):
                 yield item
 
     def poll(

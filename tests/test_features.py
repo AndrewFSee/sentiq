@@ -153,6 +153,21 @@ def test_feature_values_on_corpus(env):
     assert set(df["ticker"]) == {t for ts in env.c2t.values() for t in ts}
 
 
+def test_member_spans_restrict_rows_without_changing_values(env):
+    # 02:00 UTC on 07-31 is still 07-30 in New York
+    times = [utc(2026, 7, 30, 19, 50), utc(2026, 7, 31, 2, 0), utc(2026, 7, 31, 19, 50)]
+    full = feats(env, times)
+    spans = {"AAPL": [(date(2026, 7, 31), None)], "MSFT": [(date(2020, 1, 1), date(2026, 7, 31))]}
+    df = build_features(env.store, env.cfg, times, env.c2t, env.sources(), member_spans=spans)
+    assert df.select("ticker", "as_of").rows() == [
+        ("MSFT", times[0]),
+        ("MSFT", times[1]),
+        ("AAPL", times[2]),
+    ]
+    keyed = full.join(df.select("ticker", "as_of"), on=["ticker", "as_of"], how="semi")
+    assert_frame_equal(df, keyed.sort("as_of", "ticker"))
+
+
 def test_window_boundaries_exact(env):
     t_a5 = utc(2026, 7, 31, 14, 10)  # a5 published 14:05 + 5 min backfill lag
     eps = timedelta(microseconds=1)

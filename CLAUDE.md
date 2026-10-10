@@ -14,6 +14,10 @@ speed and polish.** It is not a trading system.
   baselines, embeddings + novelty, point-in-time features with frozen-store causality tests).
   **M5 done** (Tradier prices, total-return targets over an entry x horizon x adjustment grid,
   PIT controls, purged CV, frozen holdout, rank IC + incremental lift, bootstrap + BH).
+  **M6 in progress** (branch `m6-sp500`): point-in-time S&P 500 universe 2019–present,
+  per-CIK backfill windows, price routing (Tradier / renamed / Tiingo for delisted),
+  split-consistent market caps, PIT sector ETFs, member-only feature rows. Remaining: full
+  backfill → derive → batch scoring (ask before paying) → features → eval (pre-holdout).
 - Every command that calls the model costs money: run `score --dry-run` first; jobs estimated
   above `scoring.confirm_above_usd` need `--yes`. Never run paid jobs without the user's OK.
 
@@ -219,6 +223,41 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
 - Placebo check (shuffled targets): OOS IC centres at −0.01..−0.03 (sd 0.07–0.10), so small
   negative M0 ICs are noise; lifts are differences and cancel this bias.
 
+## Universe (M6, `universe_pit.py`, `universe.mode: sp500_pit`)
+- Membership: github fja05680/sp500 (MIT) pinned at `universe.fja_sha` (daily ticker lists,
+  last snapshot 2026-08-18); after that, monthly Wikipedia snapshots. CIK, name and GICS sector
+  come from monthly revisions of Wikipedia's constituents table (`data/ref/universe/`).
+  `newsfeed universe --build` refetches; `newsfeed universe` summarises.
+- Spells: (ticker, cik, start, end exclusive). A ticker's CIK on day x = latest Wikipedia
+  snapshot ≤ x, else its first snapshot. 18 tickers changed CIK (reorgs, e.g. Disney 2019).
+- Ingestion: per-CIK windows = the *ticker's* whole membership window (all its CIKs) widened
+  by `ingest_margin_before/after_days` (90/30) — immune to Wikipedia lagging a CIK change.
+  Items outside a CIK's window are skipped at backfill; coverage is recorded per window.
+- Linking: `name_linking: aliases_only` in PIT mode (filer CIK + aliases; no SEC-name body
+  matching across 650 names). Features: rows only while the ticker is a member on the
+  decision date (`build_features(member_spans=...)`).
+- `PitUniverse.as_universe()` maps each CIK to *all* tickers it ever had (FB and META); the
+  membership filter decides which ticker carries a row on a given day.
+
+## Prices (M6, `eval/prices.py`)
+- `route_prices`: SEC's current map still gives the ticker to one of its CIKs → Tradier
+  (`current`); else a current ticker of the same CIK → Tradier under that symbol (`renamed`:
+  FB→META, BK→BNY, EQR→VMRK); else Tiingo under the old ticker (`delisted`). A ticker reused
+  by an unrelated company is never fetched from Tradier under that ticker. Each route covers
+  only its membership window (+45 days); `build_panel` falls back to Tiingo when Tradier has
+  < 50% of the window's sessions (e.g. DISCA→WBD: WBD history starts 2022-04).
+- Delisted: after the last real bar, up to 25 synthetic sessions at the last close (cash).
+  Caveat: bankruptcies' final recovery may be below the last exchange trade.
+- Tiingo bars are unadjusted + `divCash`/`splitFactor`; converted to Tradier's convention
+  (split-adjusted bars and dividends, no dividend adjustment). Free tier: 50 req/hour, 1000/day,
+  500 symbols/month → `eval.tiingo_requests_per_hour: 48`. Cache: `data/ref/prices_tiingo/`.
+- Splits: Tradier `/beta/markets/fundamentals/corporate_actions`; Tiingo `splitFactor`.
+  Market cap = adj prev close × reported shares × prod(split factors with ex_date ≥
+  available_from). Before this fix (M5) pre-split caps were understated by the split ratio.
+- Each eval writes `eval-<run>-prices.csv` (source, reason, coverage, last real bar, padding).
+- Sector ETF per (ticker, date) from the monthly GICS snapshots (`gics_sector_etfs`; the first
+  snapshot also covers earlier dates). Static mode keeps `eval.sector_etfs`.
+
 ## Re-parsing
 - Items are append-only; `reparse` writes a new row per item with the current parser, copying
   `published_at`, `published_at_raw`, `first_seen_at`, `ingest_mode`, `tradable_at`,
@@ -281,3 +320,7 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
 - 2026-10-10 (M4): windows 1h/1d/5d(=168h) wall-clock; LLM aggregates exclude 'passing';
   features null outside coverage. Feature set 58e14e54d4af was built before coverage gating
   (volume_z wrong in early 2025) — superseded by 95e2118e52e1; both count as tried variants.
+- 2026-10-10 (M6): scale to the PIT S&P 500 from 2019-01-01 (fja05680/sp500 + Wikipedia);
+  keep the full entry × horizon × adjustment grid; delisted prices from Tiingo (free tier).
+- 2026-10-10 (M6): full EDGAR backfill = 651 CIKs, ~48k 8-Ks; ~5–6 SEC requests per filing at
+  8 req/s → ~15–17 h. Don't run other SEC-heavy jobs (companyfacts for eval) concurrently.

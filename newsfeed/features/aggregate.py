@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import polars as pl
@@ -216,8 +217,14 @@ def build_features(
     cik_to_tickers: dict[int, list[str]],
     src: FeatureSources,
     tickers: Sequence[str] | None = None,
+    member_spans: dict[str, list[tuple[date, date | None]]] | None = None,
 ) -> pl.DataFrame:
-    """Wide feature table: one row per (ticker, as_of); columns ``<window>_<feature>``."""
+    """Wide feature table: one row per (ticker, as_of); columns ``<window>_<feature>``.
+
+    With ``member_spans`` (ticker -> [(start, end exclusive | None)] on the decision date in New
+    York), rows are produced only while the ticker is a universe member; a ticker without
+    spans gets none. Rows are built one ticker at a time (memory stays per ticker) and
+    returned sorted by (as_of, ticker)."""
     as_of = sorted(ensure_utc(t, name="as_of") for t in as_of)
     if not as_of:
         return pl.DataFrame()
@@ -277,11 +284,23 @@ def build_features(
         }
         per_ticker[tk].update(_novelty(tk, e, src, fc, covered))
 
-    rows = []
-    for T_dt in as_of:
-        T = int(T_dt.timestamp() * _US)
-        for tk in tickers:
-            d = per_ticker[tk]
+    ny = ZoneInfo("America/New_York")
+    as_of_dates = [t.astimezone(ny).date() for t in as_of]
+    frames = []
+    for tk in tickers:
+        d = per_ticker[tk]
+        if member_spans is None:
+            ts = list(as_of)
+        else:
+            spans = member_spans.get(tk, [])
+            ts = [
+                t
+                for t, dd in zip(as_of, as_of_dates, strict=True)
+                if any(s0 <= dd and (e0 is None or dd < e0) for s0, e0 in spans)
+            ]
+        rows = []
+        for T_dt in ts:
+            T = int(T_dt.timestamp() * _US)
             row: dict[str, Any] = {"ticker": tk, "as_of": T_dt}
             for wname, hours in fc.windows_hours.items():
                 w_us = int(hours * 3600 * _US)
@@ -337,9 +356,16 @@ def build_features(
                 if not covered(tk, lo, T):  # not collected: unknown, not "no news"
                     row.update({c: None for c in row if c.startswith(p)})
             rows.append(row)
-    df = pl.DataFrame(rows, infer_schema_length=None)
-    # Fixed dtypes regardless of content: an all-null column must still be Float64, so builds
-    # over different periods have identical schemas (and compare/append cleanly).
+        if rows:
+            frames.append(_typed(pl.DataFrame(rows, infer_schema_length=None)))
+    if not frames:
+        return pl.DataFrame()
+    return pl.concat(frames, how="vertical").sort("as_of", "ticker")
+
+
+def _typed(df: pl.DataFrame) -> pl.DataFrame:
+    """Fixed dtypes regardless of content: an all-null column must still be Float64, so builds
+    over different periods have identical schemas (and compare/append cleanly)."""
     return df.with_columns(
         pl.col("as_of").dt.convert_time_zone("UTC"),
         *[

@@ -69,12 +69,33 @@ def adjusted_targets(
     fwd: pl.DataFrame,
     tickers: list[str],
     market: str,
-    sector_of: dict[str, str],
+    sector_of: dict[str, str] | pl.DataFrame,
 ) -> pl.DataFrame:
-    """Per ticker: raw, market-adjusted and sector-adjusted forward returns (long over grid)."""
+    """Per ticker: raw, market-adjusted and sector-adjusted forward returns (long over grid).
+
+    ``sector_of`` is a static ticker -> ETF map, or a point-in-time frame (ticker, valid_from,
+    etf) where the ETF on ``date`` is the latest row with valid_from <= date."""
     bench = fwd.select("date", "entry", "horizon", "symbol", "ret")
     t = fwd.filter(pl.col("symbol").is_in(tickers)).rename({"symbol": "ticker"})
-    t = t.with_columns(pl.col("ticker").replace_strict(sector_of, default=None).alias("_sector"))
+    if isinstance(sector_of, dict):
+        t = t.with_columns(
+            pl.col("ticker").replace_strict(sector_of, default=None).alias("_sector")
+        )
+    else:
+        t = (
+            t.sort("date")
+            .join_asof(
+                sector_of.select("ticker", "valid_from", pl.col("etf").alias("_sector")).sort(
+                    "valid_from"
+                ),
+                left_on="date",
+                right_on="valid_from",
+                by="ticker",
+                strategy="backward",
+                check_sortedness=False,  # both sides sorted globally on the asof key
+            )
+            .drop("valid_from")
+        )
     mkt = bench.filter(pl.col("symbol") == market).select(
         "date", "entry", "horizon", pl.col("ret").alias("_mkt")
     )

@@ -19,7 +19,14 @@ from newsfeed.collect import Collector, check_states
 from newsfeed.config import AppConfig, load_config, load_secrets
 from newsfeed.derive import derive as run_derive
 from newsfeed.eval.caps import load_shares, market_caps
-from newsfeed.eval.prices import CachedPrices, TradierPrices, price_panel
+from newsfeed.eval.prices import (
+    CachedPrices,
+    PriceRoute,
+    TiingoPrices,
+    TradierPrices,
+    build_panel,
+    route_prices,
+)
 from newsfeed.eval.report import (
     DEFAULT_UNIVARIATE,
     EvalInputs,
@@ -51,6 +58,7 @@ from newsfeed.scoring.runner import ScoringJob, estimate_cost, plan_targets
 from newsfeed.storage import Store
 from newsfeed.tickers import TickerLinker, TickerMap, Universe, load_ticker_map
 from newsfeed.timeutil import MarketCalendar, get_calendar, utcnow
+from newsfeed.universe_pit import PitUniverse
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("newsfeed")
@@ -89,11 +97,13 @@ class Context:
         self.calendar: MarketCalendar = get_calendar(cfg.market.calendar, cfg.market.calendar_start)
         self._http: HttpClient | None = None
         self._tmap: TickerMap | None = None
-        subset = [t.upper() for t in _split(tickers)]
-        unknown = set(subset) - set(cfg.universe.tickers)
-        if unknown:
-            raise typer.BadParameter(f"not in configured universe: {sorted(unknown)}")
-        self.ingest_tickers = subset or cfg.universe.tickers
+        self._pit: PitUniverse | None = None
+        self.subset = [t.upper() for t in _split(tickers)]
+        if cfg.universe.mode == "static":
+            unknown = set(self.subset) - set(cfg.universe.tickers)
+            if unknown:
+                raise typer.BadParameter(f"not in configured universe: {sorted(unknown)}")
+        self.ingest_tickers = self.subset or cfg.universe.tickers
 
     def http(self) -> HttpClient:
         """SEC client, created on first use (fixture-only runs never need a User-Agent)."""
@@ -117,13 +127,51 @@ class Context:
             )
         return self._tmap
 
+    @property
+    def pit(self) -> PitUniverse:
+        if self._pit is None:
+            d = self.cfg.universe.pit_dir
+            if not (d / "sp500_members.parquet").exists():
+                raise typer.BadParameter(f"no PIT universe in {d}; run `newsfeed universe build`")
+            self._pit = PitUniverse.load(d)
+        return self._pit
+
     def universe(self, full: bool = False) -> Universe:
+        if self.cfg.universe.mode == "sp500_pit":
+            u = self.pit.as_universe(None if full or not self.subset else self.subset)
+            if not u.cik_to_tickers:
+                raise typer.BadParameter(f"none of {self.subset} were ever S&P 500 members")
+            return u
         return Universe.build(self.cfg.universe.tickers if full else self.ingest_tickers, self.tmap)
+
+    def titles(self, u: Universe) -> dict[int, str]:
+        """Company names by CIK: PIT snapshots (include delisted firms) or SEC's current map."""
+        if self.cfg.universe.mode == "sp500_pit":
+            t = self.pit.titles()
+            return {c: t.get(c, "") for c in u.ciks}
+        return {c: self.tmap.cik_to_titles.get(c, "") for c in u.ciks}
 
     def linker(self) -> TickerLinker:
         u = self.universe(full=True)  # linking always uses the whole configured universe
-        titles = {c: self.tmap.cik_to_titles.get(c, "") for c in u.ciks}
+        titles = None if self.cfg.universe.name_linking == "aliases_only" else self.titles(u)
         return TickerLinker(u, self.cfg.universe.aliases, titles)
+
+    def cik_windows(
+        self, start: datetime, end: datetime
+    ) -> dict[int, tuple[datetime, datetime]] | None:
+        """sp500_pit: per-CIK ingestion windows (membership +- margins) inside [start, end)."""
+        if self.cfg.universe.mode != "sp500_pit":
+            return None
+        uc = self.cfg.universe
+        u = self.universe()
+        w = self.pit.ingest_windows(
+            start.date(), end.date(), uc.ingest_margin_before_days, uc.ingest_margin_after_days
+        )
+        return {
+            c: (_parse_day(s.isoformat()), _parse_day(e.isoformat()))
+            for c, (s, e) in w.items()
+            if c in u.cik_to_tickers
+        }
 
     def adapter(self, source: str) -> SourceAdapter:
         if source == "edgar":
@@ -164,7 +212,7 @@ class Context:
 
     def scoring_job(self, run_id: str, model: str | None, client: LLMClient | None) -> ScoringJob:
         u = self.universe(full=True)
-        titles = {c: self.tmap.cik_to_titles.get(c, "") for c in u.ciks}
+        titles = self.titles(u)
         return ScoringJob(
             self.cfg,
             self.store,
@@ -227,6 +275,10 @@ def backfill(
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         adapter = ctx.adapter(source)
+        windows = ctx.cik_windows(t0, t1) if source == "edgar" else None
+        if windows is not None:
+            adapter.cik_windows = windows
+            stats["cik_windows"] = len(windows)
         on_error = make_error_recorder(ctx.store, run_id, source, stats)
         items = adapter.backfill(t0, t1, skip=ctx.store.has_item, on_error=on_error)
         ingest(
@@ -239,11 +291,17 @@ def backfill(
             stats=stats,
         )
         stats["adapter"] = dict(getattr(adapter, "stats", {}))
-        covered = sorted({t for ts in adapter.universe.cik_to_tickers.values() for t in ts})
         lag = timedelta(seconds=cfg.timing.lag_for(source))
-        coverage.record_backfill(
-            ctx.store, source, covered, t0, t1, lag=lag, calendar=ctx.calendar, run_id=run_id
-        )
+        u = adapter.universe
+        spans = windows or {cik: (t0, t1) for cik in u.ciks}
+        covered = set()
+        for cik, (ws, we) in spans.items():
+            tks = u.tickers_for(cik)
+            covered.update(tks)
+            coverage.record_backfill(
+                ctx.store, source, tks, ws, we, lag=lag, calendar=ctx.calendar, run_id=run_id
+            )
+        covered = sorted(covered)
         stats["covered_tickers"] = covered
         if ctx._http is not None:
             stats["http_requests"] = ctx._http.request_count
@@ -601,8 +659,19 @@ def features(
         src = feature_sources(ctx)
         set_id = feature_set_id(cfg, src)
         c2t = ctx.universe(full=True).cik_to_tickers
+        spans = None
+        if cfg.universe.mode == "sp500_pit":  # rows only while the ticker is an index member
+            spans = {}
+            for r in ctx.pit.member_frame().to_dicts():
+                spans.setdefault(r["ticker"], []).append((r["start"], r["end"]))
         df = build_features(
-            ctx.store, cfg, grid, c2t, src, tickers=[t.upper() for t in _split(tickers)] or None
+            ctx.store,
+            cfg,
+            grid,
+            c2t,
+            src,
+            tickers=[t.upper() for t in _split(tickers)] or None,
+            member_spans=spans,
         )
         with ctx.store.ops() as con:
             con.execute(
@@ -627,6 +696,44 @@ def features(
         typer.echo(f"feature set {set_id}: {stats['rows']} rows ({len(grid)} as-of times)")
 
     _run("features", cfg, {"start": start, "end": end, "tickers": tickers}, body, tickers)
+
+
+@app.command("universe")
+def universe_cmd(
+    build: Annotated[
+        bool, typer.Option("--build", help="Fetch sources and (re)build tables")
+    ] = False,
+    config: ConfigOpt = None,
+) -> None:
+    """Point-in-time S&P 500 universe: build from fja05680/sp500 + Wikipedia, or summarise."""
+    cfg = load_config(config)
+    uc = cfg.universe
+    d = uc.pit_dir
+    if build:
+        from newsfeed.universe_pit import build_tables, fetch_fja, fetch_wiki_monthly
+
+        today = utcnow().date()
+        months = [
+            date(y, m, 1)
+            for y in range(uc.pit_start.year, today.year + 1)
+            for m in range(1, 13)
+            if uc.pit_start <= date(y, m, 1) <= today
+        ]
+        fja = fetch_fja(uc.fja_sha, d)
+        typer.echo(
+            f"fja05680/sp500 @ {uc.fja_sha[:12]} -> {fja.name}; fetching "
+            f"{len(months)} monthly Wikipedia snapshots (incremental)..."
+        )
+        wiki = fetch_wiki_monthly(months, d / "wiki_monthly.parquet")
+        members, sectors, stats = build_tables(fja.read_bytes(), wiki, uc.pit_start)
+        PitUniverse(members, sectors).save(d)
+        typer.echo(f"built: {stats}")
+    u = PitUniverse.load(d)
+    m = u.members
+    typer.echo(
+        f"{m['ticker'].n_unique()} tickers, {m['cik'].n_unique()} CIKs, "
+        f"{m.filter(pl.col('end').is_null()).height} current members"
+    )
 
 
 @app.command("coverage")
@@ -693,30 +800,62 @@ def eval_cmd(
                 f"been evaluated {prior_holdout} time(s) before. Each look spends its value."
             )
         dates = decision_dates(feats)
-        token = load_secrets().tradier_token
-        source = (
-            TradierPrices(token, ec.tradier_base_url, ec.tradier_requests_per_second)
-            if token
-            else None
-        )
-        prices = CachedPrices(source, cfg.paths.ref_dir / "prices")
-        end = min(dates[-1] + timedelta(days=45), utcnow().date())
-        tickers = sorted({t for ts in ctx.universe(full=True).cik_to_tickers.values() for t in ts})
-        symbols = [*tickers, ec.market_etf, *sorted(set(ec.sector_etfs.values()))]
-        panel = price_panel(prices, symbols, dates[0], end, refresh=refresh_prices)
+        secrets = load_secrets()
+        caches = {
+            "tradier": CachedPrices(
+                TradierPrices(
+                    secrets.tradier_token, ec.tradier_base_url, ec.tradier_requests_per_second
+                )
+                if secrets.tradier_token
+                else None,
+                cfg.paths.ref_dir / "prices",
+            ),
+            "tiingo": CachedPrices(
+                TiingoPrices(secrets.tiingo_token, ec.tiingo_requests_per_hour / 3600)
+                if secrets.tiingo_token
+                else None,
+                cfg.paths.ref_dir / "prices_tiingo",
+            ),
+        }
+        lo, end = dates[0], min(dates[-1] + timedelta(days=45), utcnow().date())
+        tickers = sorted(feats["ticker"].unique().to_list())
+        bench = [ec.market_etf, *sorted(set(ec.sector_etfs.values()))]
+        pit = cfg.universe.mode == "sp500_pit"
+        if pit:
+            bench += sorted(set(ec.gics_sector_etfs.values()) - set(bench))
+            members = ctx.pit.members.filter(pl.col("ticker").is_in(tickers))
+            routes = route_prices(members, ctx.tmap.ticker_to_cik, lo, end)
+        else:
+            routes = [PriceRoute(t, t, "tradier", lo, end, "", "current") for t in tickers]
+        routes += [PriceRoute(b, b, "tradier", lo, end, b, "benchmark") for b in bench]
+        # sessions = the market ETF's trading days (fetched first)
+        spy, _, _ = build_panel(routes[-len(bench) :][:1], caches, [], refresh=refresh_prices)
+        sessions = sorted(spy["date"].to_list())
+        panel, price_report, splits = build_panel(routes, caches, sessions, refresh=refresh_prices)
+        panel = panel.drop("synthetic")
         fwd = forward_returns(panel, ec.horizons, ec.entries)
-        targets = adjusted_targets(fwd, tickers, ec.market_etf, ec.sector_etfs)
+        sector_of = ctx.pit.sector_etf_frame(ec.gics_sector_etfs) if pit else ec.sector_etfs
+        targets = adjusted_targets(fwd, tickers, ec.market_etf, sector_of)
         ctl = controls(panel, ec.market_etf)
-        shares = {}
-        for cik, tks in ctx.universe(full=True).cik_to_tickers.items():
-            sh = load_shares(ctx.http(), cik, cfg.paths.ref_dir / "sec_shares")
-            shares.update({t: sh for t in tks})
+        shares: dict[str, pl.DataFrame] = {}
+        t2c = (
+            {
+                t: sorted({int(c) for c in g["cik"]})
+                for (t,), g in ctx.pit.members.filter(pl.col("ticker").is_in(tickers)).group_by(
+                    "ticker"
+                )
+            }
+            if pit
+            else {t: [c] for c, tks in ctx.universe(full=True).cik_to_tickers.items() for t in tks}
+        )
+        for t, ciks in sorted(t2c.items()):
+            hist = [load_shares(ctx.http(), c, cfg.paths.ref_dir / "sec_shares") for c in ciks]
+            shares[t] = pl.concat(hist).sort("available_from") if hist else pl.DataFrame()
         decisions = feats.select(
             "ticker",
             pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
         )
-        caps = market_caps(decisions, panel, shares)
-        sessions = sorted(panel.filter(pl.col("symbol") == ec.market_etf)["date"].to_list())
+        caps = market_caps(decisions, panel, shares, splits)
         inp = EvalInputs(feats, ctl, targets, caps, sessions)
         univariate = [f for f in DEFAULT_UNIVARIATE if f in feats.columns]
         eval_id = eval_config_id(cfg, set_id, univariate)
@@ -755,6 +894,9 @@ def eval_cmd(
         out_dir.mkdir(parents=True, exist_ok=True)
         md = render_markdown(result, meta)
         (out_dir / f"eval-{run_id}.md").write_text(md, encoding="utf-8")
+        pl.DataFrame(price_report).write_csv(out_dir / f"eval-{run_id}-prices.csv")
+        by_src = pl.DataFrame(price_report).group_by("source", "reason").len().sort("len")
+        stats["prices"] = {f"{r['source']}/{r['reason']}": r["len"] for r in by_src.to_dicts()}
         for name in ("univariate", "models", "buckets"):
             if result[name].height:
                 result[name].write_parquet(out_dir / f"eval-{run_id}-{name}.parquet")
