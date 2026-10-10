@@ -18,6 +18,17 @@ from newsfeed import coverage
 from newsfeed.collect import Collector, check_states
 from newsfeed.config import AppConfig, load_config, load_secrets
 from newsfeed.derive import derive as run_derive
+from newsfeed.eval.caps import load_shares, market_caps
+from newsfeed.eval.prices import CachedPrices, TradierPrices, price_panel
+from newsfeed.eval.report import (
+    DEFAULT_UNIVARIATE,
+    EvalInputs,
+    decision_dates,
+    eval_config_id,
+    render_markdown,
+    run_eval,
+)
+from newsfeed.eval.targets import adjusted_targets, controls, forward_returns
 from newsfeed.features.aggregate import (
     FeatureSources,
     as_of_grid,
@@ -642,15 +653,122 @@ def coverage_cmd(
                 typer.echo(f"  {tk:6s} {spans}")
 
 
-def _later(milestone: int) -> Callable[[], None]:
-    def cmd() -> None:
-        typer.echo(f"Not implemented yet (Milestone {milestone}).")
-        raise typer.Exit(2)
+@app.command("eval")
+def eval_cmd(
+    feature_set: Annotated[
+        str | None, typer.Option(help="Feature set id (default: most recently built)")
+    ] = None,
+    use_holdout: Annotated[
+        bool, typer.Option("--use-holdout", help="Evaluate on the frozen holdout (final test)")
+    ] = False,
+    refresh_prices: Annotated[bool, typer.Option(help="Re-download prices/dividends")] = False,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Rank IC and LLM incremental lift over the entry x horizon x adjustment grid."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    ec = cfg.eval
 
-    return cmd
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        store = ctx.store
+        set_id = (
+            feature_set
+            or store.ops_query(
+                "SELECT key FROM experiments WHERE kind = 'feature_set' "
+                "ORDER BY first_seen_at DESC LIMIT 1"
+            )["key"][0]
+        )
+        feats = store.features(set_id)
+        if feats.height == 0:
+            raise typer.BadParameter(f"feature set {set_id} has no rows; run `features` first")
+        feats = feats.drop("feature_set_id", "build_run_id", "built_at", strict=False)
+        prior_holdout = store.ops_query(
+            "SELECT count(*) AS n FROM experiments WHERE kind = 'eval' "
+            "AND json_extract(details, '$.holdout') = true"
+        )["n"][0]
+        if use_holdout:
+            typer.echo(
+                f"WARNING: evaluating on the frozen holdout (from {ec.holdout_start}); it has "
+                f"been evaluated {prior_holdout} time(s) before. Each look spends its value."
+            )
+        dates = decision_dates(feats)
+        token = load_secrets().tradier_token
+        source = (
+            TradierPrices(token, ec.tradier_base_url, ec.tradier_requests_per_second)
+            if token
+            else None
+        )
+        prices = CachedPrices(source, cfg.paths.ref_dir / "prices")
+        end = min(dates[-1] + timedelta(days=45), utcnow().date())
+        tickers = sorted({t for ts in ctx.universe(full=True).cik_to_tickers.values() for t in ts})
+        symbols = [*tickers, ec.market_etf, *sorted(set(ec.sector_etfs.values()))]
+        panel = price_panel(prices, symbols, dates[0], end, refresh=refresh_prices)
+        fwd = forward_returns(panel, ec.horizons, ec.entries)
+        targets = adjusted_targets(fwd, tickers, ec.market_etf, ec.sector_etfs)
+        ctl = controls(panel, ec.market_etf)
+        shares = {}
+        for cik, tks in ctx.universe(full=True).cik_to_tickers.items():
+            sh = load_shares(ctx.http(), cik, cfg.paths.ref_dir / "sec_shares")
+            shares.update({t: sh for t in tks})
+        decisions = feats.select(
+            "ticker",
+            pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
+        )
+        caps = market_caps(decisions, panel, shares)
+        sessions = sorted(panel.filter(pl.col("symbol") == ec.market_etf)["date"].to_list())
+        inp = EvalInputs(feats, ctl, targets, caps, sessions)
+        univariate = [f for f in DEFAULT_UNIVARIATE if f in feats.columns]
+        eval_id = eval_config_id(cfg, set_id, univariate)
+        result = run_eval(inp, cfg, univariate=univariate, use_holdout=use_holdout)
+        with store.ops() as con:
+            con.execute(
+                "INSERT INTO experiments VALUES ('eval', ?, ?, ?, ?)",
+                [
+                    f"{eval_id}:{run_id}",
+                    utcnow(),
+                    run_id,
+                    json.dumps(
+                        {
+                            "eval_id": eval_id,
+                            "feature_set": set_id,
+                            "holdout": use_holdout,
+                            "n_tests": result["n_tests"],
+                        }
+                    ),
+                ],
+            )
+        exp_counts = store.ops_query(
+            "SELECT kind, count(*) AS n FROM experiments GROUP BY 1 ORDER BY 1"
+        ).to_dicts()
+        meta = {
+            "run_id": run_id,
+            "feature_set_id": set_id,
+            "eval_id": eval_id,
+            "llm_model": cfg.scoring.model,
+            "prompt_hash": ctx.scoring_job(run_id, None, None).prompt_hash,
+            "holdout_start": ec.holdout_start,
+            "fdr_q": ec.fdr_q,
+            "experiments": ", ".join(f"{r['kind']}={r['n']}" for r in exp_counts),
+        }
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        md = render_markdown(result, meta)
+        (out_dir / f"eval-{run_id}.md").write_text(md, encoding="utf-8")
+        for name in ("univariate", "models", "buckets"):
+            if result[name].height:
+                result[name].write_parquet(out_dir / f"eval-{run_id}-{name}.parquet")
+        stats.update(
+            {
+                "report": str(out_dir / f"eval-{run_id}.md"),
+                "n_tests": result["n_tests"],
+                "feature_set": set_id,
+                "eval_id": eval_id,
+            }
+        )
+        typer.echo(md)
 
-
-app.command("eval", help="Evaluation (Milestone 5)")(_later(5))
+    _run("eval", cfg, {"feature_set": feature_set, "use_holdout": use_holdout}, body)
 
 
 if __name__ == "__main__":

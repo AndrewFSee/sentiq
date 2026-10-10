@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -219,6 +220,51 @@ class FeaturesConfig(_Strict):
         return v
 
 
+class CVConfig(_Strict):
+    mode: Literal["walk_forward", "blocked"] = "walk_forward"
+    n_folds: int = Field(5, ge=2)
+    embargo_sessions: int = Field(5, ge=0)  # gap after each test block (blocked mode)
+    min_train_sessions: int = Field(60, ge=1)  # walk-forward: first fold needs this history
+
+
+class ModelsConfig(_Strict):
+    ridge_alpha: float = Field(10.0, gt=0)
+    lgbm: dict[str, float | int] = Field(
+        default_factory=lambda: {
+            "n_estimators": 200,
+            "learning_rate": 0.03,
+            "num_leaves": 7,
+            "min_child_samples": 20,
+            "subsample": 0.8,
+            "subsample_freq": 1,
+            "colsample_bytree": 0.8,
+            "random_state": 7,
+        }
+    )
+
+
+class EvalConfig(_Strict):
+    tradier_base_url: str = "https://api.tradier.com"
+    tradier_requests_per_second: float = Field(1.5, gt=0)  # account limit is 120/min
+    market_etf: str = "SPY"
+    sector_etfs: dict[str, str] = Field(default_factory=dict)  # ticker -> SPDR sector ETF
+    horizons: list[int] = Field(default_factory=lambda: [1, 2, 5, 10, 20])  # sessions
+    entries: list[Literal["close", "next_open"]] = Field(
+        default_factory=lambda: ["close", "next_open"]
+    )
+    adjustments: list[Literal["market", "sector"]] = Field(
+        default_factory=lambda: ["market", "sector"]
+    )
+    holdout_start: date  # data on/after this date is frozen; eval refuses it without a flag
+    sample: Literal["news", "all"] = "news"  # news = ticker-days with >= 1 story in the window
+    sample_window: str = "1d"
+    cv: CVConfig = Field(default_factory=CVConfig)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
+    fdr_q: float = Field(0.10, gt=0, lt=1)  # Benjamini-Hochberg level across the grid
+    bootstrap_reps: int = Field(1000, ge=100)
+    seed: int = 7
+
+
 class Secrets(BaseSettings):
     """Read from environment / .env. Never logged, never hashed into config_hash."""
 
@@ -253,6 +299,7 @@ class AppConfig(_Strict):
     dedupe: DedupeConfig = Field(default_factory=DedupeConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    eval: EvalConfig
     pricing: PricingConfig
 
     def config_hash(self) -> str:

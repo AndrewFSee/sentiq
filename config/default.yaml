@@ -170,3 +170,24 @@ features:
   novelty_sim_threshold: 0.85
   finbert: false                             # true needs `uv sync --extra finbert` (~2 GB)
   finbert_model: ProsusAI/finbert
+
+eval:
+  tradier_base_url: https://api.tradier.com      # TRADIER_TOKEN / TRADIER_API_TOKEN in .env
+  tradier_requests_per_second: 1.5
+  market_etf: SPY
+  sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
+                JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}
+  horizons: [1, 2, 5, 10, 20]       # trading sessions after entry
+  entries: [close, next_open]       # decision at session close - 10 min (= NYSE MOC cutoff)
+  adjustments: [market, sector]     # forward return minus SPY / the sector ETF (same window)
+  holdout_start: "2026-07-01"       # frozen: eval refuses data from here on without --use-holdout
+  sample: news                      # evaluate ticker-days with >= 1 story in sample_window
+  sample_window: 1d
+  cv: {mode: walk_forward, n_folds: 5, embargo_sessions: 5, min_train_sessions: 60}
+  models:
+    ridge_alpha: 10.0
+    lgbm: {n_estimators: 200, learning_rate: 0.03, num_leaves: 7, min_child_samples: 20,
+           subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.8, random_state: 7}
+  fdr_q: 0.10                       # Benjamini-Hochberg across every cell of the grid
+  bootstrap_reps: 1000
+  seed: 7

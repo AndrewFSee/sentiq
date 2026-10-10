@@ -11,7 +11,9 @@ speed and polish.** It is not a trading system.
   heartbeat/outage detection, news adapter on fixtures, ticker linking, dedupe/stories,
   multi-process safety). **M3 done** (LLM scoring: structured outputs, cache, batches, cost,
   masking/replicate/validation studies, re-parse). **M4 done** (coverage tracking, LM/FinBERT
-  baselines, point-in-time features with frozen-store causality tests). Next: M5 eval.
+  baselines, embeddings + novelty, point-in-time features with frozen-store causality tests).
+  **M5 done** (Tradier prices, total-return targets over an entry x horizon x adjustment grid,
+  PIT controls, purged CV, frozen holdout, rank IC + incremental lift, bootstrap + BH).
 - Every command that calls the model costs money: run `score --dry-run` first; jobs estimated
   above `scoring.confirm_above_usd` need `--yes`. Never run paid jobs without the user's OK.
 
@@ -35,6 +37,8 @@ uv run newsfeed agreement --compare masked|model|replicates
 uv run newsfeed cost                      # spend per run from the usage ledger
 uv run newsfeed coverage [--rebuild-from-runs]   # collected ranges per source/ticker
 uv run newsfeed features --start 2025-01-01 --end 2026-10-01   # build + store a feature set
+uv run newsfeed eval [--feature-set ID]   # pre-holdout grid report -> data/reports/
+uv run newsfeed eval --use-holdout        # FINAL test on the frozen holdout (each look counts)
 uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (needs network)
 ```
 
@@ -185,6 +189,36 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   keyed by (item_id, text_hash, method, method_version). LM CSV lives in `data/ref/lm/`
   (free for academic use, not committed); tests use a 34-word excerpt fixture.
 
+## Embeddings (`features/embeddings.py`)
+- fastembed BAAI/bge-small-en-v1.5 (local ONNX, cached in `data/ref/models`), vectors for
+  story founders in `derive`. Novelty = 1 − max cosine sim to the ticker's strictly earlier
+  stories within 30 days (null if the look-back isn't covered). Tests use `HashEmbedder`.
+
+## Evaluation (`eval/`)
+- Prices (`eval/prices.py`): Tradier daily bars are split-adjusted, NOT dividend-adjusted;
+  dividends endpoint amounts are split-adjusted too → total returns add dividends on ex-dates.
+  Intraday history is only 20–40 sessions, so only daily horizons are testable. Cache in
+  `data/ref/prices/`. Token env var: TRADIER_TOKEN or TRADIER_API_TOKEN.
+- Targets (`eval/targets.py`): decision 15:50 ET (= feature as-of = NYSE MOC cutoff). Entry
+  `close`: close[i] → close[i+h]; `next_open`: open[i+1] → open[i+1+h]. Dividends count if held
+  over the ex-date. Adjusted = minus SPY / sector ETF over the same window. `label_end` = exit.
+- Controls use only closes/volumes through i−1 plus today's open (gap); intraday move to 15:50
+  is not observable with daily bars (not a leak; just an uncontrolled factor).
+- Size buckets: PIT market cap = SEC shares (filed date + 1 day) × previous close; terciles
+  within the universe; Berkshire = unknown (custom share tag).
+- CV (`eval/cv.py`): walk-forward (train labels end before the test block) or blocked with
+  purge + embargo. Holdout: rows whose decision or label end ≥ `eval.holdout_start` are dropped
+  unless `--use-holdout`; holdout looks are counted in `experiments` and warned about.
+- Report (`eval/report.py`): univariate pooled rank IC (+ by size bucket) and OOS ridge/LGBM
+  on M0 controls / M1 + non-LLM news / M2 + LLM; lift = IC(M2) − IC(M1). Inference: circular
+  block bootstrap over *calendar* sessions with block = label length (h+1 close, h+2 open);
+  BH at `fdr_q` across all tests of the run. Every eval run is an `experiments` row.
+- Bootstrap gotcha (fixed 2026-10-10): blocks over *sampled* news days + non-circular blocks
+  made 20-day CIs narrower than the naive SE and produced 5 spurious "discoveries" in the first
+  run. `test_block_bootstrap_matches_analytic_se_for_overlapping_labels` guards it.
+- Placebo check (shuffled targets): OOS IC centres at −0.01..−0.03 (sd 0.07–0.10), so small
+  negative M0 ICs are noise; lifts are differences and cancel this bias.
+
 ## Re-parsing
 - Items are append-only; `reparse` writes a new row per item with the current parser, copying
   `published_at`, `published_at_raw`, `first_seen_at`, `ingest_mode`, `tradable_at`,
@@ -238,6 +272,12 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
 - 2026-10-10 (M3 studies, n = 150/200/60): re-draw noise floor sentiment r 0.989 (MAE 0.020);
   masked vs unmasked r 0.939 (MAE 0.053, mean diff 0.000); Sonnet vs Haiku r 0.915 (Haiku
   +0.04 more positive). Novelty is the noisiest field (kappa 0.69 re-draw, 0.18 vs Sonnet).
+- 2026-10-10 (M5): grid = entries {close, next_open} × horizons {1,2,5,10,20} sessions ×
+  {market, sector}-adjusted; holdout from 2026-07-01 (never evaluated yet); sample = news days.
+- 2026-10-10 (M5, eval 2b0709, pre-holdout, ~175 OOS rows/cell, ~120 decision days): no
+  univariate IC or LLM lift survives BH (q 0.10) out of 200 tests. LLM sentiment IC is negative
+  at 1–2 day horizons (≈ −0.2, reversal after the move) but not significant. Power is the
+  binding constraint: 10 tickers, 8-Ks only.
 - 2026-10-10 (M4): windows 1h/1d/5d(=168h) wall-clock; LLM aggregates exclude 'passing';
   features null outside coverage. Feature set 58e14e54d4af was built before coverage gating
   (volume_z wrong in early 2025) — superseded by 95e2118e52e1; both count as tried variants.

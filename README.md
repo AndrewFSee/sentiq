@@ -3,8 +3,8 @@
 Turns financial news and SEC filings into **point-in-time-correct**, LLM-scored features, to test
 whether news carries incremental tradable signal. A research tool, not a trading system.
 
-Status: **Milestones 1–4** done (ingestion, live collection, dedupe, ticker linking, LLM
-scoring, baselines, point-in-time features). See `CLAUDE.md` for conventions and the PIT rules.
+Status: **Milestones 1–5** done (ingestion, live collection, dedupe, ticker linking, LLM
+scoring, baselines, embeddings, point-in-time features, evaluation). See `CLAUDE.md` for conventions and the PIT rules.
 
 ## Setup
 ```bash
@@ -133,8 +133,26 @@ the same aggregates for `lm_tone_*` (plus `finbert_*` when enabled). Windows not
 collected data are null, not zero. Read a stored set with
 `Store(...).features("<feature_set_id>")`.
 
-### 8. Eval (M5)
-Not yet implemented; `newsfeed eval` currently exits with a notice.
+### 8. Evaluation
+Needs `TRADIER_TOKEN` (or `TRADIER_API_TOKEN`) in `.env` for daily prices and dividends.
+
+```bash
+uv run newsfeed eval                         # latest feature set, pre-holdout data
+uv run newsfeed eval --feature-set <id>      # a specific feature set
+uv run newsfeed eval --use-holdout           # final test on the frozen holdout (counted)
+```
+The report (`data/reports/eval-<run>.md`, plus Parquet tables) covers every cell of the grid
+entry {same-day close, next open} × horizon {1, 2, 5, 10, 20 sessions} × {market, sector}
+adjustment:
+- **univariate rank IC** of key features (LLM sentiment, LM tone, volume z, novelty), also by
+  size bucket;
+- **incremental lift**: out-of-sample rank IC of ridge / LightGBM models with controls only
+  (M0), + non-LLM news features (M1), + LLM features (M2); lift = M2 − M1;
+- block-bootstrap confidence intervals and p-values, Benjamini-Hochberg across all tests, and
+  a count of every prompt, feature set and eval configuration tried so far.
+
+The holdout (`eval.holdout_start`, default 2026-07-01) is excluded unless `--use-holdout`:
+use it once, at the end.
 
 ## Inspecting
 ```bash
@@ -151,6 +169,9 @@ data/newsfeed.duckdb                                      # runs, failures, aler
 data/lake/scores/part-*.parquet                           # LLM scores (views: scores, scores_all)
 data/lake/baselines/part-*.parquet                        # LM / FinBERT scores (view: baselines)
 data/lake/features/set=<feature_set_id>/part-*.parquet    # built feature tables
+data/lake/embeddings/part-*.parquet                       # story embeddings
+data/reports/eval-<run>.md                                # evaluation reports
+data/ref/prices/ data/ref/sec_shares/ data/ref/models/     # cached prices, SEC shares, model
 data/state/                                               # collector state, heartbeat, locks
 data/ref/company_tickers.json                             # cached SEC ticker map
 ```

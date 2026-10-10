@@ -611,7 +611,8 @@ class Store:
             return pl.DataFrame()
         glob = (self.features_dir / f"set={feature_set_id}" / "*.parquet").as_posix()
         return self.q.execute(
-            f"""SELECT * FROM read_parquet('{glob}', union_by_name = true)
+            f"""SELECT * FROM read_parquet('{glob}', union_by_name = true,
+                                             hive_partitioning = false)
                 QUALIFY row_number() OVER (PARTITION BY ticker, as_of ORDER BY built_at DESC) = 1
                 ORDER BY as_of, ticker"""
         ).pl()
