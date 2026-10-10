@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import quote
 
 import polars as pl
 
@@ -62,6 +64,17 @@ def vendor_symbol(ticker: str) -> str:
     return ticker.replace("-", ".")  # BRK-B -> BRK.B
 
 
+def _records(tab: object) -> list[dict]:
+    """Tradier fundamentals tables come as a list, a single record, or a dict keyed by date."""
+    if isinstance(tab, list):
+        return [d for d in tab if isinstance(d, dict)]
+    if isinstance(tab, dict):
+        if "ex_date" in tab:
+            return [tab]
+        return [d for d in tab.values() if isinstance(d, dict)]
+    return []
+
+
 class TradierPrices:
     def __init__(self, token: str, base_url: str, rate_per_sec: float) -> None:
         self.base = base_url.rstrip("/")
@@ -92,7 +105,7 @@ class TradierPrices:
         rows = []
         for req in self.http.get(url).json() or []:
             for res in req.get("results") or []:
-                for d in (res.get("tables") or {}).get("cash_dividends") or []:
+                for d in _records((res.get("tables") or {}).get("cash_dividends")):
                     if d.get("ex_date") and d.get("cash_amount") is not None:
                         rows.append({"ex_date": d["ex_date"], "amount": float(d["cash_amount"])})
         if not rows:
@@ -109,9 +122,8 @@ class TradierPrices:
         rows = []
         for req in self.http.get(url + vendor_symbol(symbol)).json() or []:
             for res in req.get("results") or []:
-                tab = (res.get("tables") or {}).get("stock_splits") or {}
-                for d in tab.values() if isinstance(tab, dict) else tab:
-                    if not isinstance(d, dict) or not d.get("ex_date"):
+                for d in _records((res.get("tables") or {}).get("stock_splits")):
+                    if not d.get("ex_date"):
                         continue
                     frm, to = float(d.get("split_from") or 0), float(d.get("split_to") or 0)
                     if frm > 0 and to > 0:
@@ -259,6 +271,15 @@ class TiingoPrices:
         )
         return bars
 
+    def search(self, query: str) -> list[dict]:
+        """Tiingo ticker search (finds securities filed under a later ticker)."""
+        url = f"https://api.tiingo.com/tiingo/utilities/search?query={quote(query)}"
+        try:
+            return [r for r in self.http.get(url).json() or [] if isinstance(r, dict)]
+        except Exception as exc:
+            log.info("tiingo: search %r failed (%r)", query, exc)
+            return []
+
     def dividends(self, symbol: str) -> pl.DataFrame:
         if symbol not in self._divs:
             self.daily_bars(symbol, date(2000, 1, 1), utcnow().date())
@@ -280,7 +301,8 @@ class PriceRoute:
     start: date
     end: date
     name: str  # company name (membership table), for sanity reports
-    reason: str  # current | renamed | delisted | benchmark
+    reason: str  # current | renamed | delisted | override | benchmark
+    alts: tuple[str, ...] = ()  # other tickers of the same CIK(s), tried on Tiingo
 
 
 def route_prices(
@@ -310,6 +332,9 @@ def route_prices(
     c2t: dict[int, list[str]] = {}
     for t, c in current_t2c.items():
         c2t.setdefault(c, []).append(t)
+    sib: dict[int, set[str]] = {}  # CIK -> every member ticker it had
+    for c, tk in members.select("cik", "ticker").iter_rows():
+        sib.setdefault(int(c), set()).add(tk)
     far = date(9999, 1, 1)
     g = (
         members.with_columns(pl.col("end").fill_null(far))
@@ -338,10 +363,12 @@ def route_prices(
             routes.append(PriceRoute(t, t, "tradier", s, e, r["name"], "current"))
             continue
         succ = sorted(x for c in ciks for x in c2t.get(c, []))
+        alts = tuple(sorted({x for c in ciks for x in sib.get(c, set())} - {t}))
+        alts += tuple(x for x in succ if x not in alts)
         if succ:
-            routes.append(PriceRoute(t, succ[0], "tradier", s, e, r["name"], "renamed"))
+            routes.append(PriceRoute(t, succ[0], "tradier", s, e, r["name"], "renamed", alts))
         else:
-            routes.append(PriceRoute(t, t, "tiingo", s, e, r["name"], "delisted"))
+            routes.append(PriceRoute(t, t, "tiingo", s, e, r["name"], "delisted", alts))
     return routes
 
 
@@ -366,6 +393,13 @@ def build_panel(
             alt = price_panel(caches["tiingo"], [rt.ticker], rt.start, rt.end, refresh=refresh)
             if alt.height > p.height:
                 p, used, sym = alt, "tiingo", rt.ticker
+        if used == "tiingo" and n_exp and not _starts_ok(p, rt, sessions):
+            for cand in _tiingo_candidates(rt, caches["tiingo"], exclude={sym}):
+                alt = price_panel(caches["tiingo"], [cand], rt.start, rt.end, refresh=refresh)
+                if _starts_ok(alt, rt, sessions) and alt.height > p.height:
+                    log.info("prices: %s (%s) via Tiingo %s", rt.ticker, rt.name, cand)
+                    p, sym = alt, cand
+                    break
         p = p.with_columns(pl.lit(rt.ticker).alias("symbol"), pl.lit(False).alias("synthetic"))
         if p.height:
             splits[rt.ticker] = caches[used].splits(sym, refresh=refresh)
@@ -380,7 +414,13 @@ def build_panel(
                 padded = p.height - before
         if p.height:
             frames.append(p)
-        cov = p.filter(~pl.col("synthetic")).height / n_exp if p.height and n_exp else 0.0
+        real = p.filter(~pl.col("synthetic"))
+        # density of real bars from the window start to the last real bar (a delisted name
+        # is not "missing" after it stopped trading)
+        last_real = real["date"].max() if real.height else None
+        span = sum(1 for d in sessions if rt.start <= d <= last_real) if last_real else 0
+        cov = real.height / span if span else 0.0
+        starts = _starts_ok(real, rt, sessions)
         report.append(
             {
                 "ticker": rt.ticker,
@@ -391,15 +431,53 @@ def build_panel(
                 "start": rt.start,
                 "end": rt.end,
                 "coverage": round(cov, 3),
+                "starts_ok": starts,
                 "first": p["date"].min() if p.height else None,
                 "last_real": p.filter(~pl.col("synthetic"))["date"].max() if p.height else None,
                 "padded": padded,
             }
         )
-        if n_exp and cov < min_coverage:
-            log.warning("prices: %s (%s) only %.0f%% of sessions", rt.ticker, rt.name, cov * 100)
+        if n_exp and (not starts or cov < 0.9):
+            log.warning(
+                "prices: %s (%s) via %s:%s starts_ok=%s density=%.0f%%",
+                rt.ticker,
+                rt.name,
+                used,
+                sym,
+                starts,
+                cov * 100,
+            )
     panel = pl.concat(frames).sort("symbol", "date") if frames else pl.DataFrame()
     return panel, report, splits
+
+
+_NAME_STOP = {"inc", "corp", "corporation", "co", "company", "the", "ltd", "plc", "group"}
+
+
+def _starts_ok(p: pl.DataFrame, rt: PriceRoute, sessions: list[date], slack: int = 10) -> bool:
+    """Bars begin within ``slack`` days of the window's first session."""
+    first = next((d for d in sessions if d >= rt.start), None)
+    return bool(p.height) and first is not None and p["date"].min() <= first + timedelta(slack)
+
+
+def _tiingo_candidates(rt: PriceRoute, cache: CachedPrices, exclude: set[str]) -> list[str]:
+    """Same-CIK tickers first (same entity), then Tiingo name-search hits whose name contains
+    the first significant word of ours (shortest ticker first: common before preferreds)."""
+    out = [a for a in rt.alts if a not in exclude]
+    src = cache.source
+    if isinstance(src, TiingoPrices) and rt.name:
+        words = [w for w in re.findall(r"[a-z0-9&]+", rt.name.lower()) if w not in _NAME_STOP]
+        if words:
+            hits = src.search(" ".join(words[:3]))
+            ok = {
+                str(h["ticker"]).upper()
+                for h in hits
+                if h.get("ticker")
+                and words[0] in str(h.get("name", "")).lower()
+                and h.get("assetType", "Stock") == "Stock"
+            }
+            out += sorted(ok - exclude - set(out), key=lambda t: (len(t), t))[:3]
+    return out
 
 
 def pad_delisted(

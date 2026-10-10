@@ -271,3 +271,36 @@ def test_route_price_overrides():
     )
     gone = next(r for r in routes if r.ticker == "GONE")
     assert (gone.source, gone.fetch_symbol, gone.reason) == ("tiingo", "GONEQ", "override")
+
+
+def test_tiingo_falls_back_to_same_cik_ticker(tmp_path):
+    days = weekdays(date(2021, 1, 4), 30)
+    tiingo = MemSource({"NEWT": bars(days, [7.0] * 30)})  # filed under the later ticker
+    caches = {"tiingo": CachedPrices(tiingo, tmp_path)}
+    rt = PriceRoute("OLDT", "OLDT", "tiingo", days[0], days[-1], "Oldt Co", "delisted", ("NEWT",))
+    panel, report, _ = build_panel([rt], caches, days)
+    assert report[0]["fetch_symbol"] == "NEWT" and report[0]["starts_ok"]
+    assert panel["symbol"].unique().to_list() == ["OLDT"] and panel.height == 30
+    # a candidate that does not reach back to the window start is rejected
+    late = MemSource({"NEWT": bars(days[20:], [7.0] * 10)})
+    _, report, _ = build_panel([rt], {"tiingo": CachedPrices(late, tmp_path / "l")}, days)
+    assert report[0]["fetch_symbol"] == "OLDT" and not report[0]["starts_ok"]
+
+
+def test_tradier_single_record_tables():
+    payload = [
+        {
+            "results": [
+                {
+                    "tables": {
+                        "cash_dividends": {"ex_date": "2021-03-01", "cash_amount": 0.5},
+                        "stock_splits": {"ex_date": "2021-06-01", "split_from": 1, "split_to": 2},
+                    }
+                }
+            ]
+        }
+    ]
+    src = TradierPrices("tok", "https://api.tradier.test", 100)
+    src.http = mock_http(lambda req: httpx.Response(200, json=payload))
+    assert src.dividends("X").rows() == [(date(2021, 3, 1), 0.5)]
+    assert src.splits("X").rows() == [(date(2021, 6, 1), 2.0)]
