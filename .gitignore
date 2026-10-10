@@ -1,0 +1,12 @@
+# secrets
+.env
+# data (lake, raw docs, duckdb) -- reproducible from sources
+data/
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/

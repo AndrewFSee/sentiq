@@ -1,0 +1,242 @@
+"""Configuration: YAML file for everything tunable, .env for secrets.
+
+All models use ``extra="forbid"`` so a typo in the YAML fails loudly instead of silently
+falling back to a default.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "default.yaml"
+
+
+class _Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class PathsConfig(_Strict):
+    data_dir: Path
+    lake_dir: Path
+    raw_dir: Path
+    db_path: Path
+    ref_dir: Path
+
+    def resolved(self, root: Path) -> PathsConfig:
+        def fix(p: Path) -> Path:
+            return p if p.is_absolute() else root / p
+
+        return PathsConfig(**{k: fix(v) for k, v in self.model_dump().items()})
+
+
+class UniverseConfig(_Strict):
+    tickers: list[str]
+    # Company-name aliases for text linking, matched case-sensitively on word boundaries.
+    # A cleaned SEC company name is added automatically.
+    aliases: dict[str, list[str]] = Field(default_factory=dict)
+    # Extra identifying terms replaced in masked scoring (leakage check): product names,
+    # people (executives) and places (HQ towns). Matched case-sensitively on word boundaries.
+    products: dict[str, list[str]] = Field(default_factory=dict)
+    people: dict[str, list[str]] = Field(default_factory=dict)
+    places: dict[str, list[str]] = Field(default_factory=dict)
+
+    @field_validator("tickers")
+    @classmethod
+    def _upper(cls, v: list[str]) -> list[str]:
+        out = [t.strip().upper() for t in v if t.strip()]
+        if len(set(out)) != len(out):
+            raise ValueError("duplicate tickers in universe")
+        return out
+
+
+class MarketConfig(_Strict):
+    calendar: str = "XNYS"
+    calendar_start: str = "2000-01-01"
+
+
+class TimingConfig(_Strict):
+    backfill_lag_seconds: dict[str, int]
+
+    def lag_for(self, source: str) -> int:
+        if source not in self.backfill_lag_seconds:
+            raise KeyError(f"no backfill_lag_seconds configured for source {source!r}")
+        return self.backfill_lag_seconds[source]
+
+
+class EdgarConfig(_Strict):
+    forms: list[str] = Field(default_factory=lambda: ["8-K", "8-K/A"])
+    max_requests_per_second: float = Field(8.0, gt=0, le=10)
+    timeout_seconds: float = 30.0
+    max_retries: int = 5
+    submissions_base_url: str = "https://data.sec.gov/submissions"
+    archives_base_url: str = "https://www.sec.gov/Archives/edgar/data"
+    ticker_map_url: str = "https://www.sec.gov/files/company_tickers.json"
+    exhibit_type_prefixes: list[str] = Field(default_factory=lambda: ["EX-99"])
+    max_tokens: int = Field(6000, gt=0)
+    chars_per_token: float = Field(4.0, gt=0)
+    flush_every: int = Field(25, gt=0)
+    # live polling via EDGAR's "latest filings" Atom feed (all companies, newest first)
+    current_feed_url: str = (
+        "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K"
+        "&company=&dateb=&owner=include&output=atom"
+    )
+    current_feed_page_size: int = Field(100, gt=0, le=100)
+    current_feed_max_pages: int = Field(5, gt=0)
+    poll_lookback_hours: float = Field(48, gt=0)  # entries older than this are ignored by poll
+    catch_up_every_minutes: float = Field(60, gt=0)  # per-CIK submissions sweep (missed entries)
+    silence_alert_minutes: float = Field(45, gt=0)  # market-open minutes w/o feed activity
+
+
+class NewsApiConfig(_Strict):
+    vendor: Literal["fixture"] = "fixture"  # real vendors plug in here (none licensed yet)
+    fixture_path: Path = Path("tests/fixtures/news/articles.jsonl")  # relative to project root
+    page_size: int = Field(100, gt=0)
+    poll_overlap_minutes: float = Field(15, ge=0)  # re-request this much before the watermark
+    poll_lookback_hours: float = Field(24, gt=0)  # first poll / catch-up window
+    catch_up_every_minutes: float = Field(60, gt=0)
+    filter_to_universe: bool = True  # drop articles whose vendor tickers miss the universe
+    max_tokens: int = Field(3000, gt=0)
+    chars_per_token: float = Field(4.0, gt=0)
+    flush_every: int = Field(100, gt=0)
+    silence_alert_minutes: float = Field(30, gt=0)
+
+
+class SourcesConfig(_Strict):
+    edgar: EdgarConfig = Field(default_factory=EdgarConfig)
+    news_api: NewsApiConfig = Field(default_factory=NewsApiConfig)
+
+
+class CollectConfig(_Strict):
+    interval_seconds: float = Field(60, gt=0)
+    sources: list[str] = Field(default_factory=lambda: ["edgar"])
+    max_consecutive_failures: int = Field(3, gt=0)  # alert threshold
+    stalled_after_intervals: float = Field(3, gt=1)  # heartbeat older than N intervals = stalled
+    realert_minutes: float = Field(60, gt=0)  # repeat an ongoing alert at most this often
+
+
+class DedupeConfig(_Strict):
+    near_dup_threshold: float = Field(0.8, gt=0, le=1)  # estimated Jaccard of word shingles
+    num_perm: int = Field(128, gt=0)
+    shingle_words: int = Field(5, gt=0)
+    max_chars: int = Field(5000, gt=0)  # of title + body used for near-dup detection
+    window_hours: float = Field(72, gt=0)  # exact/near matches only within this window
+    require_ticker_overlap: bool = True  # when both items have tickers
+    seed: int = 1
+
+
+class LinkPolicy(_Strict):
+    """Which ticker links get an LLM score (user decision, M3)."""
+
+    methods: list[str] = Field(
+        default_factory=lambda: ["source", "exchange_tag", "cashtag", "name_title"]
+    )
+    name_body_min_mentions: int = Field(2, ge=1)  # body-only name links need >= this many
+
+
+class PriceCard(_Strict):
+    """USD per million tokens."""
+
+    input: float
+    output: float
+    cache_write_5m: float
+    cache_read: float
+
+
+class ModelPricing(_Strict):
+    standard: PriceCard
+    long: PriceCard | None = None  # prompts above long_threshold_tokens (Haiku 5.5)
+    long_threshold_tokens: int | None = None
+
+
+class PricingConfig(_Strict):
+    as_of: str  # date the table was checked against Anthropic's pricing page
+    batch_discount: float = Field(0.5, gt=0, le=1)  # stacks with cache multipliers
+    models: dict[str, ModelPricing] = Field(default_factory=dict)
+
+
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
+
+
+class ScoringConfig(_Strict):
+    model: str = "claude-haiku-5-5"
+    validation_model: str = "claude-sonnet-5-5"
+    prompt_version: str = "score_v1"
+    effort: Effort = "low"
+    thinking: Literal["adaptive", "disabled"] = "adaptive"
+    max_tokens: int = Field(2048, gt=0)  # includes thinking tokens
+    link_policy: LinkPolicy = Field(default_factory=LinkPolicy)
+    founders_only: bool = True  # score each story once, on its first appearance
+    live_concurrency: int = Field(4, ge=1)
+    batch_max_requests: int = Field(10_000, ge=1, le=100_000)
+    batch_poll_seconds: float = Field(60, gt=0)
+    dry_run_sample: int = Field(25, ge=1)  # requests token-counted to estimate a job
+    est_output_tokens: int = Field(300, gt=0)  # used until the ledger has real averages
+    confirm_above_usd: float = Field(1.0, ge=0)  # jobs estimated above this need --yes
+    live_in_collect: bool = False  # score new story founders inside the collect loop
+    live_lookback_hours: float = Field(48, gt=0)
+
+
+class Secrets(BaseSettings):
+    """Read from environment / .env. Never logged, never hashed into config_hash."""
+
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_ROOT / ".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    sec_user_agent: str | None = None
+    anthropic_api_key: str | None = None
+    tradier_token: str | None = None
+
+    def require_sec_user_agent(self) -> str:
+        ua = (self.sec_user_agent or "").strip()
+        # SEC asks for "Company/Name contact@domain"; insist on at least an email-like token.
+        if not ua or "@" not in ua:
+            raise RuntimeError(
+                "SEC_USER_AGENT is not set (or has no contact email). Add e.g. "
+                "'SEC_USER_AGENT=\"YourOrg research you@example.edu\"' to .env"
+            )
+        return ua
+
+
+class AppConfig(_Strict):
+    paths: PathsConfig
+    universe: UniverseConfig
+    market: MarketConfig = Field(default_factory=MarketConfig)
+    timing: TimingConfig
+    sources: SourcesConfig = Field(default_factory=SourcesConfig)
+    collect: CollectConfig = Field(default_factory=CollectConfig)
+    dedupe: DedupeConfig = Field(default_factory=DedupeConfig)
+    scoring: ScoringConfig = Field(default_factory=ScoringConfig)
+    pricing: PricingConfig
+
+    def config_hash(self) -> str:
+        """Stable hash of the (non-secret, machine-independent) config, recorded on every run."""
+        blob = json.dumps(self.model_dump(mode="json", exclude={"paths"}), sort_keys=True).encode()
+        return hashlib.sha256(blob).hexdigest()[:16]
+
+
+def load_config(path: Path | str | None = None, root: Path | None = None) -> AppConfig:
+    """Load YAML config. Relative paths resolve against ``root`` (default: project root)."""
+    path = Path(path or os.environ.get("NEWSFEED_CONFIG") or DEFAULT_CONFIG_PATH)
+    with path.open(encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    cfg = AppConfig.model_validate(raw)
+    paths = cfg.paths.resolved(root or PROJECT_ROOT)
+    news = cfg.sources.news_api
+    if not news.fixture_path.is_absolute():  # fixtures ship with the code: resolve vs. project
+        news = news.model_copy(update={"fixture_path": PROJECT_ROOT / news.fixture_path})
+    sources = cfg.sources.model_copy(update={"news_api": news})
+    return cfg.model_copy(update={"paths": paths, "sources": sources})
+
+
+def load_secrets() -> Secrets:
+    return Secrets()
