@@ -325,3 +325,17 @@ def test_fragment_of_delisted_series_is_dropped(tmp_path):
     rt = PriceRoute("WRK", "WRK", "tiingo", days[0], days[-1], "WestRock", "delisted")
     panel, report, _ = build_panel([rt], {"tiingo": CachedPrices(tiingo, tmp_path)}, days)
     assert panel.height == 0 and report[0]["dropped"]
+
+
+def test_load_shares_caches_404_as_empty(tmp_path):
+    from newsfeed.eval.caps import load_shares
+
+    calls = []
+
+    def handler(req):
+        calls.append(req.url)
+        return httpx.Response(404, json={})
+
+    http = mock_http(handler)
+    assert load_shares(http, 1132979, tmp_path).height == 0
+    assert load_shares(None, 1132979, tmp_path).height == 0 and len(calls) == 1  # cached

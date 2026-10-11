@@ -308,3 +308,18 @@ def test_cache_key_covers_text_and_mask_terms(lexicon, cfg):
     )
     assert more.mask_id != lexicon.mask_id
     assert len(base.custom_id) == 48
+
+
+def test_batch_chunks_split_by_count_and_bytes():
+    from types import SimpleNamespace
+
+    from newsfeed.scoring.batch import _chunks
+
+    def prep(i: int, n: int):
+        return SimpleNamespace(target=SimpleNamespace(custom_id=f"c{i}"), params={"x": "a" * n})
+
+    items = [prep(i, 100) for i in range(5)]
+    assert [len(c) for c in _chunks(items, 2, 10**9)] == [2, 2, 1]
+    one = len(json.dumps({"custom_id": "c0", "params": {"x": "a" * 100}}).encode())
+    assert [len(c) for c in _chunks(items, 100, 2 * one + 1)] == [2, 2, 1]
+    assert [len(c) for c in _chunks([prep(0, 10_000)], 100, 10)] == [1]  # oversize alone

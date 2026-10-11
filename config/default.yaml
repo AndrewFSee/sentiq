@@ -142,6 +142,7 @@ scoring:
   founders_only: true                # score each story once, on its first appearance
   live_concurrency: 4
   batch_max_requests: 10000
+  batch_max_bytes: 150000000          # serialized size per batch (API limit 256 MB)
   batch_poll_seconds: 60
   dry_run_sample: 25
   est_output_tokens: 300             # used until the usage ledger has real averages

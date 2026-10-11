@@ -189,6 +189,7 @@ class ScoringConfig(_Strict):
     founders_only: bool = True  # score each story once, on its first appearance
     live_concurrency: int = Field(4, ge=1)
     batch_max_requests: int = Field(10_000, ge=1, le=100_000)
+    batch_max_bytes: int = Field(150_000_000, ge=1, le=250_000_000)  # API limit 256 MB
     batch_poll_seconds: float = Field(60, gt=0)
     dry_run_sample: int = Field(25, ge=1)  # requests token-counted to estimate a job
     est_output_tokens: int = Field(300, gt=0)  # used until the ledger has real averages
