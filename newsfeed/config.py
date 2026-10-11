@@ -291,6 +291,9 @@ class EvalConfig(_Strict):
     holdout_start: date  # data on/after this date is frozen; eval refuses it without a flag
     sample: Literal["news", "all"] = "news"  # news = ticker-days with >= 1 story in the window
     sample_window: str = "1d"
+    # optional event-type subset (LLM event_type of scored founders in the sample window), e.g.
+    # [earnings]: keep ticker-days with >= 1 such event. Defines a *different* test sample.
+    sample_event_types: list[str] = Field(default_factory=list)
     cv: CVConfig = Field(default_factory=CVConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     fdr_q: float = Field(0.10, gt=0, lt=1)  # Benjamini-Hochberg level across the grid

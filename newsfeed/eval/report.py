@@ -143,6 +143,15 @@ def assemble(inp: EvalInputs, cfg: AppConfig) -> pl.DataFrame:
     if cfg.eval.sample == "news":
         col = f"{cfg.eval.sample_window}_n_stories"
         f = f.filter(pl.col(col).fill_null(0) > 0)
+    if cfg.eval.sample_event_types:
+        cols = [
+            f"{cfg.eval.sample_window}_llm_evt_{t.replace('&', '')}"
+            for t in cfg.eval.sample_event_types
+        ]
+        missing = [c for c in cols if c not in f.columns]
+        if missing:
+            raise ValueError(f"unknown event types for sampling: {missing}")
+        f = f.filter(pl.sum_horizontal([pl.col(c).fill_null(0) for c in cols]) > 0)
     return f.join(inp.controls, on=["ticker", "date"], how="left").join(
         inp.caps, on=["ticker", "date"], how="left"
     )

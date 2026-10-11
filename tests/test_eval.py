@@ -16,6 +16,7 @@ from newsfeed.eval.cv import pre_holdout_mask, purged_splits
 from newsfeed.eval.prices import CachedPrices, TradierPrices, price_panel
 from newsfeed.eval.report import (
     EvalInputs,
+    assemble,
     benjamini_hochberg,
     block_bootstrap,
     run_eval,
@@ -368,3 +369,23 @@ def test_run_eval_noise_has_no_discoveries_and_respects_holdout(cfg):
     held = run_eval(inp, c, univariate=["1d_llm_sent_decay"], use_holdout=True)
     assert held["holdout"] and held["univariate"]["n"][0] > 0
     assert json.dumps(held["sample"])  # serialisable summary
+
+
+def test_sample_event_types_filter(cfg):
+    inp, c, _ = synthetic_inputs(cfg, signal=0.0, n_days=20)
+    evt = (np.arange(inp.features.height) % 3 == 0).astype(int)
+    inp.features = inp.features.with_columns(
+        pl.Series("1d_llm_evt_earnings", evt), pl.Series("1d_llm_evt_ma", 0 * evt)
+    )
+    base = assemble(inp, c)
+    c2 = c.model_copy(
+        update={"eval": c.eval.model_copy(update={"sample_event_types": ["earnings"]})}
+    )
+    sub = assemble(inp, c2)
+    assert sub.height == int(evt.sum()) < base.height
+    assert (sub["1d_llm_evt_earnings"] > 0).all()
+    c3 = c.model_copy(update={"eval": c.eval.model_copy(update={"sample_event_types": ["m&a"]})})
+    assert assemble(inp, c3).height == 0  # 'm&a' -> column 1d_llm_evt_ma
+    c4 = c.model_copy(update={"eval": c.eval.model_copy(update={"sample_event_types": ["x"]})})
+    with pytest.raises(ValueError):
+        assemble(inp, c4)

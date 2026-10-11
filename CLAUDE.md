@@ -346,3 +346,12 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   `next_open` (the effect, if any, is overnight), stronger in the small tercile (≈ +0.02 vs
   +0.004 large). LLM lift over controls + LM/volume: |lift| ≤ 0.01 IC, none significant. The
   M5 negative 1–2d IC (10 tickers) did not replicate — it was noise.
+- 2026-10-11 PRE-REGISTERED (before running) — follow-up tests, run one at a time, each a new
+  eval config (all count as tried variants):
+  1. **Earnings-only**: `eval.sample_event_types: [earnings]` (ticker-days with ≥1 LLM
+     event_type=earnings founder in the 1d window), feature set 8990ee7a9775, same grid/models.
+     Primary: `1d_llm_sent_cwmean` IC > 0 at close entry, h ∈ {1, 2}, market-adjusted.
+     After-close releases become tradable at the next open → this is post-announcement drift
+     from the first close after tradability, not the announcement reaction.
+  2. Size-stratified (small tercile), 3. novelty/embeddings set, 4. news vendor — each
+     pre-registered here before it runs.
