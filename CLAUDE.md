@@ -335,3 +335,14 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   keep the full entry × horizon × adjustment grid; delisted prices from Tiingo (free tier).
 - 2026-10-10 (M6): full EDGAR backfill = 651 CIKs, ~48k 8-Ks; ~5–6 SEC requests per filing at
   8 req/s → ~15–17 h. Don't run other SEC-heavy jobs (companyfacts for eval) concurrently.
+  Actual: 53,050 8-Ks in ~12 h, 0 failures. Embedding derive is the slow part (bge-small on
+  CPU, ~1–3 chunks/s × ~355k 300-word chunks, single write at the end): left running.
+- 2026-10-11 (M6): batch scoring 55,493 requests (7 batches, byte-capped), done in ~25 min,
+  $15.91 (55,471 ok, 22 max_tokens). Feature set 8990ee7a9775 (embeddings off, config
+  `data/configs/sp500_noemb.yaml`): 984,567 rows, 1,954 sessions, ~504 members/day.
+- 2026-10-11 (M6, eval e1a1af, pre-holdout, ~52k news ticker-days, 1,878 sessions, 659
+  tickers): no BH discovery out of 180 tests. LLM sentiment univariate IC is small and
+  positive for `close` entry (≈ +0.01–0.016 at 1–2d; best p 0.01, sector-adj), ≈ 0 for
+  `next_open` (the effect, if any, is overnight), stronger in the small tercile (≈ +0.02 vs
+  +0.004 large). LLM lift over controls + LM/volume: |lift| ≤ 0.01 IC, none significant. The
+  M5 negative 1–2d IC (10 tickers) did not replicate — it was noise.
