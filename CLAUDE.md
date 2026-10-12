@@ -463,3 +463,12 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   8-K = 8990ee7a9775 (unmasked; only earnings has a masked rescore) × [earnings, guidance, m&a,
   legal_regulatory, product, other]; cells close/1/market and close/2/market → 24 tests, one BH
   (q 0.10). Survivors are candidates for live/holdout confirmation only, not findings.
+- 2026-10-12 RESULT test 4b (cleaned news, masked; feature set 237fddb5e2f7, eval faee2b;
+  ~12.1k ticker-days, 425 sessions, 512 tickers): primary FAILS — close/market IC h1 −0.001
+  (p 0.99), h2 +0.003 (p 0.75). No BH discovery (180 tests). Not pre-registered, noted only:
+  20d IC +0.039 (close/market p 0.004; LM tone +0.029, p 0.27).
+- 2026-10-12 RESULT tier 2 (explore-types 86a94c, 24 tests): no BH survivor. News: every type
+  ≈ 0 except analyst_action (+0.020 / +0.027, p 0.29 / 0.15). 8-K: earnings +0.019 / +0.031
+  (p 0.09 / 0.03, = test 1), guidance +0.037 / +0.078 (n 1,406; p 0.31 / 0.03), m&a, legal,
+  product ≈ 0, other (26.7k rows) +0.007 / +0.005 — the full-sample 8-K IC comes from
+  earnings + guidance. Candidates only (8-K guidance), not findings.
