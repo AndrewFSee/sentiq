@@ -175,6 +175,7 @@ features:
   lm_dictionary: data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv  # free for academic use
   coverage_sources: [edgar]                  # windows outside collected coverage -> null features
   embeddings: false                           # local ONNX model via fastembed (no API key)
+  llm_masked: true                           # leakage check A: masked-text LLM scores
   embedding_model: BAAI/bge-small-en-v1.5
   embedding_cache: data/ref/models
   novelty_lookback_days: 30                  # novelty = 1 - max cosine sim to the ticker's prior stories
