@@ -499,3 +499,11 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   events = masked LLM scores with relevance ≥ secondary, dated to the first decision at or after
   tradable_at, fanned out to the member ticker; per-cluster IC at close/1 and close/2 market;
   one BH across ≤ 50 tests. Candidates only.
+- 2026-10-12 RESULT text clusters (run 01c43f, 50 tests): no BH survivor (smallest p 0.010 vs
+  first threshold 0.002). Clusters are interpretable themes — ETFs, 13F stake changes,
+  market-research releases, "article discusses" listicles, two law-firm clusters, IPOs/deals,
+  dividends, AI press releases, generic stock picks, Tesla, Lilly, Nvidia, biotech trials, big
+  tech AI, earnings recaps, Buffett, dividend declarations, data centres, quantum, oil/market,
+  tariffs, analyst-opinion pieces. Largest (nominal) ICs: law-firm Rosen cluster +0.121 at 1d
+  (p 0.010, n 534), IPO/deals +0.062 at 2d (p 0.010), biotech trials −0.101 at 2d (p 0.026),
+  tariffs −0.094 at 2d (p 0.038); all within what 50 tests produce by chance.
