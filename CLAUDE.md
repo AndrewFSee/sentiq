@@ -431,3 +431,11 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   ≈ 0 with the difference CI excluding 0 → test 1 is likely recall, not reading.
 - 2026-10-12 AMENDED test 4 (before any scoring or outcomes): score news founders unmasked and
   masked; the **masked** feature set is primary (same primary cells), unmasked is secondary.
+- 2026-10-12 RESULT leakage check A (masked rescore 16,210 requests, $8.11; masked feature set
+  ba818990bf17; `newsfeed leakage` run 73e752, 15,720 identical rows): primary close/2/market
+  IC unmasked +0.032, masked +0.033, diff +0.000 [−0.005, +0.006], p 0.87 → by the
+  pre-registered reading, no evidence that recall drives test 1. Masked/unmasked sentiment
+  correlate 0.94. Longer horizons (10–20d) show small consistent negative diffs (−0.003 to
+  −0.005, p ≈ 0.06–0.13): at most mild recall there. Limits: dates and numbers stay visible, so
+  recall through them is not tested; the holdout remains the clean test. The unmasked IC
+  reproduces test 1 exactly (eval-inputs refactor check).
