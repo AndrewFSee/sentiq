@@ -1080,5 +1080,145 @@ def explore_types_cmd(
     _run("explore-types", cfg, {"sets": sets, "types": types}, body)
 
 
+@app.command("cluster-explore")
+def cluster_explore_cmd(
+    source: Annotated[str, typer.Option(help="Item source to cluster")] = "news_api",
+    k: Annotated[int, typer.Option(help="Number of text clusters")] = 25,
+    cells: Annotated[
+        str, typer.Option(help="entry/horizon/adjustment cells, comma-separated")
+    ] = "close/1/market,close/2/market",
+    seed: int = 7,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """EXPLORATORY: cluster documents by text (TF-IDF -> SVD -> k-means, fitted pre-holdout),
+    then rank IC of LLM sentiment per cluster; one BH correction across clusters x cells."""
+    from newsfeed.eval.clusters import cluster_ic, decision_times, fit_text_clusters
+    from newsfeed.features.aggregate import RELEVANCE_RANK
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cell_list = [(e, int(h), a) for e, h, a in (c.split("/") for c in _split(cells))]
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        store, fc, ec = ctx.store, cfg.features, cfg.eval
+        now = utcnow()
+        items = store.items_as_of(
+            now,
+            source=source,
+            columns="item_id, title, body_text, publisher, published_at, tradable_at, ingest_mode",
+        )
+        founders = store.query("SELECT item_id FROM item_story WHERE story_id = item_id")
+        items = items.join(founders, on="item_id", how="semi").sort("item_id")
+        holdout = datetime.combine(ec.holdout_start, datetime.min.time(), tzinfo=UTC)
+        fit_mask = (items["published_at"] < holdout).to_numpy()
+        texts = [f"{t or ''}. {b or ''}" for t, b in items.select("title", "body_text").rows()]
+        labels, top = fit_text_clusters(texts, fit_mask, k=k, seed=seed)
+        items = items.with_columns(pl.Series("cluster", labels))
+        src = feature_sources(ctx)
+        scores = store.query(
+            """
+            SELECT item_id, ticker AS canon, sentiment, relevance, scored_at FROM scores
+            WHERE status = 'ok' AND masked = $masked AND replicate = 0
+              AND model = $m AND prompt_hash = $h
+            """,
+            {"masked": fc.llm_masked, "m": src.llm_model, "h": src.llm_prompt_hash},
+        )
+        min_rank = RELEVANCE_RANK[fc.min_relevance]
+        ev = items.join(scores, on="item_id").filter(
+            pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1) >= min_rank
+        )
+        ev = ev.with_columns(
+            pl.when(pl.col("ingest_mode") == "live")
+            .then(pl.max_horizontal("tradable_at", "scored_at"))
+            .otherwise(pl.col("tradable_at"))
+            .alias("t_use")
+        )
+        t0 = ev["t_use"].min().date()
+        grid = as_of_grid(ctx.calendar, t0, now.date(), fc.grid, fc.decision_lag_minutes)
+        ev = ev.with_columns(
+            pl.Series(
+                "as_of", decision_times(ev["t_use"].to_list(), grid), dtype=pl.Datetime("us", "UTC")
+            )
+        ).drop_nulls("as_of")
+        ev = ev.with_columns(
+            pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+        )
+        # canonical ticker -> every ticker of that company, kept only where it is a member
+        c2t = ctx.universe(full=True).cik_to_tickers
+        canon_cik = {t: c for c, ts in c2t.items() for t in ts}
+        fan = pl.DataFrame(
+            [{"canon": t, "ticker": x} for t, c in canon_cik.items() for x in c2t[c]],
+            schema={"canon": pl.Utf8, "ticker": pl.Utf8},
+        )
+        ev = ev.join(fan, on="canon")
+        if cfg.universe.mode == "sp500_pit":
+            ev = ev.filter(ctx.pit.is_member(ev.select("ticker", "date")))
+        feats = ev.select("ticker", "as_of").unique()
+        inp, _ = _eval_inputs(ctx, cfg, feats)
+        res = pl.DataFrame(
+            cluster_ic(ev.select("ticker", "date", "cluster", "sentiment"), inp.targets,
+                       inp.sessions, cfg, cell_list)
+        )  # fmt: skip
+        pv = res["p"].to_numpy().astype(float)
+        ok = ~np.isnan(pv)
+        disc = np.zeros(len(pv), dtype=bool)
+        disc[ok] = benjamini_hochberg(pv[ok], ec.fdr_q)
+        res = res.with_columns(pl.Series("bh_discovery", disc))
+        info = (
+            items.group_by("cluster")
+            .agg(pl.len().alias("docs"), pl.col("publisher").mode().first().alias("top_publisher"))
+            .join(
+                ev.group_by("cluster").agg(pl.col("sentiment").mean().alias("mean_sent")),
+                on="cluster",
+                how="left",
+            )
+            .sort("cluster")
+        )
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        res.write_parquet(out_dir / f"clusters-{run_id}.parquet")
+        info.with_columns(
+            pl.Series("top_terms", [", ".join(top[c]) for c in info["cluster"].to_list()])
+        ).write_csv(out_dir / f"clusters-{run_id}-info.csv")
+        lines = [
+            f"# EXPLORATORY text clusters {run_id}",
+            "",
+            f"- source `{source}`, k={k}, TF-IDF -> SVD -> k-means fitted on pre-holdout "
+            f"documents; LLM scores masked={fc.llm_masked}, relevance >= {fc.min_relevance}; "
+            f"BH q={ec.fdr_q} across {int(ok.sum())} tests. Candidates only.",
+            "",
+            "| cluster | docs | top publisher | mean sent | top terms | cell | n | IC | p | BH |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        meta = {r["cluster"]: r for r in info.iter_rows(named=True)}
+        for r in res.sort("cluster", "horizon").iter_rows(named=True):
+            m = meta[r["cluster"]]
+            ms = m["mean_sent"]
+            lines.append(
+                f"| {r['cluster']} | {m['docs']} | {m['top_publisher']} | "
+                f"{'' if ms is None else f'{ms:+.2f}'} | {', '.join(top[r['cluster']][:5])} | "
+                f"{r['entry']}/{r['horizon']}/{r['adjustment']} | {r['n']} | {r['ic']:+.3f} | "
+                f"{r['p']:.3f} | {'*' if r['bh_discovery'] else ''} |"
+            )
+        md = "\n".join(lines) + "\n"
+        (out_dir / f"clusters-{run_id}.md").write_text(md, encoding="utf-8")
+        with store.ops() as con:
+            con.execute(
+                "INSERT INTO experiments VALUES ('explore_clusters', ?, ?, ?, ?)",
+                [
+                    run_id,
+                    utcnow(),
+                    run_id,
+                    json.dumps({"source": source, "k": k, "seed": seed, "cells": cells,
+                                "masked": fc.llm_masked, "n_tests": int(ok.sum())}),
+                ],
+            )  # fmt: skip
+        stats["report"] = str(out_dir / f"clusters-{run_id}.md")
+        typer.echo(md)
+
+    _run("cluster-explore", cfg, {"source": source, "k": k, "cells": cells}, body)
+
+
 if __name__ == "__main__":
     app()

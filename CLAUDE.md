@@ -489,3 +489,13 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   found by exploration (pre-holdout IC +0.078, n 1,411 — likely inflated by selection), so its
   holdout test is the first real test. Expected holdout n ≈ 210 (≈188/yr; 38 so far) → power
   roughly 20% even if the true IC were 0.078.
+- 2026-10-12 Hand-labelling: private artifact "News Label Desk" (claude.ai/artifact/
+  7ptLUVXwLY4oxSHYEZxVdb), 200 news pairs stratified 25 per model event type (seed 2026,
+  `scripts/make_label_sample.py`), blind; answer key `data/labeling/news_sample_v1_key.csv`.
+  Labels land in the artifact's db collection `labels`.
+- 2026-10-12 PRE-REGISTERED (EXPLORATORY) text clusters, `newsfeed cluster-explore` with
+  `config/variants/news_massive_masked.yaml`: news founders, title + summary, TF-IDF (1–2-grams,
+  min_df 5, max_df 0.5) → SVD 100 → k-means k = 25, seed 7, fitted on pre-holdout documents;
+  events = masked LLM scores with relevance ≥ secondary, dated to the first decision at or after
+  tradable_at, fanned out to the member ticker; per-cluster IC at close/1 and close/2 market;
+  one BH across ≤ 50 tests. Candidates only.
