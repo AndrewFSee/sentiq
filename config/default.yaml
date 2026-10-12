@@ -114,7 +114,7 @@ sources:
     silence_alert_minutes: 30
 
 collect:
-  interval_seconds: 60
+  interval_seconds: 120              # = Task Scheduler period for `collect --once` (sentiq-collect)
   sources: [edgar]
   max_consecutive_failures: 3
   stalled_after_intervals: 3
@@ -147,7 +147,7 @@ scoring:
   dry_run_sample: 25
   est_output_tokens: 300             # used until the usage ledger has real averages
   confirm_above_usd: 1.0             # jobs estimated above this require --yes
-  live_in_collect: false             # true = collect loop scores new story founders (costs money)
+  live_in_collect: true              # true = collect loop scores new story founders (costs money)
   live_lookback_hours: 48
 
 pricing:

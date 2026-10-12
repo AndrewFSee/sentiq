@@ -385,3 +385,16 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   embeddings build reused the 12-ticker M5 id c35f16b5bccb. Reads keep the latest build per
   (ticker, as_of) and all 984,567 rows came from the new build, so eval 9909b6 is valid; the
   M5 rows are shadowed. Ids now hash `cfg.universe` + the PIT membership table.
+- 2026-10-12 HOLDOUT PLAN (user: wait & collect; holdout NOT looked at). Holdout so far has
+  533 earnings ticker-days / 58 sessions (≈ one season; ~530 per quarter) → ~15–20% power
+  for IC 0.03, so it is not spent yet. PRE-REGISTERED confirmatory test, ONE look only:
+  earnings sample (`sample_event_types: [earnings]`), `1d_llm_sent_cwmean`, close entry,
+  h = 2, market-adjusted; pass = IC > 0 with one-sided bootstrap p < 0.05 (two-sided p < 0.10).
+  Same feature config / link policy / Haiku 5.5 prompt 6108c555090fa4b3 (if the model is
+  retired, the test is re-planned, not silently switched). Look date: first run on or after
+  **2027-08-31** (after the Q2-2027 season, expected n ≈ 2,600, power still only ~40%); not
+  earlier, regardless of interim results. The other 179 cells are reported as exploratory.
+- 2026-10-12: live collection for the holdout: `scoring.live_in_collect: true` (≈ $0.50/month,
+  live features need scores at `scored_at`), `collect.interval_seconds: 120` = period of the
+  Windows scheduled task running `collect --once` (live coverage needs ok polls ≤ 3 intervals
+  apart). The holdout from 2026-07-01 to 2026-10-10 is backfill-rule data; later is live-rule.
