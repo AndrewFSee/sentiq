@@ -417,3 +417,17 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   close entry, h ∈ {1, 2}, market-adjusted. Timing: backfill rule published + 300 s → session.
   If the primary passes, pre-planned robustness checks: (a) longer lag (published + 1 h) and
   (b) headline-only scoring (rules out hindsight in vendor summaries) before any holdout use.
+- 2026-10-12 LEAKAGE (user question): Haiku 5.5's training data very likely covers most or all
+  of the pre-holdout period, so the model may "remember" outcomes; that bias looks exactly like
+  positive IC. All pre-holdout ICs are upper bounds; the holdout (after the training cutoff,
+  especially the live part) is the clean test. Masking (names/tickers/products/people/places;
+  dates and numbers stay) reduces but cannot remove recall.
+- 2026-10-12 PRE-REGISTERED leakage check A (earnings, before scoring): masked rescore of the
+  pre-holdout earnings founders (`score --masked --event-types earnings --end 2026-07-01`),
+  masked feature set (`features.llm_masked: true`). On the identical rows of the test-1 earnings
+  sample, compare IC(masked) vs IC(unmasked) of `1d_llm_sent_cwmean`, primary cell close/2/
+  market, paired block bootstrap of the difference. Reading: masked IC keeps ≥ half of the
+  unmasked IC and the difference CI covers 0 → no evidence that recall drives test 1; masked IC
+  ≈ 0 with the difference CI excluding 0 → test 1 is likely recall, not reading.
+- 2026-10-12 AMENDED test 4 (before any scoring or outcomes): score news founders unmasked and
+  masked; the **masked** feature set is primary (same primary cells), unmasked is secondary.

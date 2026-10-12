@@ -103,7 +103,7 @@ sources:
   news_api:
     vendor: massive                   # test 4: Massive (ex-Polygon) news, MASSIVE_API_KEY
     fixture_path: tests/fixtures/news/articles.jsonl
-    page_size: 100
+    page_size: 1000                   # Massive max per request (free tier: 5 req/min)
     poll_overlap_minutes: 15
     poll_lookback_hours: 24
     catch_up_every_minutes: 60

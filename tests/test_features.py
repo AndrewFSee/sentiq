@@ -24,6 +24,7 @@ from newsfeed.features.baselines import (
 )
 from newsfeed.ingest.base import RawItem
 from newsfeed.ingest.runner import build_row
+from newsfeed.scoring.runner import plan_targets
 from newsfeed.storage import Store
 
 from .fake_llm import FakeLLM, default_output, user_text
@@ -491,3 +492,20 @@ def test_feature_sources_filter(env):
     df = build_features(env.store, other, [T], env.c2t, env.sources())
     assert row(df, "AAPL", T)["1h_n_items"] == 0  # corpus is news_api only
     assert feature_set_id(other, env.sources()) != feature_set_id(env.cfg, env.sources())
+
+
+def test_features_can_use_masked_scores(env):
+    T = utc(2026, 7, 31, 14, 0)
+    base = row(feats(env, [T]), "AAPL", T)
+    masked_cfg = env.cfg.model_copy(
+        update={"features": env.cfg.features.model_copy(update={"llm_masked": True})}
+    )
+    df = build_features(env.store, masked_cfg, [T], env.c2t, env.sources())
+    assert base["1h_llm_n"] == 1 and row(df, "AAPL", T)["1h_llm_n"] == 0  # none masked yet
+    j = env.job(FakeLLM())
+    j.run_live(plan_targets(j, env.c2t, masked=True))
+    df = build_features(env.store, masked_cfg, [T], env.c2t, env.sources())
+    r = row(df, "AAPL", T)
+    assert r["1h_llm_n"] == 1 and r["1h_llm_sent_cwmean"] is not None
+    assert r["1h_lm_n"] == base["1h_lm_n"]  # non-LLM features unchanged
+    assert feature_set_id(masked_cfg, env.sources()) != feature_set_id(env.cfg, env.sources())

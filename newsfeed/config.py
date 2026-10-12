@@ -219,6 +219,8 @@ class FeaturesConfig(_Strict):
     coverage_sources: list[str] = Field(default_factory=lambda: ["edgar"])
     # item sources that feed events ([] = all). E.g. [news_api] isolates vendor news (test 4).
     sources: list[str] = Field(default_factory=list)
+    # use masked-text LLM scores (leakage check: names/tickers/products/people/places hidden)
+    llm_masked: bool = False
     embeddings: bool = True  # local fastembed model; vectors for story founders
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_cache: Path = Path("data/ref/models")

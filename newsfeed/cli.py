@@ -463,6 +463,10 @@ def score(
     end: Annotated[str | None, typer.Option(help="tradable_at < this UTC date")] = None,
     sources: Annotated[str | None, typer.Option(help="Comma-separated sources")] = None,
     sample: Annotated[int | None, typer.Option(help="Deterministic sample of N pairs")] = None,
+    event_types: Annotated[
+        str | None,
+        typer.Option(help="Only pairs whose primary score has these event types (comma-sep.)"),
+    ] = None,
     seed: int = 1,
     replicates: Annotated[int, typer.Option(help="Noise study: re-draw K times")] = 0,
     limit: Annotated[int | None, typer.Option(help="Cap the number of requests")] = None,
@@ -496,6 +500,7 @@ def score(
             sample=sample,
             seed=seed,
             limit=limit,
+            event_types=_split(event_types) or None,
         )
         typer.echo(
             f"model={job.model} prompt={job.prompt.version}/{job.prompt_hash} "

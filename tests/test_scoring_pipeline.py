@@ -317,3 +317,15 @@ def test_agreement_pairs_only_scores_of_the_same_text(env):
         )
     )
     assert m["n_pairs"] == 3
+
+
+def test_event_type_filter_restricts_study_to_primary_event_type(env):
+    _, store, job, c2t = env
+    j = job(FakeLLM())
+    j.run_live(plan_targets(j, c2t))
+    earn = store.query(
+        "SELECT item_id, ticker FROM scores WHERE NOT masked AND event_type = 'earnings'"
+    )
+    assert 0 < earn.height < 11
+    t = plan_targets(job(FakeLLM(), run_id="m"), c2t, masked=True, event_types=["earnings"])
+    assert {(x.item_id, x.ticker) for x in t} == set(earn.select("item_id", "ticker").rows())

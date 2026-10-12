@@ -155,10 +155,10 @@ def load_events(
         SELECT item_id, ticker AS canon_ticker, text_hash, sentiment, confidence, relevance,
                event_type, scored_at
         FROM scores
-        WHERE status = 'ok' AND NOT masked AND replicate = 0
+        WHERE status = 'ok' AND masked = $masked AND replicate = 0
           AND model = $m AND prompt_hash = $h
         """,
-        {"m": src.llm_model, "h": src.llm_prompt_hash},
+        {"m": src.llm_model, "h": src.llm_prompt_hash, "masked": cfg.features.llm_masked},
     )
     ev = founders.join(scores, on=["item_id", "canon_ticker", "text_hash"], how="left")
     ev = ev.with_columns(
