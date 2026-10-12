@@ -398,3 +398,8 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   live features need scores at `scored_at`), `collect.interval_seconds: 120` = period of the
   Windows scheduled task running `collect --once` (live coverage needs ok polls ≤ 3 intervals
   apart). The holdout from 2026-07-01 to 2026-10-10 is backfill-rule data; later is live-rule.
+- 2026-10-12: run live collection in ONE labelled console window, `scripts\collect_window.cmd`
+  (title "sentiq - COLLECTING 8-Ks", one `collect --once` per 120 s, `[FAILED]`/`[UNHEALTHY]`
+  appended to the title), not a 2-minute scheduled task (that flashes a console window every
+  run). EDGAR silence on US federal holidays (`timeutil.edgar_closed_dates`: NYSE open, EDGAR
+  closed — Columbus/Veterans Day) no longer raises `silent_feed`; found live on 2026-10-12.

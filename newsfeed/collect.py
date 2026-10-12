@@ -23,13 +23,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from newsfeed import coverage
 from newsfeed.config import AppConfig
 from newsfeed.ingest.base import SourceAdapter
 from newsfeed.ingest.runner import ingest, make_error_recorder, new_stats
 from newsfeed.storage import Store
-from newsfeed.timeutil import MarketCalendar, ensure_utc, utcnow
+from newsfeed.timeutil import MarketCalendar, edgar_closed_dates, ensure_utc, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -112,8 +113,11 @@ def evaluate_health(
         out.append(Problem(src, "stalled", f"no successful poll since {last_ok.isoformat()}"))
     ref = _dt(state.last_activity_at) or _dt(state.first_poll_at)
     assert ref is not None
-    silent = calendar.open_seconds_between(ref, now) / 60
-    if calendar.is_open(now) and silent > silence_minutes:
+    # EDGAR is closed on federal holidays even when NYSE trades: those sessions aren't silence
+    closed = edgar_closed_dates() if src == "edgar" else frozenset()
+    silent = calendar.open_seconds_between(ref, now, closed) / 60
+    today_closed = now.astimezone(ZoneInfo("America/New_York")).date() in closed
+    if calendar.is_open(now) and not today_closed and silent > silence_minutes:
         out.append(
             Problem(
                 src,

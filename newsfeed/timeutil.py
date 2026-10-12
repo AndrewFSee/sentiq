@@ -6,6 +6,7 @@ The single most important function is :func:`compute_tradable_at`. Every feature
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from typing import Literal
@@ -118,9 +119,12 @@ class MarketCalendar:
         bounds = self.session_bounds(t.astimezone(NY).date())
         return bounds is not None and bounds[0] <= t < bounds[1]
 
-    def open_seconds_between(self, a: datetime, b: datetime) -> float:
-        """Seconds of regular-session time within [a, b) (0 if b <= a). Used for silent-feed
-        detection, so overnight/weekend/holiday gaps never count as silence."""
+    def open_seconds_between(
+        self, a: datetime, b: datetime, skip_dates: Collection[date] = ()
+    ) -> float:
+        """Seconds of regular-session time within [a, b) (0 if b <= a), ignoring sessions on
+        ``skip_dates`` (New York dates). Used for silent-feed detection, so overnight/weekend/
+        holiday gaps never count as silence."""
         a, b = ensure_utc(a), ensure_utc(b)
         if b <= a:
             return 0.0
@@ -128,7 +132,7 @@ class MarketCalendar:
         d = a.astimezone(NY).date()
         last = b.astimezone(NY).date()
         while d <= last:
-            bounds = self.session_bounds(d)
+            bounds = None if d in skip_dates else self.session_bounds(d)
             if bounds is not None:
                 lo, hi = max(a, bounds[0]), min(b, bounds[1])
                 if hi > lo:
@@ -180,3 +184,14 @@ def compute_tradable_at(
     else:  # pragma: no cover - guarded by Literal type
         raise ValueError(f"unknown ingest_mode {ingest_mode!r}")
     return calendar.push_to_session(base)
+
+
+@lru_cache(maxsize=1)
+def edgar_closed_dates() -> frozenset[date]:
+    """US federal holidays (observed), when EDGAR accepts no filings although NYSE may be open
+    (Columbus Day, Veterans Day). Verified 2026-10-12 (Columbus Day): the 'latest filings'
+    feed stayed silent through the NYSE session."""
+    from pandas.tseries.holiday import USFederalHolidayCalendar
+
+    days = USFederalHolidayCalendar().holidays("2000-01-01", "2040-12-31")
+    return frozenset(d.date() for d in days)
