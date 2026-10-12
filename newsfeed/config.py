@@ -221,6 +221,11 @@ class FeaturesConfig(_Strict):
     sources: list[str] = Field(default_factory=list)
     # use masked-text LLM scores (leakage check: names/tickers/products/people/places hidden)
     llm_masked: bool = False
+    # LLM aggregates only over these event types ([] = all), e.g. company-specific news
+    llm_event_types: list[str] = Field(default_factory=list)
+    # items whose title matches (Python regex, case-insensitive) are dropped from all events,
+    # e.g. law-firm class-action solicitations and market-research report releases
+    exclude_title_regex: str | None = None
     embeddings: bool = True  # local fastembed model; vectors for story founders
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_cache: Path = Path("data/ref/models")
@@ -295,7 +300,9 @@ class EvalConfig(_Strict):
         default_factory=lambda: ["market", "sector"]
     )
     holdout_start: date  # data on/after this date is frozen; eval refuses it without a flag
-    sample: Literal["news", "all"] = "news"  # news = ticker-days with >= 1 story in the window
+    # news = ticker-days with >= 1 story in the window; llm = >= 1 LLM event that passes the
+    # relevance (and event-type) filters, i.e. the rows where LLM sentiment is defined
+    sample: Literal["news", "all", "llm"] = "news"
     sample_window: str = "1d"
     # optional event-type subset (LLM event_type of scored founders in the sample window), e.g.
     # [earnings]: keep ticker-days with >= 1 such event. Defines a *different* test sample.
@@ -304,6 +311,8 @@ class EvalConfig(_Strict):
     sample_size_buckets: list[Literal["small", "mid", "large", "unknown"]] = Field(
         default_factory=list
     )
+    # exploratory per-type analysis: rows whose LLM events in the window are ALL of this type
+    sample_pure_event_type: str | None = None
     cv: CVConfig = Field(default_factory=CVConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     fdr_q: float = Field(0.10, gt=0, lt=1)  # Benjamini-Hochberg level across the grid

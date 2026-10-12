@@ -509,3 +509,21 @@ def test_features_can_use_masked_scores(env):
     assert r["1h_llm_n"] == 1 and r["1h_llm_sent_cwmean"] is not None
     assert r["1h_lm_n"] == base["1h_lm_n"]  # non-LLM features unchanged
     assert feature_set_id(masked_cfg, env.sources()) != feature_set_id(env.cfg, env.sources())
+
+
+def test_llm_event_type_and_title_filters(env):
+    T = utc(2026, 7, 31, 14, 0)
+    base = row(feats(env, [T]), "AAPL", T)
+    assert base["1h_n_items"] == 4 and base["1h_llm_n"] == 1
+    titles = env.store.query("SELECT title FROM items WHERE native_id = 'fixture:a1'")["title"]
+    word = titles[0].split()[0]
+    no_a1 = env.cfg.model_copy(
+        update={"features": env.cfg.features.model_copy(update={"exclude_title_regex": word})}
+    )
+    r = row(build_features(env.store, no_a1, [T], env.c2t, env.sources()), "AAPL", T)
+    assert r["1h_n_items"] < 4
+    other_types = env.cfg.model_copy(
+        update={"features": env.cfg.features.model_copy(update={"llm_event_types": ["m&a"]})}
+    )
+    r = row(build_features(env.store, other_types, [T], env.c2t, env.sources()), "AAPL", T)
+    assert r["1h_llm_n"] == 0 and r["1h_n_items"] == 4  # only LLM aggregates are filtered

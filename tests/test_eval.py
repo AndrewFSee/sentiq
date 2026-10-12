@@ -425,3 +425,31 @@ def test_paired_ic_comparison_detects_lost_signal(cfg):
     assert same["diff"] == pytest.approx(0.0) and same["ic_a"] > 0.2
     lost = paired_ic_comparison(inp, c, "1d_llm_sent_decay", "noise").row(0, named=True)
     assert lost["diff"] < -0.2 and lost["ci_hi"] < 0 and lost["p"] < 0.05
+
+
+def test_llm_and_pure_event_type_samples(cfg):
+    inp, c, _ = synthetic_inputs(cfg, signal=0.0, n_days=20)
+    n = inp.features.height
+    llm_n = np.arange(n) % 3  # 0, 1, 2
+    earn = np.where(np.arange(n) % 2 == 0, llm_n, 0)
+    inp.features = inp.features.with_columns(
+        pl.Series("1d_llm_n", llm_n), pl.Series("1d_llm_evt_earnings", earn)
+    )
+    llm = c.model_copy(update={"eval": c.eval.model_copy(update={"sample": "llm"})})
+    assert assemble(inp, llm).height == int((llm_n > 0).sum())
+    pure = c.model_copy(
+        update={"eval": c.eval.model_copy(update={"sample_pure_event_type": "earnings"})}
+    )
+    sub = assemble(inp, pure)
+    assert sub.height == int(((llm_n > 0) & (earn == llm_n)).sum())
+    assert (sub["1d_llm_evt_earnings"] == sub["1d_llm_n"]).all()
+
+
+def test_univariate_cells_planted_signal(cfg):
+    from newsfeed.eval.report import univariate_cells
+
+    inp, c, _ = synthetic_inputs(cfg, signal=0.6, n_days=200)
+    sig = univariate_cells(inp, c, "1d_llm_sent_decay", [("close", 1, "market")])[0]
+    noise = univariate_cells(inp, c, "1d_lm_tone_decay", [("close", 1, "market")])[0]
+    assert sig["ic"] > 0.2 and sig["p"] < 0.01 and abs(noise["ic"]) < 0.05
+    assert univariate_cells(inp, c, "1d_llm_sent_decay", [("close", 5, "market")])[0]["n"] == 0

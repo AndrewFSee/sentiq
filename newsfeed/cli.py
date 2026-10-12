@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
 
+import numpy as np
 import polars as pl
 import typer
 
@@ -31,11 +32,13 @@ from newsfeed.eval.report import (
     DEFAULT_UNIVARIATE,
     EvalInputs,
     add_derived,
+    benjamini_hochberg,
     decision_dates,
     eval_config_id,
     paired_ic_comparison,
     render_markdown,
     run_eval,
+    univariate_cells,
 )
 from newsfeed.eval.targets import adjusted_targets, controls, forward_returns
 from newsfeed.features.aggregate import (
@@ -996,6 +999,85 @@ def leakage_cmd(
         typer.echo(md)
 
     _run("leakage", cfg, {"feature_set": feature_set, "masked_set": masked_set}, body)
+
+
+@app.command("explore-types")
+def explore_types_cmd(
+    feature_set: Annotated[
+        list[str], typer.Option(help="label=feature_set_id (repeatable), e.g. news=57330b614405")
+    ],
+    types: Annotated[str, typer.Option(help="Comma-separated LLM event types")],
+    feature: Annotated[str, typer.Option(help="Feature tested")] = "1d_llm_sent_cwmean",
+    cells: Annotated[
+        str, typer.Option(help="entry/horizon/adjustment cells, comma-separated")
+    ] = "close/1/market,close/2/market",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """EXPLORATORY per-event-type IC on 'pure' samples (all LLM events in the window of one
+    type), pre-holdout; one Benjamini-Hochberg correction across every set x type x cell."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cell_list = [(e, int(h), a) for e, h, a in (c.split("/") for c in _split(cells))]
+    type_list = _split(types)
+    sets = dict(fs.split("=", 1) for fs in feature_set)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        rows: list[dict[str, Any]] = []
+        for label, set_id in sets.items():
+            feats = ctx.store.features(set_id).drop(
+                "feature_set_id", "build_run_id", "built_at", strict=False
+            )
+            if feats.height == 0:
+                raise typer.BadParameter(f"feature set {set_id} has no rows")
+            inp, _ = _eval_inputs(ctx, cfg, feats)
+            for t in type_list:
+                c = cfg.model_copy(
+                    update={"eval": cfg.eval.model_copy(update={"sample_pure_event_type": t})}
+                )
+                for r in univariate_cells(inp, c, feature, cell_list):
+                    rows.append({"set": label, "feature_set": set_id, "event_type": t, **r})
+        res = pl.DataFrame(rows)
+        p = res["p"].to_numpy().astype(float)
+        ok = ~np.isnan(p)
+        disc = np.zeros(len(p), dtype=bool)
+        disc[ok] = benjamini_hochberg(p[ok], cfg.eval.fdr_q)
+        res = res.with_columns(pl.Series("bh_discovery", disc))
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        res.write_parquet(out_dir / f"explore-types-{run_id}.parquet")
+        lines = [
+            f"# EXPLORATORY per-type IC {run_id}",
+            "",
+            f"- feature `{feature}`, pure-type samples, pre-holdout; BH q={cfg.eval.fdr_q} "
+            f"across {int(ok.sum())} tests. Exploratory: survivors are candidates for the "
+            "live/holdout data, not findings.",
+            "",
+            "| set | type | cell | n | IC | 95% CI | p | BH |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['set']} | {r['event_type']} | {r['entry']}/{r['horizon']}/{r['adjustment']} "
+                f"| {r['n']} | {r['ic']:+.3f} | [{r['ci_lo']:+.3f}, {r['ci_hi']:+.3f}] | "
+                f"{r['p']:.3f} | {'*' if r['bh_discovery'] else ''} |"
+            )
+        md = "\n".join(lines) + "\n"
+        (out_dir / f"explore-types-{run_id}.md").write_text(md, encoding="utf-8")
+        with ctx.store.ops() as con:
+            con.execute(
+                "INSERT INTO experiments VALUES ('explore_types', ?, ?, ?, ?)",
+                [
+                    run_id,
+                    utcnow(),
+                    run_id,
+                    json.dumps({"sets": sets, "types": type_list, "cells": cells, "n": len(p)}),
+                ],
+            )
+        stats["report"] = str(out_dir / f"explore-types-{run_id}.md")
+        typer.echo(md)
+
+    _run("explore-types", cfg, {"sets": sets, "types": types}, body)
 
 
 if __name__ == "__main__":

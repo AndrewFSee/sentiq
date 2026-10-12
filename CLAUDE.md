@@ -447,3 +447,19 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   robustness checks (longer lag, headline-only) are not needed. Caveat: Massive's feed is
   Motley Fool / GlobeNewswire / Benzinga / Investing.com headlines + machine summaries, not a
   real-time wire, so this is a null for that feed, not for news in general.
+- 2026-10-12 Test-4 data profile (user asked about cleaning/categories): of 113k scored news
+  pairs 60% are 'passing' mentions, 35% event_type macro, 34% other; Motley Fool = 54%; 15% of
+  articles tag ≥4 tickers; ~6.6% of titles are law-firm class-action solicitations (almost all
+  GlobeNewswire), plus "Market Size … by 2035" research releases. Test 4 pooled all of it.
+- 2026-10-12 PRE-REGISTERED test 4b (confirmatory, cleaned news; no new LLM cost):
+  `config/variants/news_clean_masked.yaml` = test-4 masked set + `llm_event_types`
+  [analyst_action, product, earnings, legal_regulatory, m&a, guidance] (relevance ≥ secondary
+  as always) + `exclude_title_regex` (law firms, market-research releases) + `eval.sample: llm`
+  (days with ≥1 qualifying LLM event). Primary: masked `1d_llm_sent_cwmean` IC > 0 at close,
+  h ∈ {1, 2}, market-adjusted. Robustness checks (lag, headline-only) only if it passes.
+- 2026-10-12 PRE-REGISTERED tier 2 (EXPLORATORY, `newsfeed explore-types`): per event type on
+  "pure" samples (all qualifying LLM events in the 1d window of that type), news = test-4b
+  feature set (masked) × [analyst_action, product, earnings, legal_regulatory, m&a, guidance],
+  8-K = 8990ee7a9775 (unmasked; only earnings has a masked rescore) × [earnings, guidance, m&a,
+  legal_regulatory, product, other]; cells close/1/market and close/2/market → 24 tests, one BH
+  (q 0.10). Survivors are candidates for live/holdout confirmation only, not findings.

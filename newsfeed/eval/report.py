@@ -140,9 +140,17 @@ def assemble(inp: EvalInputs, cfg: AppConfig) -> pl.DataFrame:
     f = inp.features.with_columns(
         pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
     )
+    w = cfg.eval.sample_window
     if cfg.eval.sample == "news":
-        col = f"{cfg.eval.sample_window}_n_stories"
-        f = f.filter(pl.col(col).fill_null(0) > 0)
+        f = f.filter(pl.col(f"{w}_n_stories").fill_null(0) > 0)
+    elif cfg.eval.sample == "llm":
+        f = f.filter(pl.col(f"{w}_llm_n").fill_null(0) > 0)
+    if cfg.eval.sample_pure_event_type:
+        col = f"{w}_llm_evt_{cfg.eval.sample_pure_event_type.replace('&', '')}"
+        if col not in f.columns:
+            raise ValueError(f"unknown event type column {col}")
+        n = pl.col(f"{w}_llm_n").fill_null(0)
+        f = f.filter((n > 0) & (pl.col(col).fill_null(0) == n))
     if cfg.eval.sample_event_types:
         cols = [
             f"{cfg.eval.sample_window}_llm_evt_{t.replace('&', '')}"
@@ -527,3 +535,45 @@ def paired_ic_comparison(
                     }
                 )
     return pl.DataFrame(out)
+
+
+def univariate_cells(
+    inp: EvalInputs,
+    cfg: AppConfig,
+    feature: str,
+    cells: list[tuple[str, int, str]],
+) -> list[dict[str, Any]]:
+    """Rank IC of one feature on the ``assemble`` sample, pre-holdout, for the given
+    (entry, horizon, adjustment) cells, with circular block-bootstrap CI / p (exploratory
+    breakdowns: the caller applies BH across everything it ran)."""
+    ec = cfg.eval
+    rng = np.random.default_rng(ec.seed)
+    base = assemble(inp, cfg)
+    session_idx = {d: i for i, d in enumerate(inp.sessions)}
+    out = []
+    for entry, h, adj in cells:
+        t = inp.targets.filter((pl.col("entry") == entry) & (pl.col("horizon") == h))
+        df = base.join(t, on=["ticker", "date"], how="inner")
+        if df.height:
+            dec = df["date"].to_numpy().astype("datetime64[D]")
+            end = df["label_end"].to_numpy().astype("datetime64[D]")
+            df = df.filter(pl.Series(pre_holdout_mask(dec, end, ec.holdout_start)))
+            df = df.filter(pl.col(feature).is_not_null())
+        row: dict[str, Any] = {"entry": entry, "horizon": h, "adjustment": adj, "n": df.height}
+        if df.height < 30:
+            out.append({**row, "ic": float("nan"), "ci_lo": float("nan"), "ci_hi": float("nan"),
+                        "p": float("nan")})  # fmt: skip
+            continue
+        s = np.array([session_idx.get(d, -1) for d in df["date"].to_list()])
+        x = df[feature].to_numpy().astype(float)
+        y = df[f"ret_{adj}"].to_numpy().astype(float)
+        ic = spearman(x, y)
+        boots = block_bootstrap(
+            s,
+            lambda idx, x=x, y=y: spearman(x[idx], y[idx]),
+            block=h + 1 if entry == "close" else h + 2,
+            reps=ec.bootstrap_reps,
+            rng=rng,
+        )
+        out.append({**row, "ic": ic, **boot_summary(ic, boots)})
+    return out

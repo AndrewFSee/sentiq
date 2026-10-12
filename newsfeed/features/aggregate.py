@@ -118,11 +118,15 @@ def load_events(
     """(volume rows, founder event rows), one row per (item, ticker), times in UTC micros."""
     items = store.items_as_of(
         as_of_max,
-        columns="item_id, source, publisher, tradable_at, ingest_mode, text_hash",
+        columns="item_id, source, publisher, title, tradable_at, ingest_mode, text_hash",
     )
     if cfg.features.sources:
         items = items.filter(pl.col("source").is_in(cfg.features.sources))
-    items = items.drop("source")
+    if cfg.features.exclude_title_regex:
+        items = items.filter(
+            ~pl.col("title").fill_null("").str.contains(f"(?i){cfg.features.exclude_title_regex}")
+        )
+    items = items.drop("source", "title")
     if items.height == 0:
         empty = pl.DataFrame()
         return empty, empty
@@ -262,6 +266,11 @@ def build_features(
             e.filter(
                 pl.col("t_llm").is_not_null()
                 & (pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1) >= min_rank)
+                & (
+                    pl.col("event_type").is_in(fc.llm_event_types)
+                    if fc.llm_event_types
+                    else pl.lit(True)
+                )
             ).sort("t_llm")
             if e.height
             else e
