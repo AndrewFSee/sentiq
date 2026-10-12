@@ -109,7 +109,9 @@ class EdgarConfig(_Strict):
 
 
 class NewsApiConfig(_Strict):
-    vendor: Literal["fixture"] = "fixture"  # real vendors plug in here (none licensed yet)
+    vendor: Literal["fixture", "massive"] = "fixture"
+    massive_base_url: str = "https://api.massive.com"  # Massive (ex-Polygon); MASSIVE_API_KEY
+    massive_requests_per_minute: float = Field(5, gt=0)  # free Basic tier: 5 req/min
     fixture_path: Path = Path("tests/fixtures/news/articles.jsonl")  # relative to project root
     page_size: int = Field(100, gt=0)
     poll_overlap_minutes: float = Field(15, ge=0)  # re-request this much before the watermark
@@ -316,6 +318,9 @@ class Secrets(BaseSettings):
     anthropic_api_key: str | None = None
     tradier_token: str | None = Field(
         None, validation_alias=AliasChoices("TRADIER_TOKEN", "TRADIER_API_TOKEN")
+    )
+    massive_api_key: str | None = Field(
+        None, validation_alias=AliasChoices("MASSIVE_API_KEY", "POLYGON_API_KEY")
     )
     tiingo_token: str | None = Field(
         None, validation_alias=AliasChoices("TIINGO_TOKEN", "TIINGO_API_TOKEN", "TIINGO_API_KEY")
