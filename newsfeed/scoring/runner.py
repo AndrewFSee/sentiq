@@ -478,6 +478,7 @@ def plan_targets(
     sample: int | None = None,
     seed: int = 1,
     limit: int | None = None,
+    event_types: list[str] | None = None,
 ) -> list[Target]:
     """Targets still to score for this job.
 
@@ -504,6 +505,21 @@ def plan_targets(
             for p in pairs
             if (p["item_id"], p["ticker"], cfg.scoring.model, job.prompt_hash, p["text_hash"]) in ok
         ]
+    if event_types:
+        # restrict to pairs whose primary (unmasked, replicate 0) ok score has these event
+        # types: lets a study cover exactly an eval sample (e.g. the earnings leakage check)
+        keep = {
+            (r["item_id"], r["ticker"], r["text_hash"])
+            for r in job.store.query(
+                """
+                SELECT item_id, ticker, text_hash FROM scores
+                WHERE status = 'ok' AND NOT masked AND replicate = 0
+                  AND model = $m AND prompt_hash = $h AND list_contains($types, event_type)
+                """,
+                {"m": cfg.scoring.model, "h": job.prompt_hash, "types": list(event_types)},
+            ).to_dicts()
+        }
+        pairs = [p for p in pairs if (p["item_id"], p["ticker"], p["text_hash"]) in keep]
     if sample is not None:
         pairs = stable_sample(pairs, sample, seed)
     reps = range(1, replicates + 1) if replicates > 0 else [0]

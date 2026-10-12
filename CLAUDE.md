@@ -14,10 +14,12 @@ speed and polish.** It is not a trading system.
   baselines, embeddings + novelty, point-in-time features with frozen-store causality tests).
   **M5 done** (Tradier prices, total-return targets over an entry x horizon x adjustment grid,
   PIT controls, purged CV, frozen holdout, rank IC + incremental lift, bootstrap + BH).
-  **M6 in progress** (branch `m6-sp500`): point-in-time S&P 500 universe 2019–present,
-  per-CIK backfill windows, price routing (Tradier / renamed / Tiingo for delisted),
-  split-consistent market caps, PIT sector ETFs, member-only feature rows. Remaining: full
-  backfill → derive → batch scoring (ask before paying) → features → eval (pre-holdout).
+  **M6 done** (branch `m6-sp500`): point-in-time S&P 500 universe 2019–present, per-CIK
+  backfill windows, price routing (Tradier / renamed / Tiingo for delisted), split-consistent
+  market caps, PIT sector ETFs, member-only feature rows, Massive vendor news, masked-score
+  leakage checks, pre-registered tests 1–4b + exploratory per-type breakdown (results in the
+  decisions log). Ongoing: live collection (`scripts\collect_window.cmd`) for the holdout;
+  the single pre-registered holdout look (H1 earnings, H2 guidance) is on/after 2027-08-31.
 - Every command that calls the model costs money: run `score --dry-run` first; jobs estimated
   above `scoring.confirm_above_usd` need `--yes`. Never run paid jobs without the user's OK.
 
@@ -247,7 +249,18 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   only its membership window (+45 days); `build_panel` falls back to Tiingo when Tradier has
   < 50% of the window's sessions (e.g. DISCA→WBD: WBD history starts 2022-04).
 - Delisted: after the last real bar, up to 25 synthetic sessions at the last close (cash).
-  Caveat: bankruptcies' final recovery may be below the last exchange trade.
+  Caveats: bankruptcies' final recovery may be below the last exchange trade; stock-for-stock
+  deals ignore the acquirer's returns after the close. Non-current series that don't reach
+  back to their window start are dropped (unpriced), not padded.
+- Vendor facts (verified 2026-10-10): Tradier has deterministic gaps for some *listed* names
+  (NOC none before 2020-08-24, CSX missing 2024-06..2026-06, BEN/TDG/ROK/DG/AIG start late)
+  → any Tradier series that starts late or is < 98% dense is replaced by Tiingo's if better.
+  Tiingo files a security under its *last* ticker (FRC→FRCB, SIVB→SIVBQ, CDAY→DAY,
+  COG→CTRA, DISCA→WBD, HCP/PEAK→DOC); same-CIK tickers and Tiingo name search are tried
+  automatically, the rest are `eval.price_overrides` (each verified against a known price).
+- Unpriced (no free source): APC, NFX, SCG, STI, INFO, VIAC (2019-12..2022-02), WRK, and
+  FOX/FOXA before 2019-03-12 (then 21st Century Fox) — ~13 of ~3700 member ticker-years.
+  `scripts/prefetch_prices.py` warms both caches and writes `data/reports/prices-prefetch.csv`.
 - Tiingo bars are unadjusted + `divCash`/`splitFactor`; converted to Tradier's convention
   (split-adjusted bars and dividends, no dividend adjustment). Free tier: 50 req/hour, 1000/day,
   500 symbols/month → `eval.tiingo_requests_per_hour: 48`. Cache: `data/ref/prices_tiingo/`.
@@ -324,3 +337,155 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   keep the full entry × horizon × adjustment grid; delisted prices from Tiingo (free tier).
 - 2026-10-10 (M6): full EDGAR backfill = 651 CIKs, ~48k 8-Ks; ~5–6 SEC requests per filing at
   8 req/s → ~15–17 h. Don't run other SEC-heavy jobs (companyfacts for eval) concurrently.
+  Actual: 53,050 8-Ks in ~12 h, 0 failures. Embedding derive is the slow part (bge-small on
+  CPU, ~1–3 chunks/s × ~355k 300-word chunks, single write at the end): left running.
+- 2026-10-11 (M6): batch scoring 55,493 requests (7 batches, byte-capped), done in ~25 min,
+  $15.91 (55,471 ok, 22 max_tokens). Feature set 8990ee7a9775 (embeddings off, config
+  `data/configs/sp500_noemb.yaml`): 984,567 rows, 1,954 sessions, ~504 members/day.
+- 2026-10-11 (M6, eval e1a1af, pre-holdout, ~52k news ticker-days, 1,878 sessions, 659
+  tickers): no BH discovery out of 180 tests. LLM sentiment univariate IC is small and
+  positive for `close` entry (≈ +0.01–0.016 at 1–2d; best p 0.01, sector-adj), ≈ 0 for
+  `next_open` (the effect, if any, is overnight), stronger in the small tercile (≈ +0.02 vs
+  +0.004 large). LLM lift over controls + LM/volume: |lift| ≤ 0.01 IC, none significant. The
+  M5 negative 1–2d IC (10 tickers) did not replicate — it was noise.
+- 2026-10-11 PRE-REGISTERED (before running) — follow-up tests, run one at a time, each a new
+  eval config (all count as tried variants):
+  1. **Earnings-only**: `eval.sample_event_types: [earnings]` (ticker-days with ≥1 LLM
+     event_type=earnings founder in the 1d window), feature set 8990ee7a9775, same grid/models.
+     Primary: `1d_llm_sent_cwmean` IC > 0 at close entry, h ∈ {1, 2}, market-adjusted.
+     After-close releases become tradable at the next open → this is post-announcement drift
+     from the first close after tradability, not the announcement reaction.
+  2. Size-stratified (small tercile), 3. novelty/embeddings set, 4. news vendor — each
+     pre-registered here before it runs.
+- 2026-10-11 RESULT test 1 (eval a82bca, eval config f6fefba49188; ~15.7k earnings ticker-days,
+  1,544 sessions, 653 tickers): primary `1d_llm_sent_cwmean` close/market IC h1 +0.018
+  (p 0.096), h2 +0.032 (CI [+0.006, +0.056], p 0.018; ×2 primary cells = 0.036). No BH
+  discovery across the run's 180 tests (min p 0.002 vs first BH threshold 0.00056). Sentiment
+  IC ≈ +0.03 at close/2–10d (both adjustments), ≈ half that at next_open → part of the drift is
+  overnight. LM tone is *negative* on the same sample (−0.01..−0.02). LLM lift over M1 small
+  (+0.005..+0.014; best p 0.010). By size: mid/large ≈ +0.03..+0.046, small ≈ +0.01..+0.02 —
+  the opposite of the full-sample size pattern.
+- 2026-10-11 PRE-REGISTERED test 2 (size): `eval.sample_size_buckets: [small]` on the full news
+  sample (not earnings-only), feature set 8990ee7a9775, same grid/models. Primary:
+  `1d_llm_sent_cwmean` IC > 0 at close entry, h ∈ {1, 2}, market-adjusted. Buckets are PIT
+  terciles of mcap among all index members on each date (`market_caps`).
+- 2026-10-12 RESULT test 2 (eval aea12f, config 33cda6f54b63; ~17.2k small-tercile news
+  ticker-days, 372 tickers): primary FAILS — close/market IC h1 +0.013 (p 0.26), h2 +0.017
+  (p 0.17). Sector-adjusted h1 +0.024 (p 0.03) is not a primary cell. No BH discovery (best
+  lift p 0.002, close/2 sector lgbm). The full-sample small-cap hint does not hold up.
+- 2026-10-12 PRE-REGISTERED test 3 (novelty): embeddings done (51,915 founder vectors,
+  bge-small, full documents; derive took ~24 h on CPU). New feature set = default config
+  (embeddings on), full news sample, same grid/models. Primary: rank IC of
+  `1d_llm_sent_x_novelty` (= `1d_llm_sent_cwmean` × `1d_emb_novelty_mean`, `add_derived`)
+  > 0 at close entry, h ∈ {1, 2}, market-adjusted. Novelty is null when its 30-day look-back
+  isn't covered, so the first month has no interaction values.
+- 2026-10-12 RESULT test 3 (feature set c35f16b5bccb rebuilt, eval 9909b6, config
+  ec5249afad6f, 220 tests): primary FAILS — `1d_llm_sent_x_novelty` close/market IC h1
+  +0.006 (p 0.39), h2 +0.013 (p 0.084), i.e. no better than sentiment alone (+0.007 / +0.013).
+  Novelty alone ≈ +0.003..+0.008. No BH discovery (best lift p 0.004, next_open/20 sector).
+- 2026-10-12 BUG (fixed): `feature_set_id` did not include the universe, so the S&P 500
+  embeddings build reused the 12-ticker M5 id c35f16b5bccb. Reads keep the latest build per
+  (ticker, as_of) and all 984,567 rows came from the new build, so eval 9909b6 is valid; the
+  M5 rows are shadowed. Ids now hash `cfg.universe` + the PIT membership table.
+- 2026-10-12 HOLDOUT PLAN (user: wait & collect; holdout NOT looked at). Holdout so far has
+  533 earnings ticker-days / 58 sessions (≈ one season; ~530 per quarter) → ~15–20% power
+  for IC 0.03, so it is not spent yet. PRE-REGISTERED confirmatory test, ONE look only:
+  earnings sample (`sample_event_types: [earnings]`), `1d_llm_sent_cwmean`, close entry,
+  h = 2, market-adjusted; pass = IC > 0 with one-sided bootstrap p < 0.05 (two-sided p < 0.10).
+  Same feature config / link policy / Haiku 5.5 prompt 6108c555090fa4b3 (if the model is
+  retired, the test is re-planned, not silently switched). Look date: first run on or after
+  **2027-08-31** (after the Q2-2027 season, expected n ≈ 2,600, power still only ~40%); not
+  earlier, regardless of interim results. The other 179 cells are reported as exploratory.
+- 2026-10-12: live collection for the holdout: `scoring.live_in_collect: true` (≈ $0.50/month,
+  live features need scores at `scored_at`), `collect.interval_seconds: 120` = period of the
+  Windows scheduled task running `collect --once` (live coverage needs ok polls ≤ 3 intervals
+  apart). The holdout from 2026-07-01 to 2026-10-10 is backfill-rule data; later is live-rule.
+- 2026-10-12: run live collection in ONE labelled console window, `scripts\collect_window.cmd`
+  (title "sentiq - COLLECTING 8-Ks", one `collect --once` per 120 s, `[FAILED]`/`[UNHEALTHY]`
+  appended to the title), not a 2-minute scheduled task (that flashes a console window every
+  run). EDGAR silence on US federal holidays (`timeutil.edgar_closed_dates`: NYSE open, EDGAR
+  closed — Columbus/Veterans Day) no longer raises `silent_feed`; found live on 2026-10-12.
+- 2026-10-12 test 4 vendor: Massive (ex-Polygon) `/v2/reference/news`, free Basic key (2 years
+  of history, 5 req/min). WRDS/RavenPack not available (alumni). Tiingo News: 3 months only.
+  Measured: ~170–250 articles/day market-wide, ~75–105/day tagged with S&P 500 tickers; mostly
+  Motley Fool, GlobeNewswire (incl. law-firm notices), Benzinga, Investing.com — no Reuters/DJ.
+  Text = title + `description` (a machine-written summary; no body). Only `published_utc`
+  (minute precision), no vendor first-seen time. Massive's per-ticker `insights` sentiment is
+  dropped at ingest (look-ahead risk). Config variants used by tests live in `config/variants/`.
+- 2026-10-12 PRE-REGISTERED test 4 (vendor news): `config/variants/news_massive.yaml`
+  (features.sources = coverage_sources = [news_api], embeddings off), backfill 2024-10-13 →
+  2026-10-12, Haiku 5.5 prompt 6108c555090fa4b3 on title + summary, news sample = ticker-days
+  with ≥1 vendor-news story in 1d, pre-holdout only. Primary: `1d_llm_sent_cwmean` IC > 0 at
+  close entry, h ∈ {1, 2}, market-adjusted. Timing: backfill rule published + 300 s → session.
+  If the primary passes, pre-planned robustness checks: (a) longer lag (published + 1 h) and
+  (b) headline-only scoring (rules out hindsight in vendor summaries) before any holdout use.
+- 2026-10-12 LEAKAGE (user question): Haiku 5.5's training data very likely covers most or all
+  of the pre-holdout period, so the model may "remember" outcomes; that bias looks exactly like
+  positive IC. All pre-holdout ICs are upper bounds; the holdout (after the training cutoff,
+  especially the live part) is the clean test. Masking (names/tickers/products/people/places;
+  dates and numbers stay) reduces but cannot remove recall.
+- 2026-10-12 PRE-REGISTERED leakage check A (earnings, before scoring): masked rescore of the
+  pre-holdout earnings founders (`score --masked --event-types earnings --end 2026-07-01`),
+  masked feature set (`features.llm_masked: true`). On the identical rows of the test-1 earnings
+  sample, compare IC(masked) vs IC(unmasked) of `1d_llm_sent_cwmean`, primary cell close/2/
+  market, paired block bootstrap of the difference. Reading: masked IC keeps ≥ half of the
+  unmasked IC and the difference CI covers 0 → no evidence that recall drives test 1; masked IC
+  ≈ 0 with the difference CI excluding 0 → test 1 is likely recall, not reading.
+- 2026-10-12 AMENDED test 4 (before any scoring or outcomes): score news founders unmasked and
+  masked; the **masked** feature set is primary (same primary cells), unmasked is secondary.
+- 2026-10-12 RESULT leakage check A (masked rescore 16,210 requests, $8.11; masked feature set
+  ba818990bf17; `newsfeed leakage` run 73e752, 15,720 identical rows): primary close/2/market
+  IC unmasked +0.032, masked +0.033, diff +0.000 [−0.005, +0.006], p 0.87 → by the
+  pre-registered reading, no evidence that recall drives test 1. Masked/unmasked sentiment
+  correlate 0.94. Longer horizons (10–20d) show small consistent negative diffs (−0.003 to
+  −0.005, p ≈ 0.06–0.13): at most mild recall there. Limits: dates and numbers stay visible, so
+  recall through them is not tested; the holdout remains the clean test. The unmasked IC
+  reproduces test 1 exactly (eval-inputs refactor check).
+- 2026-10-12 RESULT test 4 (vendor news; scoring 112,698 unmasked + 112,959 masked requests,
+  $12.05; feature sets masked 57330b614405 / unmasked 9fb97ec0eadc; evals 3ee8cf / af6e68;
+  ~38k news ticker-days, 426 sessions, 539 tickers, 2024-10-15 → 2026-06-29): primary FAILS —
+  masked `1d_llm_sent_cwmean` close/market IC h1 +0.002 (p 0.81), h2 +0.003 (p 0.72); unmasked
+  −0.000 / +0.003. No BH discovery in either run (best univariate p ≈ 0.09). The conditional
+  robustness checks (longer lag, headline-only) are not needed. Caveat: Massive's feed is
+  Motley Fool / GlobeNewswire / Benzinga / Investing.com headlines + machine summaries, not a
+  real-time wire, so this is a null for that feed, not for news in general.
+- 2026-10-12 Test-4 data profile (user asked about cleaning/categories): of 113k scored news
+  pairs 60% are 'passing' mentions, 35% event_type macro, 34% other; Motley Fool = 54%; 15% of
+  articles tag ≥4 tickers; ~6.6% of titles are law-firm class-action solicitations (almost all
+  GlobeNewswire), plus "Market Size … by 2035" research releases. Test 4 pooled all of it.
+- 2026-10-12 PRE-REGISTERED test 4b (confirmatory, cleaned news; no new LLM cost):
+  `config/variants/news_clean_masked.yaml` = test-4 masked set + `llm_event_types`
+  [analyst_action, product, earnings, legal_regulatory, m&a, guidance] (relevance ≥ secondary
+  as always) + `exclude_title_regex` (law firms, market-research releases) + `eval.sample: llm`
+  (days with ≥1 qualifying LLM event). Primary: masked `1d_llm_sent_cwmean` IC > 0 at close,
+  h ∈ {1, 2}, market-adjusted. Robustness checks (lag, headline-only) only if it passes.
+- 2026-10-12 PRE-REGISTERED tier 2 (EXPLORATORY, `newsfeed explore-types`): per event type on
+  "pure" samples (all qualifying LLM events in the 1d window of that type), news = test-4b
+  feature set (masked) × [analyst_action, product, earnings, legal_regulatory, m&a, guidance],
+  8-K = 8990ee7a9775 (unmasked; only earnings has a masked rescore) × [earnings, guidance, m&a,
+  legal_regulatory, product, other]; cells close/1/market and close/2/market → 24 tests, one BH
+  (q 0.10). Survivors are candidates for live/holdout confirmation only, not findings.
+- 2026-10-12 RESULT test 4b (cleaned news, masked; feature set 237fddb5e2f7, eval faee2b;
+  ~12.1k ticker-days, 425 sessions, 512 tickers): primary FAILS — close/market IC h1 −0.001
+  (p 0.99), h2 +0.003 (p 0.75). No BH discovery (180 tests). Not pre-registered, noted only:
+  20d IC +0.039 (close/market p 0.004; LM tone +0.029, p 0.27).
+- 2026-10-12 RESULT tier 2 (explore-types 86a94c, 24 tests): no BH survivor. News: every type
+  ≈ 0 except analyst_action (+0.020 / +0.027, p 0.29 / 0.15). 8-K: earnings +0.019 / +0.031
+  (p 0.09 / 0.03, = test 1), guidance +0.037 / +0.078 (n 1,406; p 0.31 / 0.03), m&a, legal,
+  product ≈ 0, other (26.7k rows) +0.007 / +0.005 — the full-sample 8-K IC comes from
+  earnings + guidance. Candidates only (8-K guidance), not findings.
+- 2026-10-12 Categorisation notes: event_type and relevance are Haiku labels from the same
+  scoring call (definitions in `scoring/prompts/score_v1.md`; "results + guidance together →
+  earnings"). Not human-validated. Spot checks: 8-K guidance = outlook raises/cuts/withdrawals,
+  pre-announcements, investor-day targets (some also contain results). News analyst_action is
+  mostly Motley Fool / Zacks "which stock is a better buy" pieces, not broker rating changes.
+- 2026-10-12 HOLDOUT PLAN AMENDED (holdout still unseen; user decision): two pre-registered
+  hypotheses at the same single look (on/after 2027-08-31), α split by Bonferroni:
+  **H1 earnings** — unchanged definition (test-1 sample, `1d_llm_sent_cwmean`, close/2/market),
+  pass = IC > 0 with one-sided p < 0.025 (two-sided p < 0.05; was one-sided 0.05).
+  **H2 guidance** — `config/variants/sp500_noemb_guidance.yaml` (pure-guidance sample:
+  all qualifying LLM events in the 1d window are 8-K guidance; unmasked, same feature config as
+  test 1), `1d_llm_sent_cwmean`, close/2/market, pass = IC > 0 with one-sided p < 0.025. H2 was
+  found by exploration (pre-holdout IC +0.078, n 1,411 — likely inflated by selection), so its
+  holdout test is the first real test. Expected holdout n ≈ 210 (≈188/yr; 38 so far) → power
+  roughly 20% even if the true IC were 0.078.

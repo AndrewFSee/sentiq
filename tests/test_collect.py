@@ -234,3 +234,28 @@ def test_live_polls_record_coverage_and_stalls_leave_gaps(setup, store):
         (t0, t0 + timedelta(minutes=2)),
         (t0 + timedelta(minutes=32), t0 + timedelta(minutes=33)),
     ]
+
+
+def test_edgar_silence_ignores_federal_holidays_when_nyse_is_open(calendar):
+    # Columbus Day 2026-10-12: NYSE open, EDGAR closed -> no filings all day is not an outage
+    st = SourceState(
+        "edgar",
+        first_poll_at="2026-10-01T00:00:00+00:00",
+        last_activity_at="2026-10-09T21:30:00+00:00",  # Fri 17:30 EDT
+    )
+    holiday = datetime(2026, 10, 12, 18, 0, tzinfo=UTC)  # 14:00 EDT, NYSE session
+    st.last_poll_ok_at = holiday.isoformat()
+    assert calendar.is_open(holiday)
+    assert health(st, calendar, holiday) == set()
+    # Tuesday 10:30 EDT: 60 minutes of Tuesday's session (Monday's doesn't count) -> outage
+    tue = datetime(2026, 10, 13, 14, 30, tzinfo=UTC)
+    st.last_poll_ok_at = tue.isoformat()
+    assert health(st, calendar, tue) == {"silent_feed"}
+    # a news vendor publishes on federal holidays: silence there still counts
+    st_news = SourceState(
+        "news_api",
+        first_poll_at="2026-10-01T00:00:00+00:00",
+        last_poll_ok_at=holiday.isoformat(),
+        last_activity_at="2026-10-09T21:30:00+00:00",
+    )
+    assert health(st_news, calendar, holiday) == {"silent_feed"}

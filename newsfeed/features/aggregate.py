@@ -61,13 +61,18 @@ class FeatureSources:
     embedding_model: str | None = None
 
 
-def feature_set_id(cfg: AppConfig, src: FeatureSources) -> str:
+def feature_set_id(cfg: AppConfig, src: FeatureSources, universe_sig: str = "") -> str:
+    """Hash of everything that defines a feature table. Since 2026-10-12 this includes the
+    universe (config + ``universe_sig``, e.g. a hash of the PIT membership table): before, a
+    12-ticker and an S&P 500 build with the same feature config shared id c35f16b5bccb."""
     blob = json.dumps(
         [
             FEATURE_VERSION,
             cfg.features.model_dump(mode="json", exclude={"lm_dictionary"}),
             cfg.scoring.link_policy.model_dump(),
             src.__dict__,
+            cfg.universe.model_dump(mode="json", exclude={"pit_dir"}),
+            universe_sig,
         ],
         sort_keys=True,
     )
@@ -113,8 +118,15 @@ def load_events(
     """(volume rows, founder event rows), one row per (item, ticker), times in UTC micros."""
     items = store.items_as_of(
         as_of_max,
-        columns="item_id, publisher, tradable_at, ingest_mode, text_hash",
+        columns="item_id, source, publisher, title, tradable_at, ingest_mode, text_hash",
     )
+    if cfg.features.sources:
+        items = items.filter(pl.col("source").is_in(cfg.features.sources))
+    if cfg.features.exclude_title_regex:
+        items = items.filter(
+            ~pl.col("title").fill_null("").str.contains(f"(?i){cfg.features.exclude_title_regex}")
+        )
+    items = items.drop("source", "title")
     if items.height == 0:
         empty = pl.DataFrame()
         return empty, empty
@@ -147,10 +159,10 @@ def load_events(
         SELECT item_id, ticker AS canon_ticker, text_hash, sentiment, confidence, relevance,
                event_type, scored_at
         FROM scores
-        WHERE status = 'ok' AND NOT masked AND replicate = 0
+        WHERE status = 'ok' AND masked = $masked AND replicate = 0
           AND model = $m AND prompt_hash = $h
         """,
-        {"m": src.llm_model, "h": src.llm_prompt_hash},
+        {"m": src.llm_model, "h": src.llm_prompt_hash, "masked": cfg.features.llm_masked},
     )
     ev = founders.join(scores, on=["item_id", "canon_ticker", "text_hash"], how="left")
     ev = ev.with_columns(
@@ -254,6 +266,11 @@ def build_features(
             e.filter(
                 pl.col("t_llm").is_not_null()
                 & (pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1) >= min_rank)
+                & (
+                    pl.col("event_type").is_in(fc.llm_event_types)
+                    if fc.llm_event_types
+                    else pl.lit(True)
+                )
             ).sort("t_llm")
             if e.height
             else e

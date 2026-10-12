@@ -29,10 +29,10 @@ def submit(job: ScoringJob, targets: Sequence[Target]) -> list[str]:
         raise RuntimeError("no LLM client configured")
     job.register_experiment()
     prepared = job.prepare(targets)
-    size = job.cfg.scoring.batch_max_requests
     batch_ids = []
-    for i in range(0, len(prepared), size):
-        chunk = prepared[i : i + size]
+    for chunk in _chunks(
+        prepared, job.cfg.scoring.batch_max_requests, job.cfg.scoring.batch_max_bytes
+    ):
         requests = [{"custom_id": p.target.custom_id, "params": p.params} for p in chunk]
         if len({r["custom_id"] for r in requests}) != len(requests):
             raise ValueError("duplicate custom_id within a batch")
@@ -41,6 +41,25 @@ def submit(job: ScoringJob, targets: Sequence[Target]) -> list[str]:
         _record_submission(job, batch_id, chunk)
         batch_ids.append(batch_id)
     return batch_ids
+
+
+def _chunks(
+    prepared: Sequence[Prepared], max_requests: int, max_bytes: int
+) -> list[list[Prepared]]:
+    """Split by request count and by serialized size (the API caps a batch at 256 MB)."""
+    out: list[list[Prepared]] = []
+    cur: list[Prepared] = []
+    cur_bytes = 0
+    for p in prepared:
+        n = len(json.dumps({"custom_id": p.target.custom_id, "params": p.params}).encode())
+        if cur and (len(cur) >= max_requests or cur_bytes + n > max_bytes):
+            out.append(cur)
+            cur, cur_bytes = [], 0
+        cur.append(p)
+        cur_bytes += n
+    if cur:
+        out.append(cur)
+    return out
 
 
 def _record_submission(job: ScoringJob, batch_id: str, chunk: Sequence[Prepared]) -> None:

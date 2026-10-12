@@ -24,6 +24,7 @@ from newsfeed.features.baselines import (
 )
 from newsfeed.ingest.base import RawItem
 from newsfeed.ingest.runner import build_row
+from newsfeed.scoring.runner import plan_targets
 from newsfeed.storage import Store
 
 from .fake_llm import FakeLLM, default_output, user_text
@@ -126,6 +127,12 @@ def test_feature_set_id_tracks_config_and_sources(env):
     )
     assert feature_set_id(other, src) != a
     assert feature_set_id(env.cfg, src.__class__(**{**src.__dict__, "llm_prompt_hash": "x"})) != a
+    # the universe is part of the id (a 12-ticker and an S&P 500 build must not collide)
+    small = env.cfg.model_copy(
+        update={"universe": env.cfg.universe.model_copy(update={"tickers": ["AAPL"]})}
+    )
+    assert feature_set_id(small, src) != a
+    assert feature_set_id(env.cfg, src, "members-v2") != a
 
 
 # ------------------------------------------------------------------ values
@@ -474,3 +481,49 @@ def test_novelty_features(env):
     # look-back not covered (corpus coverage starts 2026-07-01): novelty is unknown
     early = utc(2026, 7, 2, 18, 0)
     assert row(feats(env, [early], ["AAPL"]), "AAPL", early)["5d_emb_novelty_mean"] is None
+
+
+def test_feature_sources_filter(env):
+    T = utc(2026, 7, 31, 14, 0)
+    assert row(feats(env, [T]), "AAPL", T)["1h_n_items"] == 4
+    other = env.cfg.model_copy(
+        update={"features": env.cfg.features.model_copy(update={"sources": ["edgar"]})}
+    )
+    df = build_features(env.store, other, [T], env.c2t, env.sources())
+    assert row(df, "AAPL", T)["1h_n_items"] == 0  # corpus is news_api only
+    assert feature_set_id(other, env.sources()) != feature_set_id(env.cfg, env.sources())
+
+
+def test_features_can_use_masked_scores(env):
+    T = utc(2026, 7, 31, 14, 0)
+    base = row(feats(env, [T]), "AAPL", T)
+    masked_cfg = env.cfg.model_copy(
+        update={"features": env.cfg.features.model_copy(update={"llm_masked": True})}
+    )
+    df = build_features(env.store, masked_cfg, [T], env.c2t, env.sources())
+    assert base["1h_llm_n"] == 1 and row(df, "AAPL", T)["1h_llm_n"] == 0  # none masked yet
+    j = env.job(FakeLLM())
+    j.run_live(plan_targets(j, env.c2t, masked=True))
+    df = build_features(env.store, masked_cfg, [T], env.c2t, env.sources())
+    r = row(df, "AAPL", T)
+    assert r["1h_llm_n"] == 1 and r["1h_llm_sent_cwmean"] is not None
+    assert r["1h_lm_n"] == base["1h_lm_n"]  # non-LLM features unchanged
+    assert feature_set_id(masked_cfg, env.sources()) != feature_set_id(env.cfg, env.sources())
+
+
+def test_llm_event_type_and_title_filters(env):
+    T = utc(2026, 7, 31, 14, 0)
+    base = row(feats(env, [T]), "AAPL", T)
+    assert base["1h_n_items"] == 4 and base["1h_llm_n"] == 1
+    titles = env.store.query("SELECT title FROM items WHERE native_id = 'fixture:a1'")["title"]
+    word = titles[0].split()[0]
+    no_a1 = env.cfg.model_copy(
+        update={"features": env.cfg.features.model_copy(update={"exclude_title_regex": word})}
+    )
+    r = row(build_features(env.store, no_a1, [T], env.c2t, env.sources()), "AAPL", T)
+    assert r["1h_n_items"] < 4
+    other_types = env.cfg.model_copy(
+        update={"features": env.cfg.features.model_copy(update={"llm_event_types": ["m&a"]})}
+    )
+    r = row(build_features(env.store, other_types, [T], env.c2t, env.sources()), "AAPL", T)
+    assert r["1h_llm_n"] == 0 and r["1h_n_items"] == 4  # only LLM aggregates are filtered

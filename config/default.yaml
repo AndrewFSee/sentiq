@@ -114,7 +114,7 @@ sources:
     silence_alert_minutes: 30
 
 collect:
-  interval_seconds: 60
+  interval_seconds: 120              # = Task Scheduler period for `collect --once` (sentiq-collect)
   sources: [edgar]
   max_consecutive_failures: 3
   stalled_after_intervals: 3
@@ -142,11 +142,12 @@ scoring:
   founders_only: true                # score each story once, on its first appearance
   live_concurrency: 4
   batch_max_requests: 10000
+  batch_max_bytes: 150000000          # serialized size per batch (API limit 256 MB)
   batch_poll_seconds: 60
   dry_run_sample: 25
   est_output_tokens: 300             # used until the usage ledger has real averages
   confirm_above_usd: 1.0             # jobs estimated above this require --yes
-  live_in_collect: false             # true = collect loop scores new story founders (costs money)
+  live_in_collect: true              # true = collect loop scores new story founders (costs money)
   live_lookback_hours: 48
 
 pricing:
@@ -173,7 +174,7 @@ features:
   decision_lag_minutes: 10
   lm_dictionary: data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv  # free for academic use
   coverage_sources: [edgar]                  # windows outside collected coverage -> null features
-  embeddings: true                           # local ONNX model via fastembed (no API key)
+  embeddings: false                          # on = derive embeds new founders (slow on CPU: ~1-3 chunks/s); no pre-registered test uses them
   embedding_model: BAAI/bge-small-en-v1.5
   embedding_cache: data/ref/models
   novelty_lookback_days: 30                  # novelty = 1 - max cosine sim to the ticker's prior stories
@@ -189,6 +190,13 @@ eval:
   price_overrides:
     FRC: "tiingo:FRCB"     # First Republic, seized 2023-05-01
     SIVB: "tiingo:SIVBQ"   # SVB Financial, failed 2023-03-10
+    HFC: "tradier:DINO"    # HollyFrontier -> HF Sinclair (new CIK, same listing history)
+    DISCA: "tiingo:WBD"    # Tradier's WBD starts 2022-04; Tiingo's carries DISCA (checked)
+    HCP: "tiingo:DOC"      # Healthpeak: HCP -> PEAK -> DOC; Tiingo's DOC has its history
+    PEAK: "tiingo:DOC"     #   (2019-01-02 close 26.98, not Physicians Realty's old DOC)
+  # No free price history found (Tradier, Tiingo, successors), left unpriced: APC, NFX, SCG,
+  # STI, INFO, VIAC (2019-12..2022-02), WRK -- ~13 of ~3700 member ticker-years. Also
+  # FOX/FOXA before 2019-03-12: the tickers then belonged to 21st Century Fox (other CIK).
   market_etf: SPY
   sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
                 JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}

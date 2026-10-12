@@ -109,7 +109,9 @@ class EdgarConfig(_Strict):
 
 
 class NewsApiConfig(_Strict):
-    vendor: Literal["fixture"] = "fixture"  # real vendors plug in here (none licensed yet)
+    vendor: Literal["fixture", "massive"] = "fixture"
+    massive_base_url: str = "https://api.massive.com"  # Massive (ex-Polygon); MASSIVE_API_KEY
+    massive_requests_per_minute: float = Field(5, gt=0)  # free Basic tier: 5 req/min
     fixture_path: Path = Path("tests/fixtures/news/articles.jsonl")  # relative to project root
     page_size: int = Field(100, gt=0)
     poll_overlap_minutes: float = Field(15, ge=0)  # re-request this much before the watermark
@@ -189,6 +191,7 @@ class ScoringConfig(_Strict):
     founders_only: bool = True  # score each story once, on its first appearance
     live_concurrency: int = Field(4, ge=1)
     batch_max_requests: int = Field(10_000, ge=1, le=100_000)
+    batch_max_bytes: int = Field(150_000_000, ge=1, le=250_000_000)  # API limit 256 MB
     batch_poll_seconds: float = Field(60, gt=0)
     dry_run_sample: int = Field(25, ge=1)  # requests token-counted to estimate a job
     est_output_tokens: int = Field(300, gt=0)  # used until the ledger has real averages
@@ -214,6 +217,15 @@ class FeaturesConfig(_Strict):
     lm_dictionary: Path = Path("data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv")
     # sources whose coverage a window must have (else its features are null, not zero)
     coverage_sources: list[str] = Field(default_factory=lambda: ["edgar"])
+    # item sources that feed events ([] = all). E.g. [news_api] isolates vendor news (test 4).
+    sources: list[str] = Field(default_factory=list)
+    # use masked-text LLM scores (leakage check: names/tickers/products/people/places hidden)
+    llm_masked: bool = False
+    # LLM aggregates only over these event types ([] = all), e.g. company-specific news
+    llm_event_types: list[str] = Field(default_factory=list)
+    # items whose title matches (Python regex, case-insensitive) are dropped from all events,
+    # e.g. law-firm class-action solicitations and market-research report releases
+    exclude_title_regex: str | None = None
     embeddings: bool = True  # local fastembed model; vectors for story founders
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_cache: Path = Path("data/ref/models")
@@ -288,8 +300,19 @@ class EvalConfig(_Strict):
         default_factory=lambda: ["market", "sector"]
     )
     holdout_start: date  # data on/after this date is frozen; eval refuses it without a flag
-    sample: Literal["news", "all"] = "news"  # news = ticker-days with >= 1 story in the window
+    # news = ticker-days with >= 1 story in the window; llm = >= 1 LLM event that passes the
+    # relevance (and event-type) filters, i.e. the rows where LLM sentiment is defined
+    sample: Literal["news", "all", "llm"] = "news"
     sample_window: str = "1d"
+    # optional event-type subset (LLM event_type of scored founders in the sample window), e.g.
+    # [earnings]: keep ticker-days with >= 1 such event. Defines a *different* test sample.
+    sample_event_types: list[str] = Field(default_factory=list)
+    # optional size subset: PIT mcap terciles among all members on the date
+    sample_size_buckets: list[Literal["small", "mid", "large", "unknown"]] = Field(
+        default_factory=list
+    )
+    # exploratory per-type analysis: rows whose LLM events in the window are ALL of this type
+    sample_pure_event_type: str | None = None
     cv: CVConfig = Field(default_factory=CVConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     fdr_q: float = Field(0.10, gt=0, lt=1)  # Benjamini-Hochberg level across the grid
@@ -308,6 +331,9 @@ class Secrets(BaseSettings):
     anthropic_api_key: str | None = None
     tradier_token: str | None = Field(
         None, validation_alias=AliasChoices("TRADIER_TOKEN", "TRADIER_API_TOKEN")
+    )
+    massive_api_key: str | None = Field(
+        None, validation_alias=AliasChoices("MASSIVE_API_KEY", "POLYGON_API_KEY")
     )
     tiingo_token: str | None = Field(
         None, validation_alias=AliasChoices("TIINGO_TOKEN", "TIINGO_API_TOKEN", "TIINGO_API_KEY")

@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
 
+import numpy as np
 import polars as pl
 import typer
 
@@ -30,10 +31,14 @@ from newsfeed.eval.prices import (
 from newsfeed.eval.report import (
     DEFAULT_UNIVARIATE,
     EvalInputs,
+    add_derived,
+    benjamini_hochberg,
     decision_dates,
     eval_config_id,
+    paired_ic_comparison,
     render_markdown,
     run_eval,
+    univariate_cells,
 )
 from newsfeed.eval.targets import adjusted_targets, controls, forward_returns
 from newsfeed.features.aggregate import (
@@ -155,6 +160,15 @@ class Context:
         u = self.universe(full=True)  # linking always uses the whole configured universe
         titles = None if self.cfg.universe.name_linking == "aliases_only" else self.titles(u)
         return TickerLinker(u, self.cfg.universe.aliases, titles)
+
+    def universe_sig(self) -> str:
+        """Content hash of the PIT membership table ("" in static mode)."""
+        if self.cfg.universe.mode != "sp500_pit":
+            return ""
+        import hashlib
+
+        p = self.cfg.universe.pit_dir / "sp500_members.parquet"
+        return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
 
     def cik_windows(
         self, start: datetime, end: datetime
@@ -453,6 +467,10 @@ def score(
     end: Annotated[str | None, typer.Option(help="tradable_at < this UTC date")] = None,
     sources: Annotated[str | None, typer.Option(help="Comma-separated sources")] = None,
     sample: Annotated[int | None, typer.Option(help="Deterministic sample of N pairs")] = None,
+    event_types: Annotated[
+        str | None,
+        typer.Option(help="Only pairs whose primary score has these event types (comma-sep.)"),
+    ] = None,
     seed: int = 1,
     replicates: Annotated[int, typer.Option(help="Noise study: re-draw K times")] = 0,
     limit: Annotated[int | None, typer.Option(help="Cap the number of requests")] = None,
@@ -486,6 +504,7 @@ def score(
             sample=sample,
             seed=seed,
             limit=limit,
+            event_types=_split(event_types) or None,
         )
         typer.echo(
             f"model={job.model} prompt={job.prompt.version}/{job.prompt_hash} "
@@ -657,7 +676,7 @@ def features(
             fc.decision_lag_minutes,
         )
         src = feature_sources(ctx)
-        set_id = feature_set_id(cfg, src)
+        set_id = feature_set_id(cfg, src, ctx.universe_sig())
         c2t = ctx.universe(full=True).cik_to_tickers
         spans = None
         if cfg.universe.mode == "sp500_pit":  # rows only while the ticker is an index member
@@ -760,6 +779,73 @@ def coverage_cmd(
                 typer.echo(f"  {tk:6s} {spans}")
 
 
+def _eval_inputs(
+    ctx: Context, cfg: AppConfig, feats: pl.DataFrame, *, refresh_prices: bool = False
+) -> tuple[EvalInputs, list[dict]]:
+    """Prices (routed, cached), targets, controls and PIT size for a feature table."""
+    ec = cfg.eval
+    dates = decision_dates(feats)
+    secrets = load_secrets()
+    caches = {
+        "tradier": CachedPrices(
+            TradierPrices(
+                secrets.tradier_token, ec.tradier_base_url, ec.tradier_requests_per_second
+            )
+            if secrets.tradier_token
+            else None,
+            cfg.paths.ref_dir / "prices",
+        ),
+        "tiingo": CachedPrices(
+            TiingoPrices(secrets.tiingo_token, ec.tiingo_requests_per_hour / 3600)
+            if secrets.tiingo_token
+            else None,
+            cfg.paths.ref_dir / "prices_tiingo",
+        ),
+    }
+    lo, end = dates[0], min(dates[-1] + timedelta(days=45), utcnow().date())
+    tickers = sorted(feats["ticker"].unique().to_list())
+    bench = [ec.market_etf, *sorted(set(ec.sector_etfs.values()))]
+    pit = cfg.universe.mode == "sp500_pit"
+    if pit:
+        bench += sorted(set(ec.gics_sector_etfs.values()) - set(bench))
+        members = ctx.pit.members.filter(pl.col("ticker").is_in(tickers))
+        routes = route_prices(
+            members, ctx.tmap.ticker_to_cik, lo, end, overrides=ec.price_overrides
+        )
+    else:
+        routes = [PriceRoute(t, t, "tradier", lo, end, "", "current") for t in tickers]
+    routes += [PriceRoute(b, b, "tradier", lo, end, b, "benchmark") for b in bench]
+    # sessions = the market ETF's trading days (fetched first)
+    spy, _, _ = build_panel(routes[-len(bench) :][:1], caches, [], refresh=refresh_prices)
+    sessions = sorted(spy["date"].to_list())
+    panel, price_report, splits = build_panel(routes, caches, sessions, refresh=refresh_prices)
+    panel = panel.drop("synthetic")
+    fwd = forward_returns(panel, ec.horizons, ec.entries)
+    sector_of = ctx.pit.sector_etf_frame(ec.gics_sector_etfs) if pit else ec.sector_etfs
+    targets = adjusted_targets(fwd, tickers, ec.market_etf, sector_of)
+    ctl = controls(panel, ec.market_etf)
+    shares: dict[str, pl.DataFrame] = {}
+    t2c = (
+        {
+            t: sorted({int(c) for c in g["cik"]})
+            for (t,), g in ctx.pit.members.filter(pl.col("ticker").is_in(tickers)).group_by(
+                "ticker"
+            )
+        }
+        if pit
+        else {t: [c] for c, tks in ctx.universe(full=True).cik_to_tickers.items() for t in tks}
+    )
+    for t, ciks in sorted(t2c.items()):
+        hist = [load_shares(ctx.http(), c, cfg.paths.ref_dir / "sec_shares") for c in ciks]
+        shares[t] = pl.concat(hist).sort("available_from") if hist else pl.DataFrame()
+    decisions = feats.select(
+        "ticker",
+        pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
+    )
+    caps = market_caps(decisions, panel, shares, splits)
+    return EvalInputs(feats, ctl, targets, caps, sessions), price_report
+
+
 @app.command("eval")
 def eval_cmd(
     feature_set: Annotated[
@@ -789,7 +875,7 @@ def eval_cmd(
         feats = store.features(set_id)
         if feats.height == 0:
             raise typer.BadParameter(f"feature set {set_id} has no rows; run `features` first")
-        feats = feats.drop("feature_set_id", "build_run_id", "built_at", strict=False)
+        feats = add_derived(feats.drop("feature_set_id", "build_run_id", "built_at", strict=False))
         prior_holdout = store.ops_query(
             "SELECT count(*) AS n FROM experiments WHERE kind = 'eval' "
             "AND json_extract(details, '$.holdout') = true"
@@ -799,66 +885,7 @@ def eval_cmd(
                 f"WARNING: evaluating on the frozen holdout (from {ec.holdout_start}); it has "
                 f"been evaluated {prior_holdout} time(s) before. Each look spends its value."
             )
-        dates = decision_dates(feats)
-        secrets = load_secrets()
-        caches = {
-            "tradier": CachedPrices(
-                TradierPrices(
-                    secrets.tradier_token, ec.tradier_base_url, ec.tradier_requests_per_second
-                )
-                if secrets.tradier_token
-                else None,
-                cfg.paths.ref_dir / "prices",
-            ),
-            "tiingo": CachedPrices(
-                TiingoPrices(secrets.tiingo_token, ec.tiingo_requests_per_hour / 3600)
-                if secrets.tiingo_token
-                else None,
-                cfg.paths.ref_dir / "prices_tiingo",
-            ),
-        }
-        lo, end = dates[0], min(dates[-1] + timedelta(days=45), utcnow().date())
-        tickers = sorted(feats["ticker"].unique().to_list())
-        bench = [ec.market_etf, *sorted(set(ec.sector_etfs.values()))]
-        pit = cfg.universe.mode == "sp500_pit"
-        if pit:
-            bench += sorted(set(ec.gics_sector_etfs.values()) - set(bench))
-            members = ctx.pit.members.filter(pl.col("ticker").is_in(tickers))
-            routes = route_prices(
-                members, ctx.tmap.ticker_to_cik, lo, end, overrides=ec.price_overrides
-            )
-        else:
-            routes = [PriceRoute(t, t, "tradier", lo, end, "", "current") for t in tickers]
-        routes += [PriceRoute(b, b, "tradier", lo, end, b, "benchmark") for b in bench]
-        # sessions = the market ETF's trading days (fetched first)
-        spy, _, _ = build_panel(routes[-len(bench) :][:1], caches, [], refresh=refresh_prices)
-        sessions = sorted(spy["date"].to_list())
-        panel, price_report, splits = build_panel(routes, caches, sessions, refresh=refresh_prices)
-        panel = panel.drop("synthetic")
-        fwd = forward_returns(panel, ec.horizons, ec.entries)
-        sector_of = ctx.pit.sector_etf_frame(ec.gics_sector_etfs) if pit else ec.sector_etfs
-        targets = adjusted_targets(fwd, tickers, ec.market_etf, sector_of)
-        ctl = controls(panel, ec.market_etf)
-        shares: dict[str, pl.DataFrame] = {}
-        t2c = (
-            {
-                t: sorted({int(c) for c in g["cik"]})
-                for (t,), g in ctx.pit.members.filter(pl.col("ticker").is_in(tickers)).group_by(
-                    "ticker"
-                )
-            }
-            if pit
-            else {t: [c] for c, tks in ctx.universe(full=True).cik_to_tickers.items() for t in tks}
-        )
-        for t, ciks in sorted(t2c.items()):
-            hist = [load_shares(ctx.http(), c, cfg.paths.ref_dir / "sec_shares") for c in ciks]
-            shares[t] = pl.concat(hist).sort("available_from") if hist else pl.DataFrame()
-        decisions = feats.select(
-            "ticker",
-            pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
-        )
-        caps = market_caps(decisions, panel, shares, splits)
-        inp = EvalInputs(feats, ctl, targets, caps, sessions)
+        inp, price_report = _eval_inputs(ctx, cfg, feats, refresh_prices=refresh_prices)
         univariate = [f for f in DEFAULT_UNIVARIATE if f in feats.columns]
         eval_id = eval_config_id(cfg, set_id, univariate)
         result = run_eval(inp, cfg, univariate=univariate, use_holdout=use_holdout)
@@ -913,6 +940,144 @@ def eval_cmd(
         typer.echo(md)
 
     _run("eval", cfg, {"feature_set": feature_set, "use_holdout": use_holdout}, body)
+
+
+@app.command("leakage")
+def leakage_cmd(
+    feature_set: Annotated[str, typer.Option(help="Unmasked feature set (defines the sample)")],
+    masked_set: Annotated[str, typer.Option(help="Masked feature set (same features config)")],
+    column: Annotated[str, typer.Option(help="Feature compared")] = "1d_llm_sent_cwmean",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Leakage check: IC of masked vs unmasked LLM features on identical pre-holdout rows."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        drop = ("feature_set_id", "build_run_id", "built_at")
+        a = ctx.store.features(feature_set).drop(*drop, strict=False)
+        b = ctx.store.features(masked_set).select("ticker", "as_of", column)
+        if a.height == 0 or b.height == 0:
+            raise typer.BadParameter("both feature sets must exist")
+        feats = a.join(b.rename({column: f"masked__{column}"}), on=["ticker", "as_of"], how="left")
+        inp, _ = _eval_inputs(ctx, cfg, feats)
+        res = paired_ic_comparison(inp, cfg, column, f"masked__{column}")
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        res.write_parquet(out_dir / f"leakage-{run_id}.parquet")
+        lines = [
+            f"# Leakage check {run_id}",
+            "",
+            f"- unmasked `{feature_set}` vs masked `{masked_set}`, feature `{column}`, "
+            f"identical pre-holdout rows (sample: {cfg.eval.sample}, "
+            f"events {cfg.eval.sample_event_types or 'any'})",
+            "- diff = IC(masked) - IC(unmasked); paired circular block bootstrap",
+            "",
+            "| entry | h | adj | n | corr(a,b) | IC unmasked | IC masked | diff | 95% CI | p |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['entry']} | {r['horizon']} | {r['adjustment']} | {r['n']} | "
+                f"{r['corr_ab']:.3f} | {r['ic_a']:+.3f} | {r['ic_b']:+.3f} | {r['diff']:+.3f} | "
+                f"[{r['ci_lo']:+.3f}, {r['ci_hi']:+.3f}] | {r['p']:.3f} |"
+            )
+        md = "\n".join(lines) + "\n"
+        (out_dir / f"leakage-{run_id}.md").write_text(md, encoding="utf-8")
+        with ctx.store.ops() as con:
+            con.execute(
+                "INSERT INTO experiments VALUES ('leakage', ?, ?, ?, ?)",
+                [
+                    f"{feature_set}:{masked_set}:{run_id}",
+                    utcnow(),
+                    run_id,
+                    json.dumps({"column": column, "eval": cfg.eval.model_dump(mode="json")}),
+                ],
+            )
+        stats["report"] = str(out_dir / f"leakage-{run_id}.md")
+        typer.echo(md)
+
+    _run("leakage", cfg, {"feature_set": feature_set, "masked_set": masked_set}, body)
+
+
+@app.command("explore-types")
+def explore_types_cmd(
+    feature_set: Annotated[
+        list[str], typer.Option(help="label=feature_set_id (repeatable), e.g. news=57330b614405")
+    ],
+    types: Annotated[str, typer.Option(help="Comma-separated LLM event types")],
+    feature: Annotated[str, typer.Option(help="Feature tested")] = "1d_llm_sent_cwmean",
+    cells: Annotated[
+        str, typer.Option(help="entry/horizon/adjustment cells, comma-separated")
+    ] = "close/1/market,close/2/market",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """EXPLORATORY per-event-type IC on 'pure' samples (all LLM events in the window of one
+    type), pre-holdout; one Benjamini-Hochberg correction across every set x type x cell."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cell_list = [(e, int(h), a) for e, h, a in (c.split("/") for c in _split(cells))]
+    type_list = _split(types)
+    sets = dict(fs.split("=", 1) for fs in feature_set)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        rows: list[dict[str, Any]] = []
+        for label, set_id in sets.items():
+            feats = ctx.store.features(set_id).drop(
+                "feature_set_id", "build_run_id", "built_at", strict=False
+            )
+            if feats.height == 0:
+                raise typer.BadParameter(f"feature set {set_id} has no rows")
+            inp, _ = _eval_inputs(ctx, cfg, feats)
+            for t in type_list:
+                c = cfg.model_copy(
+                    update={"eval": cfg.eval.model_copy(update={"sample_pure_event_type": t})}
+                )
+                for r in univariate_cells(inp, c, feature, cell_list):
+                    rows.append({"set": label, "feature_set": set_id, "event_type": t, **r})
+        res = pl.DataFrame(rows)
+        p = res["p"].to_numpy().astype(float)
+        ok = ~np.isnan(p)
+        disc = np.zeros(len(p), dtype=bool)
+        disc[ok] = benjamini_hochberg(p[ok], cfg.eval.fdr_q)
+        res = res.with_columns(pl.Series("bh_discovery", disc))
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        res.write_parquet(out_dir / f"explore-types-{run_id}.parquet")
+        lines = [
+            f"# EXPLORATORY per-type IC {run_id}",
+            "",
+            f"- feature `{feature}`, pure-type samples, pre-holdout; BH q={cfg.eval.fdr_q} "
+            f"across {int(ok.sum())} tests. Exploratory: survivors are candidates for the "
+            "live/holdout data, not findings.",
+            "",
+            "| set | type | cell | n | IC | 95% CI | p | BH |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['set']} | {r['event_type']} | {r['entry']}/{r['horizon']}/{r['adjustment']} "
+                f"| {r['n']} | {r['ic']:+.3f} | [{r['ci_lo']:+.3f}, {r['ci_hi']:+.3f}] | "
+                f"{r['p']:.3f} | {'*' if r['bh_discovery'] else ''} |"
+            )
+        md = "\n".join(lines) + "\n"
+        (out_dir / f"explore-types-{run_id}.md").write_text(md, encoding="utf-8")
+        with ctx.store.ops() as con:
+            con.execute(
+                "INSERT INTO experiments VALUES ('explore_types', ?, ?, ?, ?)",
+                [
+                    run_id,
+                    utcnow(),
+                    run_id,
+                    json.dumps({"sets": sets, "types": type_list, "cells": cells, "n": len(p)}),
+                ],
+            )
+        stats["report"] = str(out_dir / f"explore-types-{run_id}.md")
+        typer.echo(md)
+
+    _run("explore-types", cfg, {"sets": sets, "types": types}, body)
 
 
 if __name__ == "__main__":

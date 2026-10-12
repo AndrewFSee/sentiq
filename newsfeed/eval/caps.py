@@ -16,6 +16,7 @@ import json
 from datetime import date, timedelta
 from pathlib import Path
 
+import httpx
 import polars as pl
 
 from newsfeed.ingest.http import HttpClient
@@ -61,7 +62,13 @@ def load_shares(
     else:
         if http is None:
             raise RuntimeError(f"no cached SEC facts for CIK {cik}")
-        facts = http.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json").json()
+        url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
+        try:
+            facts = http.get(url).json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+            facts = {}  # no XBRL facts for this filer: size bucket 'unknown' (cached)
         p.write_text(json.dumps(facts), encoding="utf-8")
     return shares_history(facts)
 

@@ -1,8 +1,8 @@
 """News-API adapter, vendor-agnostic.
 
 A vendor client implements :class:`NewsVendor` and maps its payload to :class:`VendorArticle`.
-No vendor is licensed yet, so :class:`FixtureVendor` serves articles from a JSONL file of
-vendor-shaped records; a real client (Polygon/Benzinga/...) is a ~50-line class plus fixtures.
+:class:`FixtureVendor` serves articles from a JSONL file of vendor-shaped records;
+:class:`MassiveVendor` is the Massive (ex-Polygon) ``/v2/reference/news`` client.
 
 PIT notes:
   * ``published_at`` must be tz-aware in the vendor payload. Naive timestamps are rejected
@@ -20,11 +20,13 @@ from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from newsfeed.config import NewsApiConfig
 from newsfeed.ingest.base import ErrorFn, RawItem, SkipFn, make_item_id
+from newsfeed.ingest.http import HttpClient
 from newsfeed.textutil import estimate_tokens, truncate_tokens
 from newsfeed.tickers import Universe, normalize_ticker
 from newsfeed.timeutil import IngestMode, ensure_utc, utcnow
@@ -136,9 +138,85 @@ class FixtureVendor:
         return VendorPage(articles=page, next_cursor=nxt, errors=errors if start == 0 else [])
 
 
+# Vendor-computed fields we never store: Massive's per-ticker LLM "insights" (sentiment +
+# reasoning) may be produced after publication with later information -- a look-ahead risk --
+# and are not what this project tests.
+MASSIVE_DROP_FIELDS = ("insights",)
+
+
+def article_from_massive(rec: dict[str, Any]) -> VendorArticle:
+    """Massive/Polygon news record -> VendorArticle. ``published_utc`` is RFC3339 with 'Z'.
+    Only a summary (``description``) is provided, never the full article."""
+    raw_ts = rec["published_utc"]
+    ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+    raw = {k: v for k, v in rec.items() if k not in MASSIVE_DROP_FIELDS}
+    raw["had_insights"] = bool(rec.get("insights"))
+    return VendorArticle(
+        vendor_id=str(rec["id"]),
+        published_at=ts,
+        published_at_raw=raw_ts,
+        url=rec.get("article_url"),
+        title=rec.get("title"),
+        summary=rec.get("description"),
+        publisher=(rec.get("publisher") or {}).get("name"),
+        tickers=rec.get("tickers") or [],
+        raw=raw,
+    )
+
+
+class MassiveVendor:
+    """Massive (ex-Polygon) ``GET /v2/reference/news``: all tickers, ascending by
+    ``published_utc``, ``next_url`` cursor. Key in an Authorization header (never in a URL,
+    since httpx logs URLs). No vendor first-seen time exists, so backfills rely on
+    ``timing.backfill_lag_seconds`` and live polls on our own first_seen_at."""
+
+    name = "massive"
+
+    def __init__(self, http: HttpClient, base_url: str) -> None:
+        self.http = http
+        self.base = base_url.rstrip("/")
+
+    def fetch(
+        self, *, since: datetime, until: datetime | None, cursor: str | None, limit: int
+    ) -> VendorPage:
+        if cursor:
+            url = cursor
+        else:
+            q = {
+                "published_utc.gte": ensure_utc(since).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "order": "asc",
+                "sort": "published_utc",
+                "limit": str(min(limit, 1000)),
+            }
+            if until is not None:
+                q["published_utc.lt"] = ensure_utc(until).strftime("%Y-%m-%dT%H:%M:%SZ")
+            url = f"{self.base}/v2/reference/news?{urlencode(q)}"
+        payload = self.http.get(url).json()
+        good: list[VendorArticle] = []
+        errors: list[tuple[str, str]] = []
+        for rec in payload.get("results") or []:
+            try:
+                good.append(article_from_massive(rec))
+            except Exception as exc:
+                errors.append((str(rec.get("id")), repr(exc)))
+        return VendorPage(articles=good, next_cursor=payload.get("next_url"), errors=errors)
+
+
 def make_vendor(cfg: NewsApiConfig, clock: Callable[[], datetime] = utcnow) -> NewsVendor:
     if cfg.vendor == "fixture":
         return FixtureVendor(cfg.fixture_path, clock=clock)
+    if cfg.vendor == "massive":
+        from newsfeed.config import load_secrets
+
+        key = load_secrets().massive_api_key
+        if not key:
+            raise ValueError("news_api.vendor=massive needs MASSIVE_API_KEY in .env")
+        http = HttpClient(
+            user_agent="sentiq-research",
+            rate_per_sec=cfg.massive_requests_per_minute / 60,
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        return MassiveVendor(http, cfg.massive_base_url)
     raise ValueError(f"unknown news vendor {cfg.vendor!r}")  # pragma: no cover
 
 

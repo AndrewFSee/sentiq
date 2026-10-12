@@ -304,3 +304,38 @@ def test_tradier_single_record_tables():
     src.http = mock_http(lambda req: httpx.Response(200, json=payload))
     assert src.dividends("X").rows() == [(date(2021, 3, 1), 0.5)]
     assert src.splits("X").rows() == [(date(2021, 6, 1), 2.0)]
+
+
+def test_gappy_tradier_series_replaced_by_tiingo_without_padding(tmp_path):
+    days = weekdays(date(2021, 1, 4), 40)
+    gappy = bars(days[:10] + days[30:], [10.0] * 20)  # 20 sessions missing in the middle
+    caches = {
+        "tradier": CachedPrices(MemSource({"NOC": gappy}), tmp_path / "tr"),
+        "tiingo": CachedPrices(MemSource({"NOC": bars(days[:38], [11.0] * 38)}), tmp_path / "ti"),
+    }
+    rt = PriceRoute("NOC", "NOC", "tradier", days[0], days[-1], "Northrop", "current")
+    panel, report, _ = build_panel([rt], caches, days)
+    assert report[0]["source"] == "tiingo" and panel.height == 38
+    assert report[0]["padded"] == 0  # a current listing is never padded with cash
+
+
+def test_fragment_of_delisted_series_is_dropped(tmp_path):
+    days = weekdays(date(2021, 1, 4), 40)
+    tiingo = MemSource({"WRK": bars(days[30:31], [50.0])})  # one bar on its last day
+    rt = PriceRoute("WRK", "WRK", "tiingo", days[0], days[-1], "WestRock", "delisted")
+    panel, report, _ = build_panel([rt], {"tiingo": CachedPrices(tiingo, tmp_path)}, days)
+    assert panel.height == 0 and report[0]["dropped"]
+
+
+def test_load_shares_caches_404_as_empty(tmp_path):
+    from newsfeed.eval.caps import load_shares
+
+    calls = []
+
+    def handler(req):
+        calls.append(req.url)
+        return httpx.Response(404, json={})
+
+    http = mock_http(handler)
+    assert load_shares(http, 1132979, tmp_path).height == 0
+    assert load_shares(None, 1132979, tmp_path).height == 0 and len(calls) == 1  # cached

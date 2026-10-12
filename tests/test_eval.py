@@ -16,6 +16,7 @@ from newsfeed.eval.cv import pre_holdout_mask, purged_splits
 from newsfeed.eval.prices import CachedPrices, TradierPrices, price_panel
 from newsfeed.eval.report import (
     EvalInputs,
+    assemble,
     benjamini_hochberg,
     block_bootstrap,
     run_eval,
@@ -368,3 +369,87 @@ def test_run_eval_noise_has_no_discoveries_and_respects_holdout(cfg):
     held = run_eval(inp, c, univariate=["1d_llm_sent_decay"], use_holdout=True)
     assert held["holdout"] and held["univariate"]["n"][0] > 0
     assert json.dumps(held["sample"])  # serialisable summary
+
+
+def test_sample_event_types_filter(cfg):
+    inp, c, _ = synthetic_inputs(cfg, signal=0.0, n_days=20)
+    evt = (np.arange(inp.features.height) % 3 == 0).astype(int)
+    inp.features = inp.features.with_columns(
+        pl.Series("1d_llm_evt_earnings", evt), pl.Series("1d_llm_evt_ma", 0 * evt)
+    )
+    base = assemble(inp, c)
+    c2 = c.model_copy(
+        update={"eval": c.eval.model_copy(update={"sample_event_types": ["earnings"]})}
+    )
+    sub = assemble(inp, c2)
+    assert sub.height == int(evt.sum()) < base.height
+    assert (sub["1d_llm_evt_earnings"] > 0).all()
+    c3 = c.model_copy(update={"eval": c.eval.model_copy(update={"sample_event_types": ["m&a"]})})
+    assert assemble(inp, c3).height == 0  # 'm&a' -> column 1d_llm_evt_ma
+    c4 = c.model_copy(update={"eval": c.eval.model_copy(update={"sample_event_types": ["x"]})})
+    with pytest.raises(ValueError):
+        assemble(inp, c4)
+
+
+def test_sample_size_buckets_filter(cfg):
+    inp, c, _ = synthetic_inputs(cfg, signal=0.0, n_days=20)
+    b = np.where(np.arange(inp.caps.height) % 2 == 0, "small", "large")
+    inp.caps = inp.caps.with_columns(pl.Series("size_bucket", b))
+    c2 = c.model_copy(update={"eval": c.eval.model_copy(update={"sample_size_buckets": ["small"]})})
+    sub = assemble(inp, c2)
+    assert sub.height == int((b == "small").sum()) and set(sub["size_bucket"]) == {"small"}
+
+
+def test_add_derived_interaction():
+    from newsfeed.eval.report import add_derived
+
+    f = pl.DataFrame(
+        {"1d_llm_sent_cwmean": [0.5, None, -1.0], "1d_emb_novelty_mean": [0.4, 0.2, None]}
+    )
+    out = add_derived(f)["1d_llm_sent_x_novelty"].to_list()
+    assert out[0] == pytest.approx(0.2) and out[1] is None and out[2] is None
+    assert "1d_llm_sent_x_novelty" not in add_derived(f.drop("1d_emb_novelty_mean")).columns
+
+
+def test_paired_ic_comparison_detects_lost_signal(cfg):
+    from newsfeed.eval.report import paired_ic_comparison
+
+    inp, c, _ = synthetic_inputs(cfg, signal=0.6, n_days=250)
+    f = inp.features
+    rng = np.random.default_rng(5)
+    inp.features = f.with_columns(
+        pl.col("1d_llm_sent_decay").alias("same"),
+        pl.Series("noise", rng.normal(size=f.height)),
+    )
+    same = paired_ic_comparison(inp, c, "1d_llm_sent_decay", "same").row(0, named=True)
+    assert same["diff"] == pytest.approx(0.0) and same["ic_a"] > 0.2
+    lost = paired_ic_comparison(inp, c, "1d_llm_sent_decay", "noise").row(0, named=True)
+    assert lost["diff"] < -0.2 and lost["ci_hi"] < 0 and lost["p"] < 0.05
+
+
+def test_llm_and_pure_event_type_samples(cfg):
+    inp, c, _ = synthetic_inputs(cfg, signal=0.0, n_days=20)
+    n = inp.features.height
+    llm_n = np.arange(n) % 3  # 0, 1, 2
+    earn = np.where(np.arange(n) % 2 == 0, llm_n, 0)
+    inp.features = inp.features.with_columns(
+        pl.Series("1d_llm_n", llm_n), pl.Series("1d_llm_evt_earnings", earn)
+    )
+    llm = c.model_copy(update={"eval": c.eval.model_copy(update={"sample": "llm"})})
+    assert assemble(inp, llm).height == int((llm_n > 0).sum())
+    pure = c.model_copy(
+        update={"eval": c.eval.model_copy(update={"sample_pure_event_type": "earnings"})}
+    )
+    sub = assemble(inp, pure)
+    assert sub.height == int(((llm_n > 0) & (earn == llm_n)).sum())
+    assert (sub["1d_llm_evt_earnings"] == sub["1d_llm_n"]).all()
+
+
+def test_univariate_cells_planted_signal(cfg):
+    from newsfeed.eval.report import univariate_cells
+
+    inp, c, _ = synthetic_inputs(cfg, signal=0.6, n_days=200)
+    sig = univariate_cells(inp, c, "1d_llm_sent_decay", [("close", 1, "market")])[0]
+    noise = univariate_cells(inp, c, "1d_lm_tone_decay", [("close", 1, "market")])[0]
+    assert sig["ic"] > 0.2 and sig["p"] < 0.01 and abs(noise["ic"]) < 0.05
+    assert univariate_cells(inp, c, "1d_llm_sent_decay", [("close", 5, "market")])[0]["n"] == 0
