@@ -398,3 +398,14 @@ def test_sample_size_buckets_filter(cfg):
     c2 = c.model_copy(update={"eval": c.eval.model_copy(update={"sample_size_buckets": ["small"]})})
     sub = assemble(inp, c2)
     assert sub.height == int((b == "small").sum()) and set(sub["size_bucket"]) == {"small"}
+
+
+def test_add_derived_interaction():
+    from newsfeed.eval.report import add_derived
+
+    f = pl.DataFrame(
+        {"1d_llm_sent_cwmean": [0.5, None, -1.0], "1d_emb_novelty_mean": [0.4, 0.2, None]}
+    )
+    out = add_derived(f)["1d_llm_sent_x_novelty"].to_list()
+    assert out[0] == pytest.approx(0.2) and out[1] is None and out[2] is None
+    assert "1d_llm_sent_x_novelty" not in add_derived(f.drop("1d_emb_novelty_mean")).columns

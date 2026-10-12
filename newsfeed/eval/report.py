@@ -360,7 +360,18 @@ DEFAULT_UNIVARIATE = [
     "5d_lm_tone_decay",
     "1d_volume_z",
     "1d_emb_novelty_mean",
+    "1d_llm_sent_x_novelty",
 ]
+
+
+def add_derived(feats: pl.DataFrame) -> pl.DataFrame:
+    """Derived features, computed row-wise from same-row inputs (no extra information):
+    ``1d_llm_sent_x_novelty`` = 1d LLM sentiment (cw mean) x 1d embedding novelty
+    (pre-registered 2026-10-12: novel news should move prices more). LLM block (``_llm_``)."""
+    a, b = "1d_llm_sent_cwmean", "1d_emb_novelty_mean"
+    if a in feats.columns and b in feats.columns:
+        feats = feats.with_columns((pl.col(a) * pl.col(b)).alias("1d_llm_sent_x_novelty"))
+    return feats
 
 
 # --------------------------------------------------------------------- rendering

@@ -371,3 +371,9 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   ticker-days, 372 tickers): primary FAILS — close/market IC h1 +0.013 (p 0.26), h2 +0.017
   (p 0.17). Sector-adjusted h1 +0.024 (p 0.03) is not a primary cell. No BH discovery (best
   lift p 0.002, close/2 sector lgbm). The full-sample small-cap hint does not hold up.
+- 2026-10-12 PRE-REGISTERED test 3 (novelty): embeddings done (51,915 founder vectors,
+  bge-small, full documents; derive took ~24 h on CPU). New feature set = default config
+  (embeddings on), full news sample, same grid/models. Primary: rank IC of
+  `1d_llm_sent_x_novelty` (= `1d_llm_sent_cwmean` × `1d_emb_novelty_mean`, `add_derived`)
+  > 0 at close entry, h ∈ {1, 2}, market-adjusted. Novelty is null when its 30-day look-back
+  isn't covered, so the first month has no interaction values.

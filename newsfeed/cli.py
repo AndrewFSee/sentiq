@@ -30,6 +30,7 @@ from newsfeed.eval.prices import (
 from newsfeed.eval.report import (
     DEFAULT_UNIVARIATE,
     EvalInputs,
+    add_derived,
     decision_dates,
     eval_config_id,
     render_markdown,
@@ -789,7 +790,7 @@ def eval_cmd(
         feats = store.features(set_id)
         if feats.height == 0:
             raise typer.BadParameter(f"feature set {set_id} has no rows; run `features` first")
-        feats = feats.drop("feature_set_id", "build_run_id", "built_at", strict=False)
+        feats = add_derived(feats.drop("feature_set_id", "build_run_id", "built_at", strict=False))
         prior_holdout = store.ops_query(
             "SELECT count(*) AS n FROM experiments WHERE kind = 'eval' "
             "AND json_extract(details, '$.holdout') = true"
