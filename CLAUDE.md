@@ -439,3 +439,11 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   −0.005, p ≈ 0.06–0.13): at most mild recall there. Limits: dates and numbers stay visible, so
   recall through them is not tested; the holdout remains the clean test. The unmasked IC
   reproduces test 1 exactly (eval-inputs refactor check).
+- 2026-10-12 RESULT test 4 (vendor news; scoring 112,698 unmasked + 112,959 masked requests,
+  $12.05; feature sets masked 57330b614405 / unmasked 9fb97ec0eadc; evals 3ee8cf / af6e68;
+  ~38k news ticker-days, 426 sessions, 539 tickers, 2024-10-15 → 2026-06-29): primary FAILS —
+  masked `1d_llm_sent_cwmean` close/market IC h1 +0.002 (p 0.81), h2 +0.003 (p 0.72); unmasked
+  −0.000 / +0.003. No BH discovery in either run (best univariate p ≈ 0.09). The conditional
+  robustness checks (longer lag, headline-only) are not needed. Caveat: Massive's feed is
+  Motley Fool / GlobeNewswire / Benzinga / Investing.com headlines + machine summaries, not a
+  real-time wire, so this is a null for that feed, not for news in general.
