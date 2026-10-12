@@ -367,3 +367,7 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   sample (not earnings-only), feature set 8990ee7a9775, same grid/models. Primary:
   `1d_llm_sent_cwmean` IC > 0 at close entry, h ∈ {1, 2}, market-adjusted. Buckets are PIT
   terciles of mcap among all index members on each date (`market_caps`).
+- 2026-10-12 RESULT test 2 (eval aea12f, config 33cda6f54b63; ~17.2k small-tercile news
+  ticker-days, 372 tickers): primary FAILS — close/market IC h1 +0.013 (p 0.26), h2 +0.017
+  (p 0.17). Sector-adjusted h1 +0.024 (p 0.03) is not a primary cell. No BH discovery (best
+  lift p 0.002, close/2 sector lgbm). The full-sample small-cap hint does not hold up.
