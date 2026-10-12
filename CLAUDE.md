@@ -472,3 +472,18 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   (p 0.09 / 0.03, = test 1), guidance +0.037 / +0.078 (n 1,406; p 0.31 / 0.03), m&a, legal,
   product ≈ 0, other (26.7k rows) +0.007 / +0.005 — the full-sample 8-K IC comes from
   earnings + guidance. Candidates only (8-K guidance), not findings.
+- 2026-10-12 Categorisation notes: event_type and relevance are Haiku labels from the same
+  scoring call (definitions in `scoring/prompts/score_v1.md`; "results + guidance together →
+  earnings"). Not human-validated. Spot checks: 8-K guidance = outlook raises/cuts/withdrawals,
+  pre-announcements, investor-day targets (some also contain results). News analyst_action is
+  mostly Motley Fool / Zacks "which stock is a better buy" pieces, not broker rating changes.
+- 2026-10-12 HOLDOUT PLAN AMENDED (holdout still unseen; user decision): two pre-registered
+  hypotheses at the same single look (on/after 2027-08-31), α split by Bonferroni:
+  **H1 earnings** — unchanged definition (test-1 sample, `1d_llm_sent_cwmean`, close/2/market),
+  pass = IC > 0 with one-sided p < 0.025 (two-sided p < 0.05; was one-sided 0.05).
+  **H2 guidance** — `config/variants/sp500_noemb_guidance.yaml` (pure-guidance sample:
+  all qualifying LLM events in the 1d window are 8-K guidance; unmasked, same feature config as
+  test 1), `1d_llm_sent_cwmean`, close/2/market, pass = IC > 0 with one-sided p < 0.025. H2 was
+  found by exploration (pre-holdout IC +0.078, n 1,411 — likely inflated by selection), so its
+  holdout test is the first real test. Expected holdout n ≈ 210 (≈188/yr; 38 so far) → power
+  roughly 20% even if the true IC were 0.078.
