@@ -29,6 +29,29 @@ _BOUND_L = r"(?<![\w&])"
 _BOUND_R = r"(?![\w&])"
 
 
+def trie_pattern(words: list[str]) -> str:
+    """Regex matching exactly the alternation of ``words``, preferring the longest word at a
+    position (greedy optional tails; backtracks to shorter words if a later boundary check
+    fails), compiled as a character trie. A flat ``a|b|...`` over ~2,700 names is tried at every
+    position and made masking ~0.5 s per 8-K; the trie is equivalent and far faster."""
+    trie: dict = {}
+    for w in words:
+        node = trie
+        for ch in w:
+            node = node.setdefault(ch, {})
+        node[""] = True  # end-of-word marker ("" is never a real character key)
+
+    def build(node: dict) -> str:
+        children = sorted((ch, sub) for ch, sub in node.items() if ch != "")
+        if not children:
+            return ""
+        alts = [re.escape(ch) + build(sub) for ch, sub in children]
+        body = alts[0] if len(alts) == 1 else "(?:" + "|".join(alts) + ")"
+        return f"(?:{body})?" if "" in node else body
+
+    return build(trie)
+
+
 @dataclass(frozen=True)
 class Term:
     text: str
@@ -41,13 +64,19 @@ class MaskLexicon:
     terms: list[Term]
     _rx: re.Pattern[str] = field(init=False, repr=False)
     _lookup: dict[str, Term] = field(init=False, repr=False)
+    _residual_rx: re.Pattern[str] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._lookup = {}
         for t in sorted(self.terms, key=lambda t: (-len(t.text), t.text)):
             self._lookup.setdefault(t.text, t)
-        alternation = "|".join(re.escape(s) for s in self._lookup)  # already longest-first
-        self._rx = re.compile(f"{_BOUND_L}(?:{alternation}){_BOUND_R}")
+        self._rx = re.compile(f"{_BOUND_L}(?:{trie_pattern(list(self._lookup))}){_BOUND_R}")
+        long_terms = sorted({t.text.lower() for t in self.terms if len(t.text) >= 4})
+        self._residual_rx = (
+            re.compile(f"{_BOUND_L}(?:{trie_pattern(long_terms)}){_BOUND_R}", re.I)
+            if long_terms
+            else None
+        )
 
     @classmethod
     def build(
@@ -129,14 +158,7 @@ class MaskLexicon:
     def residuals(self, text: str) -> int:
         """Case-insensitive count of identifying terms (>= 4 chars) left after masking.
         Diagnostic only: includes harmless hits such as the fruit 'apple'."""
-        long_terms = sorted({t.text.lower() for t in self.terms if len(t.text) >= 4}, key=len)
-        if not long_terms:
-            return 0
-        rx = re.compile(
-            f"{_BOUND_L}(?:{'|'.join(re.escape(s) for s in reversed(long_terms))}){_BOUND_R}",
-            re.I,
-        )
-        return len(rx.findall(text))
+        return len(self._residual_rx.findall(text)) if self._residual_rx is not None else 0
 
 
 @dataclass(frozen=True)

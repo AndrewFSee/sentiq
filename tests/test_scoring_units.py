@@ -323,3 +323,25 @@ def test_batch_chunks_split_by_count_and_bytes():
     one = len(json.dumps({"custom_id": "c0", "params": {"x": "a" * 100}}).encode())
     assert [len(c) for c in _chunks(items, 100, 2 * one + 1)] == [2, 2, 1]
     assert [len(c) for c in _chunks([prep(0, 10_000)], 100, 10)] == [1]  # oversize alone
+
+
+def test_trie_pattern_equals_longest_first_alternation():
+    import random
+    import re
+
+    from newsfeed.scoring.mask import _BOUND_L, _BOUND_R, trie_pattern
+
+    words = ["Apple", "Apple Watch", "Apple Inc.", "App", "AAPL", "A", "AT&T", "Meta", "Met"]
+    flat = "|".join(re.escape(w) for w in sorted(words, key=lambda w: (-len(w), w)))
+    old = re.compile(f"{_BOUND_L}(?:{flat}){_BOUND_R}")
+    new = re.compile(f"{_BOUND_L}(?:{trie_pattern(words)}){_BOUND_R}")
+    texts = [
+        "Apple Watches and the Apple Watch; Apple Inc. (AAPL) vs AT&T, Meta, Metals, App.",
+        "A Apple Inc.x Apple WatchOS AT&Tx Met Meta",
+    ]
+    rng = random.Random(0)
+    pieces = [*words, " ", ".", "x", "&", "es", "-"]
+    texts += ["".join(rng.choice(pieces) for _ in range(40)) for _ in range(300)]
+    for t in texts:
+        assert [m.span() for m in old.finditer(t)] == [m.span() for m in new.finditer(t)], t
+    assert new.findall("Apple Watches") == ["Apple"]  # boundary fails -> backtrack
