@@ -3,9 +3,11 @@
 Turns financial news and SEC filings into **point-in-time-correct**, LLM-scored features, to test
 whether news carries incremental tradable signal. A research tool, not a trading system.
 
-Status: **Milestones 1–5** done (ingestion, live collection, dedupe, ticker linking, LLM
-scoring, baselines, embeddings, point-in-time features, evaluation). **Milestone 6** (in
-progress): point-in-time S&P 500 universe from 2019, with delisted names. See `CLAUDE.md` for conventions and the PIT rules.
+Status: **Milestones 1–6** done: ingestion, live collection, dedupe, ticker linking, LLM
+scoring, baselines, embeddings, point-in-time features, evaluation, and (M6) a point-in-time
+S&P 500 universe from 2019 with delisted names, vendor news, leakage checks and pre-registered
+follow-up tests. See [Findings so far](#findings-so-far), and `CLAUDE.md` for conventions, the
+PIT rules and the full decisions log.
 
 ## Setup
 ```bash
@@ -23,14 +25,18 @@ or `NEWSFEED_CONFIG`.
 ```bash
 uv run newsfeed backfill --start 2025-01-01 --end 2026-01-01                 # EDGAR 8-Ks
 uv run newsfeed backfill --start 2025-01-01 --end 2026-01-01 --tickers AAPL,MSFT
-uv run newsfeed backfill --start 2026-07-01 --end 2026-09-01 --source news_api  # fixture vendor
+uv run newsfeed backfill --start 2024-10-13 --end 2026-10-12 --source news_api \
+    --config config/variants/news_massive.yaml                               # Massive news
 ```
 Backfill is idempotent and resumable. Re-running skips stored items without re-downloading
 them, and failures are logged to the `failures` table and retried on the next run. Each run
 ends by refreshing the derived tables (ticker links and stories).
 
-> The `news_api` source currently reads **synthetic fixtures** (`tests/fixtures/news/`). Point
-> it at a scratch data directory (via `--config`) if you don't want them mixed into real data.
+> `sources.news_api.vendor` is `fixture` by default (synthetic records in
+> `tests/fixtures/news/`) or `massive` (Massive, ex-Polygon, `/v2/reference/news`; set
+> `MASSIVE_API_KEY`; the free tier gives 2 years of history at 5 requests/min, so use
+> `page_size: 1000`). Massive supplies headline + machine-written summary, publisher time only;
+> its per-ticker "insights" sentiment is dropped at ingest.
 
 ### 2. Live collection
 ```bash
@@ -39,9 +45,14 @@ uv run newsfeed collect --once           # one cycle, for cron (state persists i
 uv run newsfeed collect --check          # health from saved state; exit 1 if unhealthy
 uv run newsfeed collect --sources edgar,news_api --max-cycles 10
 ```
-Example cron entry (every minute, plus a health check that alerts via your mailer):
+On Windows, `scripts\collect_window.cmd` runs one `collect --once` per 120 s in a single
+console window titled "sentiq - COLLECTING 8-Ks" (problems show in the title); put a shortcut
+in `shell:startup` to start it at logon. Keep `collect.interval_seconds` equal to the period:
+live coverage is only recorded when successful polls are at most 3 intervals apart.
+
+Example cron entry (every 2 minutes, plus a health check that alerts via your mailer):
 ```
-* * * * *   cd /path/to/sentiq && uv run newsfeed collect --once >> data/collect.log 2>&1
+*/2 * * * * cd /path/to/sentiq && uv run newsfeed collect --once >> data/collect.log 2>&1
 */5 * * * * cd /path/to/sentiq && uv run newsfeed collect --check || <notify>
 ```
 Each cycle polls each source and ingests new items, refreshes the derived tables, evaluates
@@ -49,7 +60,7 @@ health and writes `data/state/heartbeat.json`. Health problems:
 
 | kind | meaning |
 |---|---|
-| `silent_feed` | no new entries from **any company** in the source feed for N market-open minutes, i.e. an outage rather than "no news" |
+| `silent_feed` | no new entries from **any company** in the source feed for N market-open minutes, i.e. an outage rather than "no news" (EDGAR: US federal holidays don't count — NYSE may trade while EDGAR is closed) |
 | `poll_failing` | N consecutive polls failed |
 | `stalled` | no successful poll for N intervals during market hours |
 
@@ -101,6 +112,7 @@ uv run newsfeed score --masked --sample 200            # names/tickers/products 
 uv run newsfeed score --model claude-sonnet-5-5 --sample 100   # stronger model
 uv run newsfeed agreement --compare masked             # also prints the noise floor
 uv run newsfeed agreement --compare model
+uv run newsfeed score --masked --event-types earnings --mode batch   # mask one eval sample
 ```
 If masked and unmasked labels disagree beyond the replicate noise floor, the model is likely
 using its knowledge of the company (including possibly how the story ended), not just the text.
@@ -134,6 +146,12 @@ the same aggregates for `lm_tone_*` (plus `finbert_*` when enabled). Windows not
 collected data are null, not zero. Read a stored set with
 `Store(...).features("<feature_set_id>")`.
 
+Feature filters (all part of the feature-set id): `features.sources` (e.g. `[news_api]` for
+vendor news only), `features.llm_masked` (use masked-text scores), `features.llm_event_types`
+(LLM aggregates over these event types only) and `features.exclude_title_regex` (drop items by
+title, e.g. law-firm solicitations). Embeddings are off by default (`features.embeddings`):
+computing them on CPU takes ~1 day for 50k documents.
+
 ### 8. Evaluation
 Needs `TRADIER_TOKEN` (or `TRADIER_API_TOKEN`) in `.env` for daily prices and dividends, and
 for the S&P 500 universe also `TIINGO_TOKEN` (free tier) for delisted names.
@@ -156,6 +174,17 @@ adjustment:
 The holdout (`eval.holdout_start`, default 2026-07-01) is excluded unless `--use-holdout`:
 use it once, at the end.
 
+Sample filters: `eval.sample` (`news` = ≥1 story in the window, `llm` = ≥1 qualifying LLM
+event, `all`), `eval.sample_event_types`, `eval.sample_size_buckets` and
+`eval.sample_pure_event_type`. Each test's configuration is versioned in `config/variants/`.
+
+```bash
+uv run newsfeed leakage --feature-set <unmasked> --masked-set <masked> --config <variant>
+uv run newsfeed explore-types --feature-set news=<id> --feature-set 8k=<id> --types earnings,guidance
+```
+`leakage` compares masked vs unmasked LLM features on identical rows (paired block bootstrap);
+`explore-types` is an explicitly exploratory per-event-type breakdown with one BH correction.
+
 ### Universe: point-in-time S&P 500
 `universe.mode: sp500_pit` (default) uses historical index membership: the
 [fja05680/sp500](https://github.com/fja05680/sp500) daily constituent lists (pinned commit)
@@ -168,6 +197,30 @@ Backfills fetch each company only around its membership window; feature rows exi
 days the ticker is a member; prices come from Tradier, under the current ticker for renamed
 companies, and from Tiingo for delisted ones (held as cash after the last trade). Set
 `universe.mode: static` with `universe.tickers` for a fixed list.
+
+## Findings so far
+Pre-holdout, S&P 500, 2019 – June 2026 (details, ids and every variant tried: `CLAUDE.md`
+decisions log). Rank IC of LLM sentiment vs market-adjusted returns from the 15:50 close:
+
+| test (pre-registered) | sample | 1 day | 2 days | survives run-wide BH? |
+|---|---|---|---|---|
+| all 8-K news days | ~52k ticker-days | +0.007 | +0.013 | no |
+| **1. earnings 8-Ks** | ~15.7k | +0.018 | **+0.032 (p 0.018)** | no |
+| ↳ masked (names hidden) | same rows | +0.023 | +0.033 | — |
+| 2. small-cap tercile | ~17.2k | +0.013 | +0.017 | no |
+| 3. sentiment × novelty | ~48k | +0.006 | +0.013 | no |
+| 4. vendor news (Massive, masked) | ~38k, 2024-10 → | +0.002 | +0.003 | no |
+| 4b. vendor news, cleaned | ~12k | −0.001 | +0.003 | no |
+
+- The only effect that holds up is on **earnings 8-Ks**: ≈ +0.03 IC at 2–10 days, half of it
+  overnight; hiding identities does not reduce it (no evidence of training-data recall), and
+  Loughran-McDonald tone is negative on the same filings. Exploratory per-type analysis adds
+  **8-K guidance** (+0.078 at 2 days, n 1,411) as a candidate.
+- Vendor news (headlines + summaries from Motley Fool, GlobeNewswire, Benzinga, Investing.com)
+  shows nothing, pooled, cleaned or by type.
+- All pre-holdout ICs are upper bounds: the model's training data likely covers the period.
+  The confirmatory test is pre-registered on the holdout (from 2026-07-01, growing with live
+  collection): H1 earnings and H2 guidance, one look on/after 2027-08-31, α split 0.025/0.025.
 
 ## Inspecting
 ```bash
@@ -185,7 +238,8 @@ data/lake/scores/part-*.parquet                           # LLM scores (views: s
 data/lake/baselines/part-*.parquet                        # LM / FinBERT scores (view: baselines)
 data/lake/features/set=<feature_set_id>/part-*.parquet    # built feature tables
 data/lake/embeddings/part-*.parquet                       # story embeddings
-data/reports/eval-<run>.md                                # evaluation reports
+data/reports/eval-<run>.md                                # evaluation reports (+ leakage-,
+                                                          #   explore-types-, prices-prefetch)
 data/ref/prices/ data/ref/sec_shares/ data/ref/models/     # cached prices, SEC shares, model
 data/ref/prices_tiingo/                                   # cached Tiingo prices (delisted)
 data/ref/universe/                                        # PIT S&P 500 tables + sources

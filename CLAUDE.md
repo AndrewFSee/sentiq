@@ -14,10 +14,12 @@ speed and polish.** It is not a trading system.
   baselines, embeddings + novelty, point-in-time features with frozen-store causality tests).
   **M5 done** (Tradier prices, total-return targets over an entry x horizon x adjustment grid,
   PIT controls, purged CV, frozen holdout, rank IC + incremental lift, bootstrap + BH).
-  **M6 in progress** (branch `m6-sp500`): point-in-time S&P 500 universe 2019–present,
-  per-CIK backfill windows, price routing (Tradier / renamed / Tiingo for delisted),
-  split-consistent market caps, PIT sector ETFs, member-only feature rows. Remaining: full
-  backfill → derive → batch scoring (ask before paying) → features → eval (pre-holdout).
+  **M6 done** (branch `m6-sp500`): point-in-time S&P 500 universe 2019–present, per-CIK
+  backfill windows, price routing (Tradier / renamed / Tiingo for delisted), split-consistent
+  market caps, PIT sector ETFs, member-only feature rows, Massive vendor news, masked-score
+  leakage checks, pre-registered tests 1–4b + exploratory per-type breakdown (results in the
+  decisions log). Ongoing: live collection (`scripts\collect_window.cmd`) for the holdout;
+  the single pre-registered holdout look (H1 earnings, H2 guidance) is on/after 2027-08-31.
 - Every command that calls the model costs money: run `score --dry-run` first; jobs estimated
   above `scoring.confirm_above_usd` need `--yes`. Never run paid jobs without the user's OK.
 
