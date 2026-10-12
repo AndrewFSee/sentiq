@@ -409,3 +409,19 @@ def test_add_derived_interaction():
     out = add_derived(f)["1d_llm_sent_x_novelty"].to_list()
     assert out[0] == pytest.approx(0.2) and out[1] is None and out[2] is None
     assert "1d_llm_sent_x_novelty" not in add_derived(f.drop("1d_emb_novelty_mean")).columns
+
+
+def test_paired_ic_comparison_detects_lost_signal(cfg):
+    from newsfeed.eval.report import paired_ic_comparison
+
+    inp, c, _ = synthetic_inputs(cfg, signal=0.6, n_days=250)
+    f = inp.features
+    rng = np.random.default_rng(5)
+    inp.features = f.with_columns(
+        pl.col("1d_llm_sent_decay").alias("same"),
+        pl.Series("noise", rng.normal(size=f.height)),
+    )
+    same = paired_ic_comparison(inp, c, "1d_llm_sent_decay", "same").row(0, named=True)
+    assert same["diff"] == pytest.approx(0.0) and same["ic_a"] > 0.2
+    lost = paired_ic_comparison(inp, c, "1d_llm_sent_decay", "noise").row(0, named=True)
+    assert lost["diff"] < -0.2 and lost["ci_hi"] < 0 and lost["p"] < 0.05

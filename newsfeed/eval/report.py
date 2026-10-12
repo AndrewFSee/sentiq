@@ -469,3 +469,61 @@ def decision_dates(features: pl.DataFrame) -> list[date]:
     return sorted(
         set(features["as_of"].dt.convert_time_zone("America/New_York").dt.date().to_list())
     )
+
+
+# --------------------------------------------------------------------- paired comparison
+def paired_ic_comparison(
+    inp: EvalInputs,
+    cfg: AppConfig,
+    col_a: str,
+    col_b: str,
+) -> pl.DataFrame:
+    """IC of two features on *identical* rows (sample from ``inp.features`` via ``assemble``;
+    rows where both are non-null), pre-holdout only, with a paired circular block bootstrap of
+    IC(b) - IC(a) (same resampled sessions for both). Used for the masked-vs-unmasked leakage
+    check: a = unmasked sentiment, b = masked sentiment of the same documents."""
+    ec = cfg.eval
+    rng = np.random.default_rng(ec.seed)
+    base = assemble(inp, cfg)
+    session_idx = {d: i for i, d in enumerate(inp.sessions)}
+    out = []
+    for entry in ec.entries:
+        for h in ec.horizons:
+            t = inp.targets.filter((pl.col("entry") == entry) & (pl.col("horizon") == h))
+            df = base.join(t, on=["ticker", "date"], how="inner").sort("date", "ticker")
+            if df.height == 0:
+                continue
+            dec = df["date"].to_numpy().astype("datetime64[D]")
+            end = df["label_end"].to_numpy().astype("datetime64[D]")
+            df = df.filter(pl.Series(pre_holdout_mask(dec, end, ec.holdout_start)))
+            df = df.filter(pl.col(col_a).is_not_null() & pl.col(col_b).is_not_null())
+            if df.height < 20:
+                continue
+            s = np.array([session_idx.get(d, -1) for d in df["date"].to_list()])
+            a = df[col_a].to_numpy().astype(float)
+            b = df[col_b].to_numpy().astype(float)
+            block = h + 1 if entry == "close" else h + 2
+            for adj in ec.adjustments:
+                y = df[f"ret_{adj}"].to_numpy().astype(float)
+                ic_a, ic_b = spearman(a, y), spearman(b, y)
+                boots = block_bootstrap(
+                    s,
+                    lambda idx, a=a, b=b, y=y: spearman(b[idx], y[idx]) - spearman(a[idx], y[idx]),
+                    block=block,
+                    reps=ec.bootstrap_reps,
+                    rng=rng,
+                )
+                out.append(
+                    {
+                        "entry": entry,
+                        "horizon": h,
+                        "adjustment": adj,
+                        "n": df.height,
+                        "corr_ab": spearman(a, b),
+                        "ic_a": ic_a,
+                        "ic_b": ic_b,
+                        "diff": ic_b - ic_a,
+                        **boot_summary(ic_b - ic_a, boots),
+                    }
+                )
+    return pl.DataFrame(out)
