@@ -480,3 +480,14 @@ def test_novelty_features(env):
     # look-back not covered (corpus coverage starts 2026-07-01): novelty is unknown
     early = utc(2026, 7, 2, 18, 0)
     assert row(feats(env, [early], ["AAPL"]), "AAPL", early)["5d_emb_novelty_mean"] is None
+
+
+def test_feature_sources_filter(env):
+    T = utc(2026, 7, 31, 14, 0)
+    assert row(feats(env, [T]), "AAPL", T)["1h_n_items"] == 4
+    other = env.cfg.model_copy(
+        update={"features": env.cfg.features.model_copy(update={"sources": ["edgar"]})}
+    )
+    df = build_features(env.store, other, [T], env.c2t, env.sources())
+    assert row(df, "AAPL", T)["1h_n_items"] == 0  # corpus is news_api only
+    assert feature_set_id(other, env.sources()) != feature_set_id(env.cfg, env.sources())

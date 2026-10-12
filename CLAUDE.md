@@ -403,3 +403,17 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   appended to the title), not a 2-minute scheduled task (that flashes a console window every
   run). EDGAR silence on US federal holidays (`timeutil.edgar_closed_dates`: NYSE open, EDGAR
   closed — Columbus/Veterans Day) no longer raises `silent_feed`; found live on 2026-10-12.
+- 2026-10-12 test 4 vendor: Massive (ex-Polygon) `/v2/reference/news`, free Basic key (2 years
+  of history, 5 req/min). WRDS/RavenPack not available (alumni). Tiingo News: 3 months only.
+  Measured: ~170–250 articles/day market-wide, ~75–105/day tagged with S&P 500 tickers; mostly
+  Motley Fool, GlobeNewswire (incl. law-firm notices), Benzinga, Investing.com — no Reuters/DJ.
+  Text = title + `description` (a machine-written summary; no body). Only `published_utc`
+  (minute precision), no vendor first-seen time. Massive's per-ticker `insights` sentiment is
+  dropped at ingest (look-ahead risk). Config variants used by tests live in `config/variants/`.
+- 2026-10-12 PRE-REGISTERED test 4 (vendor news): `config/variants/news_massive.yaml`
+  (features.sources = coverage_sources = [news_api], embeddings off), backfill 2024-10-13 →
+  2026-10-12, Haiku 5.5 prompt 6108c555090fa4b3 on title + summary, news sample = ticker-days
+  with ≥1 vendor-news story in 1d, pre-holdout only. Primary: `1d_llm_sent_cwmean` IC > 0 at
+  close entry, h ∈ {1, 2}, market-adjusted. Timing: backfill rule published + 300 s → session.
+  If the primary passes, pre-planned robustness checks: (a) longer lag (published + 1 h) and
+  (b) headline-only scoring (rules out hindsight in vendor summaries) before any holdout use.

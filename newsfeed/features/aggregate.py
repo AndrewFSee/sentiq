@@ -118,8 +118,11 @@ def load_events(
     """(volume rows, founder event rows), one row per (item, ticker), times in UTC micros."""
     items = store.items_as_of(
         as_of_max,
-        columns="item_id, publisher, tradable_at, ingest_mode, text_hash",
+        columns="item_id, source, publisher, tradable_at, ingest_mode, text_hash",
     )
+    if cfg.features.sources:
+        items = items.filter(pl.col("source").is_in(cfg.features.sources))
+    items = items.drop("source")
     if items.height == 0:
         empty = pl.DataFrame()
         return empty, empty

@@ -217,6 +217,8 @@ class FeaturesConfig(_Strict):
     lm_dictionary: Path = Path("data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv")
     # sources whose coverage a window must have (else its features are null, not zero)
     coverage_sources: list[str] = Field(default_factory=lambda: ["edgar"])
+    # item sources that feed events ([] = all). E.g. [news_api] isolates vendor news (test 4).
+    sources: list[str] = Field(default_factory=list)
     embeddings: bool = True  # local fastembed model; vectors for story founders
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_cache: Path = Path("data/ref/models")

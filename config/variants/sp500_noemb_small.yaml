@@ -1,0 +1,217 @@
+# Default configuration. Override with --config <path> or NEWSFEED_CONFIG.
+# Secrets (SEC_USER_AGENT, ANTHROPIC_API_KEY, TRADIER_TOKEN) come from .env, never from here.
+
+paths:
+  data_dir: data            # everything below is relative to the project root unless absolute
+  lake_dir: data/lake       # Parquet datasets (DuckDB reads these)
+  raw_dir: data/raw         # gzipped raw source documents, content-addressed by source/native id
+  db_path: data/newsfeed.duckdb   # small operational tables: runs, failures
+  ref_dir: data/ref         # reference data (ticker maps)
+
+universe:
+  # sp500_pit: point-in-time S&P 500 membership (`newsfeed universe build`): fja05680/sp500 +
+  # monthly Wikipedia snapshots for CIK and GICS sector. static: just the `tickers` list.
+  mode: sp500_pit
+  pit_dir: data/ref/universe
+  pit_start: "2019-01-01"
+  fja_sha: a2430f2af0c79ddf0748e91de11bdeb1616ab5a7
+  ingest_margin_before_days: 90
+  ingest_margin_after_days: 30
+  name_linking: aliases_only        # names of 500+ companies collide with ordinary words
+  # Original development universe (static mode); in sp500_pit mode an optional subset only.
+  tickers: []
+  # static dev set was: [AAPL, MSFT, NVDA, AMZN, GOOGL, GOOG, META, JPM, XOM, JNJ, WMT, BRK-B]
+  aliases:   # case-sensitive, word-boundary; the cleaned SEC name is added automatically
+    AAPL: [Apple]
+    MSFT: [Microsoft]
+    NVDA: [Nvidia, NVIDIA]
+    AMZN: [Amazon, Amazon.com]
+    GOOGL: [Alphabet, Google]
+    META: [Meta Platforms, Facebook]
+    JPM: [JPMorgan, JPMorgan Chase, JP Morgan]
+    XOM: [Exxon, ExxonMobil, Exxon Mobil]
+    JNJ: [Johnson & Johnson, J&J]
+    WMT: [Walmart]
+    BRK-B: [Berkshire Hathaway, Berkshire]
+  # Masked scoring (leakage check) also replaces these. Review periodically: executives change.
+  # Avoid generic words (e.g. "Office", "Grace") that would mask ordinary text.
+  products:
+    AAPL: [iPhone, iPad, MacBook, Mac, Apple Watch, AirPods, Vision Pro, App Store, Apple Music,
+           Apple TV+, Apple Pay, Apple Card, Apple Intelligence, iOS, macOS]
+    MSFT: [Azure, Windows, Microsoft 365, Xbox, LinkedIn, GitHub, Copilot, Bing]
+    NVDA: [GeForce, CUDA, Blackwell, Hopper, Rubin, DGX, NVLink]
+    AMZN: [AWS, Amazon Web Services, Alexa, Kindle, Whole Foods, Zoox, Kuiper, Amazon Leo,
+           Prime Video]
+    GOOGL: [Google Cloud, YouTube, Android, Gemini, Waymo, Pixel, DeepMind]
+    META: [Instagram, WhatsApp, Messenger, Threads, Llama, Reality Labs, Ray-Ban Meta]
+    JPM: [Chase, J.P. Morgan, JPMorgan Chase Bank]
+    XOM: [Mobil, Esso, XTO Energy]
+    JNJ: [Janssen, Stelara, Darzalex, Johnson & Johnson MedTech]
+    WMT: [Sam's Club, Walmart+, Flipkart]
+    BRK-B: [GEICO, BNSF, Berkshire Hathaway Energy, See's Candies, Dairy Queen]
+  people:
+    AAPL: [Tim Cook]
+    MSFT: [Satya Nadella, Nadella]
+    NVDA: [Jensen Huang]
+    AMZN: [Andy Jassy, Jassy, Jeff Bezos, Bezos]
+    GOOGL: [Sundar Pichai, Pichai]
+    META: [Mark Zuckerberg, Zuckerberg]
+    JPM: [Jamie Dimon, Dimon]
+    XOM: [Darren Woods]
+    JNJ: [Joaquin Duato, Duato]
+    WMT: [Doug McMillon, McMillon, John Furner]
+    BRK-B: [Warren Buffett, Buffett, Greg Abel]
+  places:
+    AAPL: [Cupertino]
+    MSFT: [Redmond]
+    NVDA: [Santa Clara]
+    GOOGL: [Mountain View]
+    META: [Menlo Park]
+    WMT: [Bentonville]
+    BRK-B: [Omaha]
+
+market:
+  calendar: XNYS
+  calendar_start: "2000-01-01"
+
+timing:
+  # Backfilled items have no truthful first_seen_at, so tradable_at = published_at + lag
+  # (then pushed to the next regular-session open). Live items use max(published_at, first_seen_at).
+  backfill_lag_seconds:
+    edgar: 60
+    news_api: 300
+
+sources:
+  edgar:
+    forms: ["8-K", "8-K/A"]
+    max_requests_per_second: 8      # SEC fair-access ceiling is 10/s across all sec.gov hosts
+    timeout_seconds: 30
+    max_retries: 5
+    submissions_base_url: https://data.sec.gov/submissions
+    archives_base_url: https://www.sec.gov/Archives/edgar/data
+    ticker_map_url: https://www.sec.gov/files/company_tickers.json
+    exhibit_type_prefixes: ["EX-99"]  # press releases, investor presentations
+    max_tokens: 6000                  # truncation cap for body_text (estimated tokens)
+    chars_per_token: 4.0              # offline token estimate; exact counts happen at scoring time
+    flush_every: 25                   # items buffered before a Parquet write (resumability granularity)
+    current_feed_page_size: 100       # live poll reads EDGAR's "latest filings" Atom feed
+    current_feed_max_pages: 5
+    poll_lookback_hours: 48
+    catch_up_every_minutes: 60        # per-CIK sweep to catch anything the feed window missed
+    silence_alert_minutes: 45         # market-open minutes with no new 8-K from ANY company
+
+  news_api:
+    vendor: fixture                   # no vendor licensed yet; recorded/synthetic fixtures
+    fixture_path: tests/fixtures/news/articles.jsonl
+    page_size: 100
+    poll_overlap_minutes: 15
+    poll_lookback_hours: 24
+    catch_up_every_minutes: 60
+    filter_to_universe: true
+    max_tokens: 3000
+    chars_per_token: 4.0
+    flush_every: 100
+    silence_alert_minutes: 30
+
+collect:
+  interval_seconds: 60
+  sources: [edgar]
+  max_consecutive_failures: 3
+  stalled_after_intervals: 3
+  realert_minutes: 60
+
+dedupe:
+  near_dup_threshold: 0.8   # estimated Jaccard over word 5-shingles
+  num_perm: 128
+  shingle_words: 5
+  max_chars: 5000
+  window_hours: 72          # exact-text / near-dup matches only within this window (URL matches: any time)
+  require_ticker_overlap: true
+  seed: 1
+
+scoring:
+  model: claude-haiku-5-5            # bulk scoring
+  validation_model: claude-sonnet-5-5
+  prompt_version: score_v1           # newsfeed/scoring/prompts/<version>.md
+  effort: low                        # Haiku 5.5 default is medium; low = cheapest, still thinks when needed
+  thinking: adaptive                 # adaptive | disabled (disabled is rejected by Sonnet 5.5)
+  max_tokens: 2048                   # includes thinking tokens
+  link_policy:                       # which (item, ticker) links get scored (decision 2026-10-09)
+    methods: [source, exchange_tag, cashtag, name_title]
+    name_body_min_mentions: 2
+  founders_only: true                # score each story once, on its first appearance
+  live_concurrency: 4
+  batch_max_requests: 10000
+  batch_max_bytes: 150000000          # serialized size per batch (API limit 256 MB)
+  batch_poll_seconds: 60
+  dry_run_sample: 25
+  est_output_tokens: 300             # used until the usage ledger has real averages
+  confirm_above_usd: 1.0             # jobs estimated above this require --yes
+  live_in_collect: false             # true = collect loop scores new story founders (costs money)
+  live_lookback_hours: 48
+
+pricing:
+  # USD per million tokens, checked against platform.claude.com/docs/en/about-claude/pricing.
+  as_of: "2026-10-09"
+  batch_discount: 0.5                # Batch API; stacks with cache multipliers
+  models:
+    claude-haiku-5-5:
+      standard: {input: 0.10, output: 0.50, cache_write_5m: 0.125, cache_read: 0.01}
+      long: {input: 0.50, output: 2.50, cache_write_5m: 0.625, cache_read: 0.05}
+      long_threshold_tokens: 100000  # whole prompt incl. cache reads/writes
+    claude-sonnet-5-5:
+      standard: {input: 2.00, output: 10.00, cache_write_5m: 2.50, cache_read: 0.10}
+    claude-opus-5-5:
+      standard: {input: 4.00, output: 20.00, cache_write_5m: 5.00, cache_read: 0.20}
+
+features:
+  windows_hours: {1h: 1, 1d: 24, 5d: 168}    # look-back (T - w, T]; 5d = one calendar week
+  half_life_hours: {1h: 0.5, 1d: 6, 5d: 36}  # exponential decay for the decayed sentiment sum
+  min_relevance: secondary                   # LLM sentiment aggregates ignore 'passing' mentions
+  baseline_days: 60                          # abnormal volume: z vs trailing 60 days
+  volume_sigma_floor: 0.5
+  grid: session_close                        # as-of times: each session close - decision lag
+  decision_lag_minutes: 10
+  lm_dictionary: data/ref/lm/Loughran-McDonald_MasterDictionary_1993-2025.csv  # free for academic use
+  coverage_sources: [edgar]                  # windows outside collected coverage -> null features
+  embeddings: false                           # local ONNX model via fastembed (no API key)
+  embedding_model: BAAI/bge-small-en-v1.5
+  embedding_cache: data/ref/models
+  novelty_lookback_days: 30                  # novelty = 1 - max cosine sim to the ticker's prior stories
+  novelty_sim_threshold: 0.85
+  finbert: false                             # true needs `uv sync --extra finbert` (~2 GB)
+  finbert_model: ProsusAI/finbert
+
+eval:
+  tradier_base_url: https://api.tradier.com      # TRADIER_TOKEN / TRADIER_API_TOKEN in .env
+  tradier_requests_per_second: 1.5
+  tiingo_requests_per_hour: 48     # TIINGO_TOKEN; free tier 50/hour, 1000/day
+  # Tiingo files delisted securities under their last (often OTC) ticker
+  price_overrides:
+    FRC: "tiingo:FRCB"     # First Republic, seized 2023-05-01
+    SIVB: "tiingo:SIVBQ"   # SVB Financial, failed 2023-03-10
+    HFC: "tradier:DINO"    # HollyFrontier -> HF Sinclair (new CIK, same listing history)
+    DISCA: "tiingo:WBD"    # Tradier's WBD starts 2022-04; Tiingo's carries DISCA (checked)
+    HCP: "tiingo:DOC"      # Healthpeak: HCP -> PEAK -> DOC; Tiingo's DOC has its history
+    PEAK: "tiingo:DOC"     #   (2019-01-02 close 26.98, not Physicians Realty's old DOC)
+  # No free price history found (Tradier, Tiingo, successors), left unpriced: APC, NFX, SCG,
+  # STI, INFO, VIAC (2019-12..2022-02), WRK -- ~13 of ~3700 member ticker-years. Also
+  # FOX/FOXA before 2019-03-12: the tickers then belonged to 21st Century Fox (other CIK).
+  market_etf: SPY
+  sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
+                JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}
+  horizons: [1, 2, 5, 10, 20]       # trading sessions after entry
+  entries: [close, next_open]       # decision at session close - 10 min (= NYSE MOC cutoff)
+  adjustments: [market, sector]     # forward return minus SPY / the sector ETF (same window)
+  holdout_start: "2026-07-01"       # frozen: eval refuses data from here on without --use-holdout
+  sample: news                      # evaluate ticker-days with >= 1 story in sample_window
+  sample_window: 1d
+  sample_size_buckets: [small]        # pre-registered size test (2026-10-11)
+  cv: {mode: walk_forward, n_folds: 5, embargo_sessions: 5, min_train_sessions: 60}
+  models:
+    ridge_alpha: 10.0
+    lgbm: {n_estimators: 200, learning_rate: 0.03, num_leaves: 7, min_child_samples: 20,
+           subsample: 0.8, subsample_freq: 1, colsample_bytree: 0.8, random_state: 7}
+  fdr_q: 0.10                       # Benjamini-Hochberg across every cell of the grid
+  bootstrap_reps: 1000
+  seed: 7
