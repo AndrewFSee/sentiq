@@ -126,6 +126,12 @@ def test_feature_set_id_tracks_config_and_sources(env):
     )
     assert feature_set_id(other, src) != a
     assert feature_set_id(env.cfg, src.__class__(**{**src.__dict__, "llm_prompt_hash": "x"})) != a
+    # the universe is part of the id (a 12-ticker and an S&P 500 build must not collide)
+    small = env.cfg.model_copy(
+        update={"universe": env.cfg.universe.model_copy(update={"tickers": ["AAPL"]})}
+    )
+    assert feature_set_id(small, src) != a
+    assert feature_set_id(env.cfg, src, "members-v2") != a
 
 
 # ------------------------------------------------------------------ values

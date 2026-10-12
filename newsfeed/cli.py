@@ -157,6 +157,15 @@ class Context:
         titles = None if self.cfg.universe.name_linking == "aliases_only" else self.titles(u)
         return TickerLinker(u, self.cfg.universe.aliases, titles)
 
+    def universe_sig(self) -> str:
+        """Content hash of the PIT membership table ("" in static mode)."""
+        if self.cfg.universe.mode != "sp500_pit":
+            return ""
+        import hashlib
+
+        p = self.cfg.universe.pit_dir / "sp500_members.parquet"
+        return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+
     def cik_windows(
         self, start: datetime, end: datetime
     ) -> dict[int, tuple[datetime, datetime]] | None:
@@ -658,7 +667,7 @@ def features(
             fc.decision_lag_minutes,
         )
         src = feature_sources(ctx)
-        set_id = feature_set_id(cfg, src)
+        set_id = feature_set_id(cfg, src, ctx.universe_sig())
         c2t = ctx.universe(full=True).cik_to_tickers
         spans = None
         if cfg.universe.mode == "sp500_pit":  # rows only while the ticker is an index member

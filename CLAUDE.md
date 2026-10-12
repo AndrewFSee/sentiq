@@ -377,3 +377,11 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   `1d_llm_sent_x_novelty` (= `1d_llm_sent_cwmean` × `1d_emb_novelty_mean`, `add_derived`)
   > 0 at close entry, h ∈ {1, 2}, market-adjusted. Novelty is null when its 30-day look-back
   isn't covered, so the first month has no interaction values.
+- 2026-10-12 RESULT test 3 (feature set c35f16b5bccb rebuilt, eval 9909b6, config
+  ec5249afad6f, 220 tests): primary FAILS — `1d_llm_sent_x_novelty` close/market IC h1
+  +0.006 (p 0.39), h2 +0.013 (p 0.084), i.e. no better than sentiment alone (+0.007 / +0.013).
+  Novelty alone ≈ +0.003..+0.008. No BH discovery (best lift p 0.004, next_open/20 sector).
+- 2026-10-12 BUG (fixed): `feature_set_id` did not include the universe, so the S&P 500
+  embeddings build reused the 12-ticker M5 id c35f16b5bccb. Reads keep the latest build per
+  (ticker, as_of) and all 984,567 rows came from the new build, so eval 9909b6 is valid; the
+  M5 rows are shadowed. Ids now hash `cfg.universe` + the PIT membership table.

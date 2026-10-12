@@ -61,13 +61,18 @@ class FeatureSources:
     embedding_model: str | None = None
 
 
-def feature_set_id(cfg: AppConfig, src: FeatureSources) -> str:
+def feature_set_id(cfg: AppConfig, src: FeatureSources, universe_sig: str = "") -> str:
+    """Hash of everything that defines a feature table. Since 2026-10-12 this includes the
+    universe (config + ``universe_sig``, e.g. a hash of the PIT membership table): before, a
+    12-ticker and an S&P 500 build with the same feature config shared id c35f16b5bccb."""
     blob = json.dumps(
         [
             FEATURE_VERSION,
             cfg.features.model_dump(mode="json", exclude={"lm_dictionary"}),
             cfg.scoring.link_policy.model_dump(),
             src.__dict__,
+            cfg.universe.model_dump(mode="json", exclude={"pit_dir"}),
+            universe_sig,
         ],
         sort_keys=True,
     )
