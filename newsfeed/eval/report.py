@@ -152,9 +152,12 @@ def assemble(inp: EvalInputs, cfg: AppConfig) -> pl.DataFrame:
         if missing:
             raise ValueError(f"unknown event types for sampling: {missing}")
         f = f.filter(pl.sum_horizontal([pl.col(c).fill_null(0) for c in cols]) > 0)
-    return f.join(inp.controls, on=["ticker", "date"], how="left").join(
+    out = f.join(inp.controls, on=["ticker", "date"], how="left").join(
         inp.caps, on=["ticker", "date"], how="left"
     )
+    if cfg.eval.sample_size_buckets:
+        out = out.filter(pl.col("size_bucket").is_in(cfg.eval.sample_size_buckets))
+    return out
 
 
 # --------------------------------------------------------------------- models

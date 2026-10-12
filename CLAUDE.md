@@ -355,3 +355,15 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
      from the first close after tradability, not the announcement reaction.
   2. Size-stratified (small tercile), 3. novelty/embeddings set, 4. news vendor — each
      pre-registered here before it runs.
+- 2026-10-11 RESULT test 1 (eval a82bca, eval config f6fefba49188; ~15.7k earnings ticker-days,
+  1,544 sessions, 653 tickers): primary `1d_llm_sent_cwmean` close/market IC h1 +0.018
+  (p 0.096), h2 +0.032 (CI [+0.006, +0.056], p 0.018; ×2 primary cells = 0.036). No BH
+  discovery across the run's 180 tests (min p 0.002 vs first BH threshold 0.00056). Sentiment
+  IC ≈ +0.03 at close/2–10d (both adjustments), ≈ half that at next_open → part of the drift is
+  overnight. LM tone is *negative* on the same sample (−0.01..−0.02). LLM lift over M1 small
+  (+0.005..+0.014; best p 0.010). By size: mid/large ≈ +0.03..+0.046, small ≈ +0.01..+0.02 —
+  the opposite of the full-sample size pattern.
+- 2026-10-11 PRE-REGISTERED test 2 (size): `eval.sample_size_buckets: [small]` on the full news
+  sample (not earnings-only), feature set 8990ee7a9775, same grid/models. Primary:
+  `1d_llm_sent_cwmean` IC > 0 at close entry, h ∈ {1, 2}, market-adjusted. Buckets are PIT
+  terciles of mcap among all index members on each date (`market_caps`).

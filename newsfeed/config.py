@@ -294,6 +294,10 @@ class EvalConfig(_Strict):
     # optional event-type subset (LLM event_type of scored founders in the sample window), e.g.
     # [earnings]: keep ticker-days with >= 1 such event. Defines a *different* test sample.
     sample_event_types: list[str] = Field(default_factory=list)
+    # optional size subset: PIT mcap terciles among all members on the date
+    sample_size_buckets: list[Literal["small", "mid", "large", "unknown"]] = Field(
+        default_factory=list
+    )
     cv: CVConfig = Field(default_factory=CVConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     fdr_q: float = Field(0.10, gt=0, lt=1)  # Benjamini-Hochberg level across the grid

@@ -389,3 +389,12 @@ def test_sample_event_types_filter(cfg):
     c4 = c.model_copy(update={"eval": c.eval.model_copy(update={"sample_event_types": ["x"]})})
     with pytest.raises(ValueError):
         assemble(inp, c4)
+
+
+def test_sample_size_buckets_filter(cfg):
+    inp, c, _ = synthetic_inputs(cfg, signal=0.0, n_days=20)
+    b = np.where(np.arange(inp.caps.height) % 2 == 0, "small", "large")
+    inp.caps = inp.caps.with_columns(pl.Series("size_bucket", b))
+    c2 = c.model_copy(update={"eval": c.eval.model_copy(update={"sample_size_buckets": ["small"]})})
+    sub = assemble(inp, c2)
+    assert sub.height == int((b == "small").sum()) and set(sub["size_bucket"]) == {"small"}
