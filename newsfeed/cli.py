@@ -1325,6 +1325,9 @@ def delay_sensitivity_cmd(
     cells: Annotated[
         str, typer.Option(help="entry/horizon/adjustment cells, comma-separated")
     ] = "close/1/market,close/2/market",
+    event_types: Annotated[
+        str | None, typer.Option(help="Only LLM events of these types (comma-separated)")
+    ] = None,
     config: ConfigOpt = None,
     verbose: bool = False,
 ) -> None:
@@ -1349,7 +1352,8 @@ def delay_sensitivity_cmd(
         src = feature_sources(ctx)
         scores = store.query(
             """
-            SELECT item_id, ticker AS canon, sentiment, relevance, scored_at FROM scores
+            SELECT item_id, ticker AS canon, sentiment, relevance, event_type, scored_at
+            FROM scores
             WHERE status = 'ok' AND masked = $masked AND replicate = 0
               AND model = $m AND prompt_hash = $h
             """,
@@ -1359,6 +1363,8 @@ def delay_sensitivity_cmd(
             pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1)
             >= RELEVANCE_RANK[fc.min_relevance]
         )
+        if event_types:
+            ev = ev.filter(pl.col("event_type").is_in(_split(event_types)))
         ev = ev.with_columns(
             pl.when(pl.col("ingest_mode") == "live")
             .then(pl.max_horizontal("tradable_at", "scored_at"))
@@ -1425,7 +1431,8 @@ def delay_sensitivity_cmd(
         lines = [
             f"# Delay sensitivity {run_id}",
             "",
-            f"- source `{source}`, LLM scores masked={fc.llm_masked}, relevance >= "
+            f"- source `{source}`, events {event_types or 'all'}, LLM scores "
+            f"masked={fc.llm_masked}, relevance >= "
             f"{fc.min_relevance}; event-level IC, pre-holdout; delay = extra sessions after the "
             "first usable decision.",
             "",
@@ -1443,7 +1450,8 @@ def delay_sensitivity_cmd(
         stats["report"] = str(out_dir / f"delay-{run_id}.md")
         typer.echo(md)
 
-    _run("delay-sensitivity", cfg, {"source": source, "delays": delays}, body)
+    params = {"source": source, "delays": delays, "event_types": event_types}
+    _run("delay-sensitivity", cfg, params, body)
 
 
 @app.command("transcripts-latency")
