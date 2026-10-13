@@ -551,3 +551,13 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   Test 5b partial IC (transcript sentiment given the 8-K `5d_llm_sent_cwmean`, 11,182 rows):
   h1 +0.012 (p 0.30), h2 +0.015 (p 0.21); on the same rows the 8-K sentiment alone has IC
   +0.031 / +0.037 → the call mostly repeats the press release; no significant increment.
+- 2026-10-13 defeatbeta latency: the HF repo keeps no history (single squashed commit "Compact
+  finance data history <date>", ~05:29 UTC daily), so past arrival times can't be
+  reconstructed. Forward: collector checks hourly (`sources.transcripts.catch_up_every_minutes:
+  60`), `newsfeed transcripts-latency` reports hours from the Item 2.02 8-K to first_seen and
+  the share in hand by the next open / next 15:50 decision (Q3 season from 2026-10-14).
+- 2026-10-13 RESULT delay sensitivity (masked transcripts, event-level, run 8969bd): close/
+  market IC h1/h2 at +0 sessions +0.030 / +0.035 (reproduces test 5), +1: +0.018 / +0.017
+  (p 0.16 / 0.24), +2: +0.014 / +0.023, +5: +0.010 / +0.016. About half the signal is gone if
+  the call is usable one session later than assumed → a source that lags a day loses most of
+  the significant part.
