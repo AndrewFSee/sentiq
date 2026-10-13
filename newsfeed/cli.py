@@ -10,6 +10,7 @@ from contextlib import ExitStack
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import polars as pl
@@ -65,6 +66,8 @@ from newsfeed.storage import Store
 from newsfeed.tickers import TickerLinker, TickerMap, Universe, load_ticker_map
 from newsfeed.timeutil import MarketCalendar, get_calendar, utcnow
 from newsfeed.universe_pit import PitUniverse
+
+NY_TZ = ZoneInfo("America/New_York")
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("newsfeed")
@@ -1311,6 +1314,212 @@ def partial_ic_cmd(
         typer.echo(md)
 
     _run("partial-ic", cfg, {"feature_set": feature_set, "control_set": control_set}, body)
+
+
+@app.command("delay-sensitivity")
+def delay_sensitivity_cmd(
+    source: Annotated[str, typer.Option(help="Item source")] = "transcripts",
+    delays: Annotated[str, typer.Option(help="Extra sessions of delay, comma-separated")] = (
+        "0,1,2,5"
+    ),
+    cells: Annotated[
+        str, typer.Option(help="entry/horizon/adjustment cells, comma-separated")
+    ] = "close/1/market,close/2/market",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Event-level rank IC of LLM sentiment when every event becomes usable N sessions later
+    than its tradable time: how fast does the signal decay if the data arrives late?"""
+    from newsfeed.eval.clusters import cluster_ic, decision_times
+    from newsfeed.features.aggregate import RELEVANCE_RANK
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cell_list = [(e, int(h), a) for e, h, a in (c.split("/") for c in _split(cells))]
+    delay_list = [int(x) for x in _split(delays)]
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        store, fc = ctx.store, cfg.features
+        now = utcnow()
+        items = store.items_as_of(
+            now, source=source, columns="item_id, tradable_at, ingest_mode, published_at"
+        )
+        founders = store.query("SELECT item_id FROM item_story WHERE story_id = item_id")
+        items = items.join(founders, on="item_id", how="semi")
+        src = feature_sources(ctx)
+        scores = store.query(
+            """
+            SELECT item_id, ticker AS canon, sentiment, relevance, scored_at FROM scores
+            WHERE status = 'ok' AND masked = $masked AND replicate = 0
+              AND model = $m AND prompt_hash = $h
+            """,
+            {"masked": fc.llm_masked, "m": src.llm_model, "h": src.llm_prompt_hash},
+        )
+        ev = items.join(scores, on="item_id").filter(
+            pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1)
+            >= RELEVANCE_RANK[fc.min_relevance]
+        )
+        ev = ev.with_columns(
+            pl.when(pl.col("ingest_mode") == "live")
+            .then(pl.max_horizontal("tradable_at", "scored_at"))
+            .otherwise(pl.col("tradable_at"))
+            .alias("t_use"),
+            pl.lit(0).alias("cluster"),
+        )
+        grid = as_of_grid(
+            ctx.calendar, ev["t_use"].min().date(), now.date(), fc.grid, fc.decision_lag_minutes
+        )
+        c2t = ctx.universe(full=True).cik_to_tickers
+        canon_cik = {t: c for c, ts in c2t.items() for t in ts}
+        fan = pl.DataFrame(
+            [{"canon": t, "ticker": x} for t, c in canon_cik.items() for x in c2t[c]],
+            schema={"canon": pl.Utf8, "ticker": pl.Utf8},
+        )
+        rows = []
+        inp_cache = None
+        for d in delay_list:
+            e = ev.with_columns(
+                pl.Series(
+                    "as_of",
+                    decision_times(ev["t_use"].to_list(), grid, delay=d),
+                    dtype=pl.Datetime("us", "UTC"),
+                )
+            ).drop_nulls("as_of")
+            e = e.with_columns(
+                pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+            ).join(fan, on="canon")
+            if cfg.universe.mode == "sp500_pit":
+                e = e.filter(ctx.pit.is_member(e.select("ticker", "date")))
+            if inp_cache is None:  # prices/targets once, over the widest set of decisions
+                wide = ev.with_columns(
+                    pl.Series(
+                        "as_of",
+                        decision_times(ev["t_use"].to_list(), grid, delay=max(delay_list)),
+                        dtype=pl.Datetime("us", "UTC"),
+                    )
+                ).drop_nulls("as_of")
+                feats = (
+                    pl.concat(
+                        [
+                            e.select("canon", "as_of"),
+                            wide.select("canon", "as_of"),
+                        ]
+                    )
+                    .join(fan, on="canon")
+                    .select("ticker", "as_of")
+                    .unique()
+                )
+                inp_cache, _ = _eval_inputs(ctx, cfg, feats)
+            for r in cluster_ic(
+                e.select("ticker", "date", "cluster", "sentiment"),
+                inp_cache.targets,
+                inp_cache.sessions,
+                cfg,
+                cell_list,
+            ):
+                rows.append({"delay_sessions": d, **{k: v for k, v in r.items() if k != "cluster"}})
+        res = pl.DataFrame(rows)
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        res.write_parquet(out_dir / f"delay-{run_id}.parquet")
+        lines = [
+            f"# Delay sensitivity {run_id}",
+            "",
+            f"- source `{source}`, LLM scores masked={fc.llm_masked}, relevance >= "
+            f"{fc.min_relevance}; event-level IC, pre-holdout; delay = extra sessions after the "
+            "first usable decision.",
+            "",
+            "| delay (sessions) | cell | n | IC | 95% CI | p |",
+            "|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['delay_sessions']} | {r['entry']}/{r['horizon']}/{r['adjustment']} | "
+                f"{r['n']} | {r['ic']:+.3f} | [{r['ci_lo']:+.3f}, {r['ci_hi']:+.3f}] | "
+                f"{r['p']:.3f} |"
+            )
+        md = "\n".join(lines) + "\n"
+        (out_dir / f"delay-{run_id}.md").write_text(md, encoding="utf-8")
+        stats["report"] = str(out_dir / f"delay-{run_id}.md")
+        typer.echo(md)
+
+    _run("delay-sensitivity", cfg, {"source": source, "delays": delays}, body)
+
+
+@app.command("transcripts-latency")
+def transcripts_latency_cmd(config: ConfigOpt = None) -> None:
+    """How late do live-collected calls arrive? For each LIVE transcript: first_seen vs the
+    company's earnings 8-K (acceptance time, within 3 days before the call date) and whether
+    it was in hand by the next open and by the next 15:50 decision after the release."""
+    cfg = load_config(config)
+    with Store(cfg.paths) as store:
+        cal = get_calendar(cfg.market.calendar, cfg.market.calendar_start)
+        tr = store.query(
+            """
+            SELECT item_id, published_at_raw AS call_date, first_seen_at, meta
+            FROM items WHERE source = 'transcripts' AND ingest_mode = 'live'
+            """
+        )
+        if tr.height == 0:
+            typer.echo("no live transcripts yet")
+            return
+        tr = tr.with_columns(
+            pl.col("meta").str.json_path_match("$.cik").cast(pl.Int64).alias("cik"),
+            pl.col("call_date").str.slice(0, 10).str.to_date().alias("call_date"),
+        )
+        k = store.query(
+            """
+            SELECT DISTINCT t.cik, i.published_at AS release_at FROM items i
+            JOIN item_tickers t USING (item_id)
+            WHERE i.source = 'edgar' AND i.body_text LIKE '%[ITEM 2.02%'
+            """
+        ).with_columns(pl.col("cik").cast(pl.Int64))
+        rows = []
+        for r in tr.iter_rows(named=True):
+            rel = k.filter(pl.col("cik") == r["cik"])["release_at"].to_list()
+            rel = [x for x in rel if 0 <= (r["call_date"] - x.astimezone(NY_TZ).date()).days <= 3]
+            release = max(rel) if rel else None
+            seen = r["first_seen_at"]
+            nxt_open = cal.push_to_session(release + timedelta(seconds=1)) if release else None
+            dec = None
+            if release is not None:
+                d = release.astimezone(NY_TZ).date()
+                for _ in range(10):
+                    b = cal.session_bounds(d)
+                    if b is not None and b[1] - timedelta(minutes=10) > release:
+                        dec = b[1] - timedelta(minutes=10)
+                        break
+                    d += timedelta(days=1)
+            rows.append(
+                {
+                    "call_date": r["call_date"],
+                    "cik": r["cik"],
+                    "release_at": release,
+                    "first_seen_at": seen,
+                    "hours_after_release": (seen - release).total_seconds() / 3600
+                    if release
+                    else None,
+                    "by_next_open": seen <= nxt_open if nxt_open else None,
+                    "by_next_decision": seen <= dec if dec else None,
+                }
+            )
+        df = pl.DataFrame(rows)
+        out = cfg.paths.data_dir / "reports" / "transcripts-latency.csv"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        df.write_csv(out)
+        m = df.drop_nulls("hours_after_release")
+        typer.echo(f"live transcripts: {df.height}; matched to an earnings 8-K: {m.height}")
+        if m.height:
+            q = m["hours_after_release"].quantile
+            typer.echo(
+                f"hours after release: median {q(0.5):.1f}, p75 {q(0.75):.1f}, "
+                f"p90 {q(0.9):.1f}, max {m['hours_after_release'].max():.1f}"
+            )
+            typer.echo(
+                f"in hand by the next open: {m['by_next_open'].mean():.0%}; "
+                f"by the next 15:50 decision: {m['by_next_decision'].mean():.0%}"
+            )
+        typer.echo(f"rows: {out}")
 
 
 if __name__ == "__main__":

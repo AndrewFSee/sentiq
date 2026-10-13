@@ -57,3 +57,11 @@ def test_cluster_ic_finds_signal_only_in_its_cluster(cfg):
     by = {r["cluster"]: r for r in out}
     assert by[0]["ic"] > 0.3 and by[0]["p"] < 0.01
     assert abs(by[1]["ic"]) < 0.15
+
+
+def test_decision_times_delay_shifts_by_sessions():
+    grid = [datetime(2025, 1, d, 20, 50, tzinfo=UTC) for d in (2, 3, 6, 7)]
+    t = [datetime(2025, 1, 2, 14, 30, tzinfo=UTC)]
+    assert decision_times(t, grid, delay=0) == [grid[0]]
+    assert decision_times(t, grid, delay=2) == [grid[2]]
+    assert decision_times(t, grid, delay=4) == [None]

@@ -62,11 +62,14 @@ def fit_text_clusters(
     return labels.astype(int), top
 
 
-def decision_times(t_usable: Sequence[datetime], grid: Sequence[datetime]) -> list[datetime | None]:
-    """First grid time >= each usable time (None beyond the grid). ``grid`` sorted."""
+def decision_times(
+    t_usable: Sequence[datetime], grid: Sequence[datetime], delay: int = 0
+) -> list[datetime | None]:
+    """First grid time >= each usable time, then ``delay`` more grid steps (None beyond the
+    grid). ``grid`` sorted. A delay simulates a data source that delivers later."""
     out: list[datetime | None] = []
     for t in t_usable:
-        i = bisect.bisect_left(grid, t)
+        i = bisect.bisect_left(grid, t) + delay
         out.append(grid[i] if i < len(grid) else None)
     return out
 
