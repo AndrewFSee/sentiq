@@ -507,3 +507,22 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   tariffs, analyst-opinion pieces. Largest (nominal) ICs: law-firm Rosen cluster +0.121 at 1d
   (p 0.010, n 534), IPO/deals +0.062 at 2d (p 0.010), biotech trials −0.101 at 2d (p 0.026),
   tariffs −0.094 at 2d (p 0.038); all within what 50 tests produce by chance.
+- 2026-10-13 Transcripts source (`ingest/transcripts.py`, `sources.transcripts`): defeatbeta
+  `stock_earning_call_transcripts`, pinned commit 860d42a, local copy in `data/ref/defeatbeta/`.
+  12,415 S&P 500 calls 2019 → 2026-10 (11,873 after merging share-class duplicates); 1,419 hit
+  the 16k-token cap. Date-only timing → published = end of call date (NY), tradable next open
+  (all 09:30). Linking: `universe.source_only_linking: [transcripts]` (own company only).
+  Relink now streams items on its own cursor (bodies exceeded a 2 GB Arrow buffer; writing on
+  the reading connection had ended the stream after one batch).
+- 2026-10-13 PRE-REGISTERED test 5 (earnings calls, before scoring): score transcript founders
+  unmasked and masked (Haiku 5.5, prompt 6108c555090fa4b3, doc type "earnings call
+  transcript"); feature sets `config/variants/transcripts_masked.yaml` (PRIMARY) and
+  `transcripts_unmasked.yaml` (features.sources = coverage_sources = [transcripts], embeddings
+  off, `eval.sample: llm`), 2019-01-01 → 2026-10-10, pre-holdout eval. Primary: masked
+  `1d_llm_sent_cwmean` IC > 0 at close entry, h ∈ {1, 2}, market-adjusted (decision = first
+  15:50 after the 09:30 open following the call, i.e. the day after the call). Secondary 5b
+  (incremental over the press release): on the primary rows, partial rank IC = Spearman of the
+  return with the residual of rank(transcript sentiment) regressed on rank(8-K
+  `5d_llm_sent_cwmean`, feature set 8990ee7a9775, same ticker/as_of); same cells, block
+  bootstrap. Robustness (only if the primary passes): headline-free check not applicable;
+  instead Q&A-only text vs prepared remarks.
