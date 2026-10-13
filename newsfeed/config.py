@@ -127,10 +127,16 @@ class NewsApiConfig(_Strict):
 
 
 class TranscriptsConfig(_Strict):
-    """Earnings-call transcripts from a pinned local copy of the defeatbeta dataset."""
+    """Earnings-call transcripts from local copies of the defeatbeta dataset: ``path`` is a
+    directory of ``<commit12>.parquet`` files plus a ``COMMIT`` pointer (or a single file)."""
 
-    path: Path = Path("data/ref/defeatbeta/stock_earning_call_transcripts.parquet")
-    dataset_commit: str = "860d42ac253f8df98c93c181b0d873f21e982e48"
+    path: Path = Path("data/ref/defeatbeta")
+    dataset_commit: str = "860d42ac253f8df98c93c181b0d873f21e982e48"  # backfill pin (kept)
+    hf_repo: str = "defeatbeta/yahoo-finance-data"
+    hf_file: str = "data/US/stock_earning_call_transcripts.parquet"
+    auto_refresh: bool = True  # catch-up polls download a newer dataset version if any
+    catch_up_every_minutes: float = Field(360, gt=0)  # = refresh check cadence
+    silence_alert_minutes: float = Field(20000, gt=0)  # market minutes; calls are seasonal
     max_tokens: int = Field(16000, gt=0)  # median call ~10k tokens
     chars_per_token: float = Field(4.0, gt=0)
     drop_speakers: list[str] = Field(default_factory=lambda: ["AI Insights", "Disclaimer*"])

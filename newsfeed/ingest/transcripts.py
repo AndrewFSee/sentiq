@@ -28,6 +28,7 @@ import duckdb
 
 from newsfeed.config import TranscriptsConfig
 from newsfeed.ingest.base import ErrorFn, RawItem, SkipFn, make_item_id
+from newsfeed.ingest.hf_refresh import current_file, refresh
 from newsfeed.textutil import estimate_tokens, truncate_tokens
 from newsfeed.tickers import TickerMap, Universe, normalize_ticker
 from newsfeed.timeutil import IngestMode, ensure_utc, utcnow
@@ -76,12 +77,43 @@ class TranscriptsAdapter:
         self.universe = universe
         self.tmap = tmap
         self.spells = spells
+        self._http = None  # tests inject an httpx.Client for refresh()
         self._live_ciks = set(tmap.ticker_to_cik.values())
         self.clock = clock
         self.last_activity_at: datetime | None = None
         self.cik_windows: dict[int, tuple[datetime, datetime]] | None = None
         self.stats: dict[str, int] = {}
         self._drop = set(cfg.drop_speakers)
+
+    @property
+    def file(self) -> Path:
+        return self._resolve()[0]
+
+    @property
+    def commit(self) -> str:
+        return self._resolve()[1]
+
+    def _resolve(self) -> tuple[Path, str]:
+        p = Path(self.cfg.path)
+        if p.is_dir():
+            return current_file(p, self.cfg.dataset_commit)
+        return p, self.cfg.dataset_commit  # a single file (tests, ad-hoc runs)
+
+    def refresh(self) -> dict:
+        """Download a newer dataset version if one exists (directory layout only)."""
+        p = Path(self.cfg.path)
+        if not (self.cfg.auto_refresh and p.is_dir()):
+            return {"changed": False, "skipped": True}
+        out = refresh(
+            p,
+            self.cfg.hf_repo,
+            self.cfg.hf_file,
+            fallback_commit=self.cfg.dataset_commit,
+            keep_files=[f"{self.cfg.dataset_commit[:12]}.parquet"],
+            client=self._http,
+        )
+        self.stats["refresh"] = out
+        return out
 
     def _tags(self, cik: int, d: date) -> list[str]:
         tickers = self.universe.tickers_for(cik)
@@ -103,7 +135,7 @@ class TranscriptsAdapter:
         self.stats[key] = self.stats.get(key, 0) + 1
 
     def _rows(self, d0: date, d1: date) -> Iterator[dict]:
-        path = Path(self.cfg.path)
+        path = self.file
         if not path.exists():
             raise FileNotFoundError(
                 f"transcripts Parquet not found at {path}; download the pinned file "
@@ -192,7 +224,7 @@ class TranscriptsAdapter:
                 "fiscal_year": y,
                 "fiscal_quarter": q,
                 "timing": "date_only_end_of_day",
-                "dataset_commit": self.cfg.dataset_commit,
+                "dataset_commit": self.commit,
                 "n_paragraphs": len(r["transcripts"] or []),
             },
             raw_json="{}",  # full text lives in the pinned Parquet (not duplicated)
@@ -229,6 +261,13 @@ class TranscriptsAdapter:
         """Calls in the last ``poll_lookback_days`` not stored yet (refresh the Parquet first).
         Live items get first_seen_at = now, so tradable_at is honest even when the dataset
         added a call late."""
+        if catch_up:
+            try:
+                self.refresh()
+            except Exception as exc:  # a failed refresh must not stop polling the local copy
+                if on_error is None:
+                    raise
+                on_error("refresh", exc)
         today = self.clock().astimezone(NY).date()
         seen_at = self.clock()
         newest: datetime | None = None
