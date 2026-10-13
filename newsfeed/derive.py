@@ -27,8 +27,9 @@ log = logging.getLogger(__name__)
 
 
 def relink(store: Store, linker: TickerLinker, run_id: str, batch_size: int = 5000) -> int:
-    """Link every item without links from the current ``linker_id`` *for its current text*
-    (a re-parsed item gets relinked). Returns items linked."""
+    """Link every item without links from the current ``linker_id`` for its current text and
+    newer than its stored row (a re-parsed item gets relinked even when only its source tags
+    changed). Returns items linked."""
     # streamed in batches: all bodies at once (8-Ks + news + ~40k-char transcripts) exceed a
     # single 2 GB Arrow buffer
     cur = store.q.cursor()  # own connection: writes below must not end this stream
@@ -39,6 +40,9 @@ def relink(store: Store, linker: TickerLinker, run_id: str, batch_size: int = 50
         WHERE NOT EXISTS (
             SELECT 1 FROM item_tickers_all t
             WHERE t.item_id = i.item_id AND t.linker_id = $lid AND t.text_hash = i.text_hash
+              -- links must postdate the item row they describe: a re-parsed item can change
+              -- its source tags without changing its text
+              AND t.linked_at >= i.ingested_at
         )
         """,
         {"lid": linker.linker_id},

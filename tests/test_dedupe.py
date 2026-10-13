@@ -14,6 +14,7 @@ from newsfeed.ingest.base import RawItem
 from newsfeed.ingest.runner import build_row
 from newsfeed.storage import Store
 from newsfeed.tickers import TickerLinker, Universe
+from newsfeed.timeutil import utcnow
 
 CFG = DedupeConfig()
 T0 = datetime(2026, 7, 28, 14, 0, tzinfo=UTC)  # Tue 10:00 EDT, in session
@@ -277,3 +278,22 @@ def test_relink_streams_every_batch(store, calendar, corpus):
     assert relink(store, linker, "r", batch_size=2) == 5
     linked = store.query("SELECT count(DISTINCT item_id) AS n FROM item_tickers_all")["n"][0]
     assert linked == 5 and relink(store, linker, "r", batch_size=2) == 0
+
+
+def test_relink_after_reparse_that_changes_only_tags(store, calendar, corpus):
+    # a re-parsed item (newer parser, later ingest) with the same text but different source
+    # tags must be relinked; links keyed only on (linker, text_hash) would keep the old tags
+    write(store, calendar, corpus[:1])
+    linker = TickerLinker(UNIVERSE)
+    relink(store, linker, "r")
+    old = corpus[0]
+    new = old.model_copy(update={"tickers": ["MSFT"], "parser_version": "u"})
+    later = utcnow() + timedelta(days=1)  # strictly after the first link batch
+    store.write_reparsed_items(
+        [build_row(new, run_id="r2", calendar=calendar, backfill_lag=timedelta(0),
+                   ingested_at=later)],
+        "r2",
+    )  # fmt: skip
+    assert relink(store, linker, "r") == 1
+    got = store.query("SELECT ticker FROM item_tickers WHERE ticker IS NOT NULL")["ticker"]
+    assert sorted(got.to_list()) == ["MSFT"]
