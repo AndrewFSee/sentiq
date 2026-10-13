@@ -25,12 +25,13 @@ from newsfeed.timeutil import utcnow
 log = logging.getLogger(__name__)
 
 
-def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
+def relink(store: Store, linker: TickerLinker, run_id: str, batch_size: int = 5000) -> int:
     """Link every item without links from the current ``linker_id`` *for its current text*
     (a re-parsed item gets relinked). Returns items linked."""
     # streamed in batches: all bodies at once (8-Ks + news + ~40k-char transcripts) exceed a
     # single 2 GB Arrow buffer
-    reader = store.q.execute(
+    cur = store.q.cursor()  # own connection: writes below must not end this stream
+    reader = cur.execute(
         """
         SELECT i.item_id, i.source, i.title, i.body_text, i.tickers, i.text_hash
         FROM items i
@@ -40,13 +41,14 @@ def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
         )
         """,
         {"lid": linker.linker_id},
-    ).to_arrow_reader(5000)
+    ).to_arrow_reader(batch_size)
     total = 0
     for batch in reader:
         pending = pl.from_arrow(batch).to_dicts()
         if pending:
             _link_batch(store, linker, pending, run_id)
             total += len(pending)
+    cur.close()
     return total
 
 

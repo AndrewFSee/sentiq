@@ -268,3 +268,12 @@ def test_version_change_forces_full_rebuild(store, calendar, corpus):
     other = CFG.model_copy(update={"near_dup_threshold": 0.95})
     stats = rebuild_stories(store, other, linker.linker_id)
     assert stats["assigned"] == 5
+
+
+def test_relink_streams_every_batch(store, calendar, corpus):
+    # regression: writing links on the reading connection ended the stream after batch 1
+    write(store, calendar, corpus)
+    linker = TickerLinker(UNIVERSE)
+    assert relink(store, linker, "r", batch_size=2) == 5
+    linked = store.query("SELECT count(DISTINCT item_id) AS n FROM item_tickers_all")["n"][0]
+    assert linked == 5 and relink(store, linker, "r", batch_size=2) == 0
