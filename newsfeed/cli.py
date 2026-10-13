@@ -68,7 +68,7 @@ from newsfeed.universe_pit import PitUniverse
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("newsfeed")
 
-SOURCES = ("edgar", "news_api")
+SOURCES = ("edgar", "news_api", "transcripts")
 ConfigOpt = Annotated[Path | None, typer.Option("--config", help="YAML config path")]
 TickersOpt = Annotated[
     str | None, typer.Option("--tickers", help="Comma-separated subset of the universe")
@@ -202,6 +202,10 @@ class Context:
                 return df["m"][0]
 
             return NewsApiAdapter(ncfg, make_vendor(ncfg), self.universe(), watermark=watermark)
+        if source == "transcripts":
+            from newsfeed.ingest.transcripts import TranscriptsAdapter
+
+            return TranscriptsAdapter(self.cfg.sources.transcripts, self.universe(), self.tmap)
         raise typer.BadParameter(f"unknown source {source!r}; choose from {SOURCES}")
 
     def derive_fn(self, run_id: str, full: bool = False) -> Callable[[], dict[str, Any]]:
@@ -289,7 +293,7 @@ def backfill(
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         adapter = ctx.adapter(source)
-        windows = ctx.cik_windows(t0, t1) if source == "edgar" else None
+        windows = ctx.cik_windows(t0, t1) if source in ("edgar", "transcripts") else None
         if windows is not None:
             adapter.cik_windows = windows
             stats["cik_windows"] = len(windows)

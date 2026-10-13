@@ -84,4 +84,6 @@ def load_prompt(version: str, directory: Path = PROMPTS_DIR) -> PromptSpec:
 def doc_type_for(source: str, meta: dict) -> str:
     if source == "edgar":
         return f"SEC Form {meta.get('form', '8-K')} filing (current report)"
+    if source == "transcripts":
+        return "earnings call transcript"
     return "news article"
