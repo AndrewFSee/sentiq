@@ -297,3 +297,11 @@ def test_relink_after_reparse_that_changes_only_tags(store, calendar, corpus):
     assert relink(store, linker, "r") == 1
     got = store.query("SELECT ticker FROM item_tickers WHERE ticker IS NOT NULL")["ticker"]
     assert sorted(got.to_list()) == ["MSFT"]
+
+
+def test_relink_force_sources_writes_a_fresh_batch(store, calendar, corpus):
+    write(store, calendar, corpus)
+    linker = TickerLinker(UNIVERSE)
+    assert relink(store, linker, "r") == 5
+    assert relink(store, linker, "r") == 0
+    assert relink(store, linker, "r", force_sources=["test"]) == 5  # corpus source is "test"

@@ -218,11 +218,20 @@ class Context:
             )
         raise typer.BadParameter(f"unknown source {source!r}; choose from {SOURCES}")
 
-    def derive_fn(self, run_id: str, full: bool = False) -> Callable[[], dict[str, Any]]:
+    def derive_fn(
+        self, run_id: str, full: bool = False, relink_sources: list[str] | None = None
+    ) -> Callable[[], dict[str, Any]]:
         linker = self.linker()
 
         def fn() -> dict[str, Any]:
-            out = run_derive(self.store, self.cfg, linker, run_id, full_stories=full)
+            out = run_derive(
+                self.store,
+                self.cfg,
+                linker,
+                run_id,
+                full_stories=full,
+                relink_sources=relink_sources,
+            )
             if self.cfg.scoring.live_in_collect and not out.get("skipped"):
                 out["scoring"] = self.score_recent(run_id)
             return out
@@ -388,6 +397,10 @@ def collect(
 @app.command()
 def derive(
     full: Annotated[bool, typer.Option("--full", help="Rebuild stories from scratch")] = False,
+    relink_source: Annotated[
+        str | None,
+        typer.Option(help="Force a fresh link batch for these sources (comma-separated)"),
+    ] = None,
     config: ConfigOpt = None,
     verbose: bool = False,
 ) -> None:
@@ -396,7 +409,9 @@ def derive(
     cfg = load_config(config)
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
-        stats["derive"] = ctx.derive_fn(run_id, full=full)()
+        stats["derive"] = ctx.derive_fn(
+            run_id, full=full, relink_sources=_split(relink_source) or None
+        )()
 
     _run("derive", cfg, {"full": full}, body)
 
