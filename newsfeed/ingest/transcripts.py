@@ -35,7 +35,7 @@ from newsfeed.timeutil import IngestMode, ensure_utc, utcnow
 log = logging.getLogger(__name__)
 
 SOURCE = "transcripts"
-PARSER_VERSION = "transcripts/1"
+PARSER_VERSION = "transcripts/2"  # v2: date-aware tags
 NY = ZoneInfo("America/New_York")
 
 
@@ -63,16 +63,41 @@ class TranscriptsAdapter:
         universe: Universe,
         tmap: TickerMap,
         *,
+        spells: dict[str, list[tuple[date, date | None, int]]] | None = None,
         clock=utcnow,
     ) -> None:
+        """``spells``: ticker -> [(start, end exclusive | None, cik)] index-membership spells.
+        With them, a call is tagged with ticker T only if, on the call date, T belonged to the
+        same company: the spell's CIK is the call's CIK, or a predecessor CIK that no longer
+        has a ticker of its own (a re-registration such as Disney 2019). A ticker then held by
+        a different, still-trading company (IR in 2019 = old Ingersoll-Rand plc, now TT) is
+        never put on another company's call (Gardner Denver, whose symbol is IR today)."""
         self.cfg = cfg
         self.universe = universe
         self.tmap = tmap
+        self.spells = spells
+        self._live_ciks = set(tmap.ticker_to_cik.values())
         self.clock = clock
         self.last_activity_at: datetime | None = None
         self.cik_windows: dict[int, tuple[datetime, datetime]] | None = None
         self.stats: dict[str, int] = {}
         self._drop = set(cfg.drop_speakers)
+
+    def _tags(self, cik: int, d: date) -> list[str]:
+        tickers = self.universe.tickers_for(cik)
+        if self.spells is None:
+            return tickers
+        out = []
+        for t in tickers:
+            holder = next(
+                (c for s, e, c in self.spells.get(t, []) if s <= d and (e is None or d < e)),
+                None,
+            )
+            if holder is None or holder == cik or holder not in self._live_ciks:
+                out.append(t)
+            else:
+                self._bump(f"tag_dropped_{t}")
+        return out
 
     def _bump(self, key: str) -> None:
         self.stats[key] = self.stats.get(key, 0) + 1
@@ -136,6 +161,10 @@ class TranscriptsAdapter:
             if win is None or not (win[0] <= published < win[1]):
                 self._bump("outside_window")
                 return None
+        tags = self._tags(cik, d)
+        if not tags:
+            self._bump("no_valid_ticker")
+            return None
         text = transcript_text(r["transcripts"], self._drop)
         if not text:
             self._bump("empty")
@@ -152,7 +181,7 @@ class TranscriptsAdapter:
             body_text=body,
             body_tokens_est=estimate_tokens(body, self.cfg.chars_per_token),
             body_truncated=truncated,
-            tickers=self.universe.tickers_for(cik),
+            tickers=tags,
             published_at=published,
             published_at_raw=str(r["report_date"]),
             first_seen_at=first_seen,

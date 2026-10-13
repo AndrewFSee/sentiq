@@ -453,3 +453,21 @@ def test_univariate_cells_planted_signal(cfg):
     noise = univariate_cells(inp, c, "1d_lm_tone_decay", [("close", 1, "market")])[0]
     assert sig["ic"] > 0.2 and sig["p"] < 0.01 and abs(noise["ic"]) < 0.05
     assert univariate_cells(inp, c, "1d_llm_sent_decay", [("close", 5, "market")])[0]["n"] == 0
+
+
+def test_partial_ic_removes_what_the_control_explains(cfg):
+    from newsfeed.eval.report import partial_ic_cells
+
+    inp, c, _ = synthetic_inputs(cfg, signal=0.6, n_days=200)
+    rng = np.random.default_rng(9)
+    f = inp.features
+    sig = f["1d_llm_sent_decay"].to_numpy()
+    inp.features = f.with_columns(
+        pl.Series("copy", sig + 0.01 * rng.normal(size=f.height)),  # same information
+        pl.Series("noise", rng.normal(size=f.height)),
+    )
+    cell = [("close", 1, "market")]
+    redundant = partial_ic_cells(inp, c, "copy", "1d_llm_sent_decay", cell)[0]
+    assert redundant["ic_feature"] > 0.2 and abs(redundant["partial_ic"]) < 0.05
+    new_info = partial_ic_cells(inp, c, "1d_llm_sent_decay", "noise", cell)[0]
+    assert new_info["partial_ic"] > 0.2 and new_info["p"] < 0.01

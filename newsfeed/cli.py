@@ -36,6 +36,7 @@ from newsfeed.eval.report import (
     decision_dates,
     eval_config_id,
     paired_ic_comparison,
+    partial_ic_cells,
     render_markdown,
     run_eval,
     univariate_cells,
@@ -207,7 +208,14 @@ class Context:
         if source == "transcripts":
             from newsfeed.ingest.transcripts import TranscriptsAdapter
 
-            return TranscriptsAdapter(self.cfg.sources.transcripts, self.universe(), self.tmap)
+            spells = None
+            if self.cfg.universe.mode == "sp500_pit":
+                spells = {}
+                for r in self.pit.members.select("ticker", "start", "end", "cik").iter_rows():
+                    spells.setdefault(r[0], []).append((r[1], r[2], int(r[3])))
+            return TranscriptsAdapter(
+                self.cfg.sources.transcripts, self.universe(), self.tmap, spells=spells
+            )
         raise typer.BadParameter(f"unknown source {source!r}; choose from {SOURCES}")
 
     def derive_fn(self, run_id: str, full: bool = False) -> Callable[[], dict[str, Any]]:
@@ -1224,6 +1232,70 @@ def cluster_explore_cmd(
         typer.echo(md)
 
     _run("cluster-explore", cfg, {"source": source, "k": k, "cells": cells}, body)
+
+
+@app.command("partial-ic")
+def partial_ic_cmd(
+    feature_set: Annotated[str, typer.Option(help="Feature set defining the sample")],
+    control_set: Annotated[str, typer.Option(help="Feature set holding the control column")],
+    column: Annotated[str, typer.Option(help="Tested feature")] = "1d_llm_sent_cwmean",
+    control_column: Annotated[str, typer.Option(help="Control feature")] = "5d_llm_sent_cwmean",
+    cells: Annotated[
+        str, typer.Option(help="entry/horizon/adjustment cells, comma-separated")
+    ] = "close/1/market,close/2/market",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Partial rank IC of a feature given a control from another feature set (identical rows,
+    pre-holdout): does the tested source add information beyond the control source?"""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cell_list = [(e, int(h), a) for e, h, a in (c.split("/") for c in _split(cells))]
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        drop = ("feature_set_id", "build_run_id", "built_at")
+        a = ctx.store.features(feature_set).drop(*drop, strict=False)
+        b = ctx.store.features(control_set).select("ticker", "as_of", control_column)
+        if a.height == 0 or b.height == 0:
+            raise typer.BadParameter("both feature sets must exist")
+        ctrl = f"control__{control_column}"
+        feats = a.join(b.rename({control_column: ctrl}), on=["ticker", "as_of"], how="left")
+        inp, _ = _eval_inputs(ctx, cfg, feats)
+        res = pl.DataFrame(partial_ic_cells(inp, cfg, column, ctrl, cell_list))
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        res.write_parquet(out_dir / f"partial-ic-{run_id}.parquet")
+        lines = [
+            f"# Partial IC {run_id}",
+            "",
+            f"- `{column}` from `{feature_set}` given `{control_column}` from `{control_set}`; "
+            f"sample: {cfg.eval.sample}; rows with both present; pre-holdout.",
+            "",
+            "| cell | sample rows | rows used | IC tested | IC control | partial IC | 95% CI | p |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['entry']}/{r['horizon']}/{r['adjustment']} | {r['n_sample']} | {r['n']} | "
+                f"{r['ic_feature']:+.3f} | {r['ic_control']:+.3f} | {r['partial_ic']:+.3f} | "
+                f"[{r['ci_lo']:+.3f}, {r['ci_hi']:+.3f}] | {r['p']:.3f} |"
+            )
+        md = "\n".join(lines) + "\n"
+        (out_dir / f"partial-ic-{run_id}.md").write_text(md, encoding="utf-8")
+        with ctx.store.ops() as con:
+            con.execute(
+                "INSERT INTO experiments VALUES ('partial_ic', ?, ?, ?, ?)",
+                [
+                    f"{feature_set}:{control_set}:{run_id}",
+                    utcnow(),
+                    run_id,
+                    json.dumps({"column": column, "control": control_column, "cells": cells}),
+                ],
+            )
+        stats["report"] = str(out_dir / f"partial-ic-{run_id}.md")
+        typer.echo(md)
+
+    _run("partial-ic", cfg, {"feature_set": feature_set, "control_set": control_set}, body)
 
 
 if __name__ == "__main__":

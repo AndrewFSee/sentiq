@@ -10,7 +10,7 @@ import pytest
 
 from newsfeed.ingest.runner import build_row
 from newsfeed.ingest.transcripts import TranscriptsAdapter, end_of_day_ny, transcript_text
-from newsfeed.tickers import TickerMap, Universe
+from newsfeed.tickers import TickerLinker, TickerMap, Universe
 
 
 def para(n: int, speaker: str, content: str) -> str:
@@ -97,3 +97,36 @@ def test_poll_is_live_with_first_seen_now(adapter):
     assert items[0].ingest_mode == "live"
     assert items[0].first_seen_at == datetime(2026, 10, 9, 12, tzinfo=UTC)
     assert adapter.last_activity_at == end_of_day_ny(datetime(2026, 10, 8).date())
+
+
+def test_tags_follow_the_company_on_the_call_date(cfg, tmp_path):
+    from datetime import date
+
+    from newsfeed.ingest.transcripts import TranscriptsAdapter as TA
+
+    # IR: CIK 1 (old Ingersoll-Rand, now trades as TT) held IR until 2020-03-02; CIK 2 (Gardner
+    # Denver, symbol IR today) holds IR after. DIS: CIK 3 re-registered as CIK 4 (3 has no
+    # ticker today), Wikipedia showing the new CIK only from 2020-10.
+    spells = {
+        "IR": [(date(2010, 1, 1), date(2020, 3, 2), 1), (date(2020, 3, 2), None, 2)],
+        "TT": [(date(2020, 3, 2), None, 1)],
+        "DIS": [(date(2010, 1, 1), date(2020, 10, 1), 3), (date(2020, 10, 1), None, 4)],
+    }
+    tmap = TickerMap(ticker_to_cik={"TT": 1, "IR": 2, "DIS": 4})
+    uni = Universe({1: ["IR", "TT"], 2: ["IR"], 3: ["DIS"], 4: ["DIS"]})
+    a = TA(cfg.sources.transcripts, uni, tmap, spells=spells)
+    d19, d21 = date(2019, 7, 30), date(2021, 7, 30)
+    assert a._tags(2, d19) == []  # Gardner Denver 2019 call never gets IR (old IR plc's ticker)
+    assert a._tags(2, d21) == ["IR"]
+    assert a._tags(1, d19) == ["IR", "TT"]  # old Ingersoll-Rand's own calls keep IR then
+    assert a._tags(4, d19) == ["DIS"]  # predecessor CIK 3 has no ticker today: same company
+
+
+def test_linker_uses_source_cik_for_shared_tickers():
+    lk = TickerLinker(Universe({1: ["IR", "TT"], 2: ["IR"]}), None, None, ["transcripts"])
+    plain = lk.link(title=None, body=None, source_tickers=["IR", "TT"], source="transcripts")
+    assert {(x.ticker, x.cik) for x in plain} == {("IR", 2), ("TT", 1)}  # ambiguous lookup
+    fixed = lk.link(
+        title=None, body=None, source_tickers=["IR", "TT"], source="transcripts", source_cik=1
+    )
+    assert {(x.ticker, x.cik) for x in fixed} == {("IR", 1), ("TT", 1)}

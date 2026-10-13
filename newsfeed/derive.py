@@ -7,6 +7,7 @@ rebuilds across processes (``collect`` loop and a concurrent ``backfill``).
 
 from __future__ import annotations
 
+import json
 import logging
 from functools import lru_cache
 from pathlib import Path
@@ -33,7 +34,7 @@ def relink(store: Store, linker: TickerLinker, run_id: str, batch_size: int = 50
     cur = store.q.cursor()  # own connection: writes below must not end this stream
     reader = cur.execute(
         """
-        SELECT i.item_id, i.source, i.title, i.body_text, i.tickers, i.text_hash
+        SELECT i.item_id, i.source, i.title, i.body_text, i.tickers, i.text_hash, i.meta
         FROM items i
         WHERE NOT EXISTS (
             SELECT 1 FROM item_tickers_all t
@@ -52,6 +53,14 @@ def relink(store: Store, linker: TickerLinker, run_id: str, batch_size: int = 50
     return total
 
 
+def _meta_cik(r: dict[str, Any]) -> int | None:
+    try:
+        cik = json.loads(r.get("meta") or "{}").get("cik")
+        return int(cik) if cik is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
 def _link_batch(
     store: Store, linker: TickerLinker, pending: list[dict[str, Any]], run_id: str
 ) -> None:
@@ -63,6 +72,7 @@ def _link_batch(
             body=r["body_text"],
             source_tickers=r["tickers"],
             source=r["source"],
+            source_cik=_meta_cik(r) if r["source"] in linker.source_only_sources else None,
         )
         base = {
             "item_id": r["item_id"],

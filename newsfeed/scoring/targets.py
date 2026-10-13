@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
@@ -22,6 +23,8 @@ from newsfeed.storage import Store
 from newsfeed.timeutil import ensure_utc
 
 CUSTOM_ID_LEN = 48  # Message Batches custom_id: <= 64 chars of [A-Za-z0-9_-]
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -115,16 +118,21 @@ def candidate_pairs(
         """,
         params,
     )
-    return [
-        {
-            "item_id": r["item_id"],
-            "cik": int(r["cik"]),
-            "ticker": canonical[int(r["cik"])],
-            "text_hash": r["text_hash"],
-        }
-        for r in df.to_dicts()
-        if int(r["cik"]) in canonical
-    ]
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for r in df.to_dicts():
+        cik = int(r["cik"])
+        if cik not in canonical:
+            continue
+        key = (r["item_id"], canonical[cik])
+        if key in seen:  # two CIKs sharing a canonical ticker (e.g. a re-registered company)
+            log.warning("duplicate scoring pair %s skipped (cik %s)", key, cik)
+            continue
+        seen.add(key)
+        out.append(
+            {"item_id": r["item_id"], "cik": cik, "ticker": key[1], "text_hash": r["text_hash"]}
+        )
+    return out
 
 
 def done_or_inflight_keys(store: Store) -> set[str]:

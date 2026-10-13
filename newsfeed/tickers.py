@@ -94,7 +94,7 @@ def load_ticker_map(
 
 
 # --------------------------------------------------------------------------- text linking
-LINKER_VERSION = 2  # bump when linking logic changes
+LINKER_VERSION = 3  # bump when linking logic changes (3: source_cik for source tags)
 
 # Confidence by method. Source tags (vendor ticker lists, EDGAR filer CIK) are authoritative;
 # exchange tags like "(NASDAQ: AAPL)" are near-certain; cashtags slightly less (spam, typos);
@@ -210,7 +210,10 @@ class TickerLinker:
         body: str | None,
         source_tickers: list[str],
         source: str | None = None,
+        source_cik: int | None = None,
     ) -> list[TickerLink]:
+        """``source_cik``: the company the source tags belong to, when the source knows it
+        (a ticker shared by two CIKs in the universe is otherwise resolved arbitrarily)."""
         title = title or ""
         body = body or ""
         hits: dict[str, dict[str, Any]] = {}
@@ -218,6 +221,12 @@ class TickerLinker:
         def add(ticker: str, method: str, n: int, in_title: bool) -> None:
             ticker = normalize_ticker(ticker)
             cik = self.ticker_to_cik.get(ticker)
+            if (
+                method == "source"
+                and source_cik is not None
+                and ticker in self.universe.tickers_for(source_cik)
+            ):
+                cik = source_cik
             if cik is None:
                 return
             h = hits.setdefault(

@@ -577,3 +577,73 @@ def univariate_cells(
         )
         out.append({**row, "ic": ic, **boot_summary(ic, boots)})
     return out
+
+
+def rank_residual(x: np.ndarray, c: np.ndarray) -> np.ndarray:
+    """Residual of rank(x) after an OLS fit on rank(c) (with intercept): the part of x's
+    ordering that the control does not explain."""
+    rx, rc = _rank(x), _rank(c)
+    design = np.column_stack([np.ones(len(rc)), rc])
+    beta, *_ = np.linalg.lstsq(design, rx, rcond=None)
+    return rx - design @ beta
+
+
+def partial_ic_cells(
+    inp: EvalInputs,
+    cfg: AppConfig,
+    feature: str,
+    control: str,
+    cells: list[tuple[str, int, str]],
+) -> list[dict[str, Any]]:
+    """Partial rank IC of ``feature`` given ``control`` on the ``assemble`` sample (rows where
+    both are present), pre-holdout, with circular block bootstrap CI / p; also reports the
+    plain ICs of both on the same rows."""
+    ec = cfg.eval
+    rng = np.random.default_rng(ec.seed)
+    base = assemble(inp, cfg)
+    session_idx = {d: i for i, d in enumerate(inp.sessions)}
+    out = []
+    for entry, h, adj in cells:
+        t = inp.targets.filter((pl.col("entry") == entry) & (pl.col("horizon") == h))
+        df = base.join(t, on=["ticker", "date"], how="inner")
+        if df.height:
+            dec = df["date"].to_numpy().astype("datetime64[D]")
+            end = df["label_end"].to_numpy().astype("datetime64[D]")
+            df = df.filter(pl.Series(pre_holdout_mask(dec, end, ec.holdout_start)))
+        n_sample = df.height
+        df = df.filter(pl.col(feature).is_not_null() & pl.col(control).is_not_null())
+        row: dict[str, Any] = {
+            "entry": entry,
+            "horizon": h,
+            "adjustment": adj,
+            "n_sample": n_sample,
+            "n": df.height,
+        }
+        if df.height < 30:
+            nan = float("nan")
+            out.append({**row, "ic_feature": nan, "ic_control": nan, "partial_ic": nan,
+                        "ci_lo": nan, "ci_hi": nan, "p": nan})  # fmt: skip
+            continue
+        s = np.array([session_idx.get(d, -1) for d in df["date"].to_list()])
+        x = df[feature].to_numpy().astype(float)
+        c = df[control].to_numpy().astype(float)
+        y = df[f"ret_{adj}"].to_numpy().astype(float)
+        resid = rank_residual(x, c)
+        pic = spearman(resid, y)
+        boots = block_bootstrap(
+            s,
+            lambda idx, x=x, c=c, y=y: spearman(rank_residual(x[idx], c[idx]), y[idx]),
+            block=h + 1 if entry == "close" else h + 2,
+            reps=ec.bootstrap_reps,
+            rng=rng,
+        )
+        out.append(
+            {
+                **row,
+                "ic_feature": spearman(x, y),
+                "ic_control": spearman(c, y),
+                "partial_ic": pic,
+                **boot_summary(pic, boots),
+            }
+        )
+    return out
