@@ -93,7 +93,11 @@ def boot_summary(point: float, boots: np.ndarray) -> dict[str, float]:
     b = boots[~np.isnan(boots)]
     if np.isnan(point) or len(b) < 20:
         return {"ci_lo": float("nan"), "ci_hi": float("nan"), "p": float("nan")}
-    p = 2 * min(np.mean(b <= 0), np.mean(b >= 0))
+    # (k + 1) / (B + 1): a finite bootstrap never yields p = 0, which would pass any BH
+    # threshold (it made two cells look like discoveries in eval a92fbd; with 10,000 reps
+    # their p were 0.0016 and 0.005). The smallest attainable two-sided p is 2 / (B + 1).
+    n = len(b)
+    p = 2 * min((np.sum(b <= 0) + 1) / (n + 1), (np.sum(b >= 0) + 1) / (n + 1))
     return {
         "ci_lo": float(np.quantile(b, 0.025)),
         "ci_hi": float(np.quantile(b, 0.975)),
@@ -348,7 +352,25 @@ def run_eval(
         "n_tests": int(np.sum(~np.isnan(p_all))),
         "feature_blocks": {"news": news_cols, "llm": llm_cols, "controls": list(CONTROL_COLS)},
         "holdout": use_holdout,
+        "bootstrap_reps": ec.bootstrap_reps,
     }
+
+
+def p_floor_note(reps: int | None, n_tests: int, q: float) -> list[str]:
+    """Report line: can any cell pass BH at this bootstrap resolution?"""
+    if not reps or not n_tests:
+        return []
+    floor, first = 2 / (reps + 1), q / n_tests
+    line = (
+        f"- bootstrap: {reps} reps, smallest attainable p {floor:.5f}; "
+        f"first BH threshold {first:.5f}"
+    )
+    if floor > first:
+        line += (
+            " -- **no cell can pass BH at this resolution**: rerun cells at the p floor with "
+            f"more reps (>= {int(2 / first)})"
+        )
+    return [line]
 
 
 def eval_config_id(cfg: AppConfig, feature_set_id: str, univariate: list[str]) -> str:
@@ -400,6 +422,7 @@ def render_markdown(result: dict[str, Any], meta: dict[str, Any]) -> str:
         f"- {'**HOLDOUT evaluation**' if result['holdout'] else 'pre-holdout data only'} "
         f"(holdout starts {meta['holdout_start']})",
         f"- tests in this run: {result['n_tests']}; Benjamini-Hochberg q = {meta['fdr_q']}",
+        *p_floor_note(result.get("bootstrap_reps"), result["n_tests"], meta["fdr_q"]),
         f"- experiments tried so far: {meta['experiments']}",
         "",
         "## Sample",

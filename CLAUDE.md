@@ -561,3 +561,10 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   (p 0.16 / 0.24), +2: +0.014 / +0.023, +5: +0.010 / +0.016. About half the signal is gone if
   the call is usable one session later than assumed → a source that lags a day loses most of
   the significant part.
+- 2026-10-13 CORRECTION: test 5's two "BH discoveries" (masked LightGBM lifts) were a
+  bootstrap-resolution artefact: with 1,000 reps they had p = 0, below any BH threshold. Rerun
+  at 10,000 reps (configs `transcripts_masked_boot_*`): close/20/market lift +0.016, p 0.0016;
+  next_open/1/sector lift +0.019, p 0.005 → BH over the run's 180 tests with these p: no
+  discovery. Fix: `boot_summary` uses (k + 1)/(B + 1) (p is never 0; floor 2/(B+1)), and each
+  report states whether the floor is below the first BH threshold q/n (1,000 reps over 180
+  tests is not: cells at the floor need ≥ 3,600 reps). Use ≥ 10,000 reps for the holdout look.
