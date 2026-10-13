@@ -526,3 +526,16 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   `5d_llm_sent_cwmean`, feature set 8990ee7a9775, same ticker/as_of); same cells, block
   bootstrap. Robustness (only if the primary passes): headline-free check not applicable;
   instead Q&A-only text vs prepared remarks.
+- 2026-10-13 SHARED TICKERS (found by the scoring duplicate check): 17 universe tickers belong
+  to two CIKs. Most are re-registrations of one company (DIS, CI, MDT, AVGO, BLK, XOM, XRX,
+  APA, BG, …); IR (old Ingersoll-Rand plc → TT vs Gardner Denver → IR from 2020-04) and
+  FOX/FOXA (21st Century Fox vs Fox Corp) are different companies. The linker's ticker→CIK
+  lookup is ambiguous for them. Fixes: (1) transcripts parser v2 tags a call with ticker T only
+  if T's membership spell on the call date belongs to the same CIK or to a predecessor CIK
+  with no current ticker (5 Gardner Denver 2019 calls dropped, 26 IR tags removed from them and
+  from TT's post-2020 calls); (2) linker v3 takes `source_cik` for source tags (transcripts
+  pass `meta.cik`); (3) `candidate_pairs` skips duplicate (item, canonical ticker) pairs with
+  a warning; (4) relink also redoes items whose links predate their stored row; (5)
+  `derive --relink-source <src>` forces a fresh link batch (needed once: a collector cycle had
+  relinked the v1 rows under linker v3 while they were being replaced). Lesson: don't move
+  lake files while a collector process is running. 8-K and news links are unchanged.
