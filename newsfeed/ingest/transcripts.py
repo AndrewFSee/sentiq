@@ -85,17 +85,40 @@ class TranscriptsAdapter:
                 f"(dataset commit {self.cfg.dataset_commit}) first"
             )
         con = duckdb.connect()
+        # 1) metadata only (the text column is ~2 GB: never sort or scan it in bulk)
+        meta = con.execute(
+            """
+            SELECT transcripts_id, symbol, report_date FROM read_parquet(?)
+            WHERE report_date >= ? AND report_date < ?
+            ORDER BY report_date, symbol, transcripts_id
+            """,
+            [path.as_posix(), d0.isoformat(), d1.isoformat()],
+        ).fetchall()
+        # 2) keep calls of universe companies; fetch their text in ONE streaming pass (semi-join,
+        #    no sort: ingest order doesn't matter, stories are rebuilt in time order anyway)
+        wanted = [
+            tid
+            for tid, sym, _ in meta
+            if self.tmap.ticker_to_cik.get(normalize_ticker(str(sym)))
+            in self.universe.cik_to_tickers
+        ]
+        self.stats["not_in_universe"] = (
+            self.stats.get("not_in_universe", 0) + len(meta) - len(wanted)
+        )
+        if not wanted:
+            con.close()
+            return
+        con.execute("SET preserve_insertion_order = false")
+        con.execute("CREATE TEMP TABLE wanted AS SELECT unnest(?) AS tid", [wanted])
         cur = con.execute(
             """
             SELECT symbol, fiscal_year, fiscal_quarter, report_date, transcripts_id, transcripts
-            FROM read_parquet(?)
-            WHERE report_date >= ? AND report_date < ?
-            ORDER BY report_date, symbol
+            FROM read_parquet(?) t WHERE t.transcripts_id IN (SELECT tid FROM wanted)
             """,
-            [path.as_posix(), d0.isoformat(), d1.isoformat()],
+            [path.as_posix()],
         )
         cols = [c[0] for c in cur.description]
-        while batch := cur.fetchmany(500):
+        while batch := cur.fetchmany(100):
             for r in batch:
                 yield dict(zip(cols, r, strict=True))
         con.close()

@@ -52,6 +52,8 @@ class UniverseConfig(_Strict):
     # sec_names: also match cleaned company names; aliases_only: only `aliases` (safer for a
     # 500-name universe where names like "Target" or "Ball" collide with ordinary words)
     name_linking: Literal["sec_names", "aliases_only"] = "sec_names"
+    # sources whose items link only through their source tags (no name/cashtag matching)
+    source_only_linking: list[str] = Field(default_factory=lambda: ["transcripts"])
     # Company-name aliases for text linking, matched case-sensitively on word boundaries.
     # A cleaned SEC company name is added automatically.
     aliases: dict[str, list[str]] = Field(default_factory=dict)

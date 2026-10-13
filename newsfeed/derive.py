@@ -28,7 +28,7 @@ def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
     (a re-parsed item gets relinked). Returns items linked."""
     pending = store.query(
         """
-        SELECT i.item_id, i.title, i.body_text, i.tickers, i.text_hash
+        SELECT i.item_id, i.source, i.title, i.body_text, i.tickers, i.text_hash
         FROM items i
         WHERE NOT EXISTS (
             SELECT 1 FROM item_tickers_all t
@@ -42,7 +42,12 @@ def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
     now = utcnow()
     rows: list[dict[str, Any]] = []
     for r in pending:
-        links = linker.link(title=r["title"], body=r["body_text"], source_tickers=r["tickers"])
+        links = linker.link(
+            title=r["title"],
+            body=r["body_text"],
+            source_tickers=r["tickers"],
+            source=r["source"],
+        )
         base = {
             "item_id": r["item_id"],
             "linker_id": linker.linker_id,

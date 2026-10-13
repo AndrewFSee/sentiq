@@ -163,8 +163,12 @@ class TickerLinker:
         universe: Universe,
         aliases: dict[str, list[str]] | None = None,
         company_titles: dict[int, str] | None = None,
+        source_only_sources: list[str] | tuple[str, ...] = (),
     ) -> None:
         self.universe = universe
+        # items from these sources link ONLY through their source tags (no text matching):
+        # an earnings call names competitors and customers, but is about the reporting company
+        self.source_only_sources = tuple(sorted(set(source_only_sources)))
         self.ticker_to_cik = {t: c for c, ts in universe.cik_to_tickers.items() for t in ts}
         self._aliases_in = {k: sorted(v) for k, v in sorted((aliases or {}).items())}
         self._titles_in = {str(k): v for k, v in sorted((company_titles or {}).items())}
@@ -192,14 +196,20 @@ class TickerLinker:
     def linker_id(self) -> str:
         """Version + hash of every input that affects output; changes trigger a relink."""
         blob = json.dumps(
-            [LINKER_VERSION, self.universe.cik_to_tickers, self._aliases_in, self._titles_in],
+            [LINKER_VERSION, self.universe.cik_to_tickers, self._aliases_in, self._titles_in]
+            + ([list(self.source_only_sources)] if self.source_only_sources else []),
             sort_keys=True,
             default=str,
         )
         return f"v{LINKER_VERSION}-{hashlib.sha256(blob.encode()).hexdigest()[:12]}"
 
     def link(
-        self, *, title: str | None, body: str | None, source_tickers: list[str]
+        self,
+        *,
+        title: str | None,
+        body: str | None,
+        source_tickers: list[str],
+        source: str | None = None,
     ) -> list[TickerLink]:
         title = title or ""
         body = body or ""
@@ -220,7 +230,8 @@ class TickerLinker:
 
         for t in source_tickers:
             add(t, "source", 0, False)
-        for text, is_title in ((title, True), (body, False)):
+        texts = [] if source in self.source_only_sources else [(title, True), (body, False)]
+        for text, is_title in texts:
             for rx, method in ((_EXCHANGE_TAG, "exchange_tag"), (_CASHTAG, "cashtag")):
                 for m in rx.finditer(text):
                     add(m.group(1), method, 1, is_title)

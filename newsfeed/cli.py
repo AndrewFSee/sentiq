@@ -159,7 +159,9 @@ class Context:
     def linker(self) -> TickerLinker:
         u = self.universe(full=True)  # linking always uses the whole configured universe
         titles = None if self.cfg.universe.name_linking == "aliases_only" else self.titles(u)
-        return TickerLinker(u, self.cfg.universe.aliases, titles)
+        return TickerLinker(
+            u, self.cfg.universe.aliases, titles, self.cfg.universe.source_only_linking
+        )
 
     def universe_sig(self) -> str:
         """Content hash of the PIT membership table ("" in static mode)."""
