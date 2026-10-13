@@ -539,3 +539,15 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   `derive --relink-source <src>` forces a fresh link batch (needed once: a collector cycle had
   relinked the v1 rows under linker v3 while they were being replaced). Lesson: don't move
   lake files while a collector process is running. 8-K and news links are unchanged.
+- 2026-10-13 RESULT test 5 (transcripts; scoring 11,871 + 11,853 requests, $20.40; feature
+  sets masked 09557d983019 / unmasked b695ae2d4c10; evals a92fbd / 9b6eb3; ~11.3k call-days,
+  1,130 sessions, 565 tickers). Primary (masked) close/market IC h1 +0.029 (CI [+0.004,
+  +0.057], p 0.026), h2 +0.035 (CI [+0.004, +0.067], p 0.024) → passes nominally (×2 for the
+  two primary cells: 0.052 / 0.048). Unmasked +0.029 / +0.031 (p 0.024 / 0.054): masking does
+  not lower it. LM tone negative again (−0.01..−0.03). Masked run: first BH discoveries of the
+  project, both LightGBM lifts (M2 − M1) — close/20/market +0.016 and next_open/1/sector
+  +0.019, bootstrap p "0.000" = < 1/1000, at the 1000-rep resolution limit vs the first BH
+  threshold 0.00056 → needs more reps before it counts; not in the unmasked run.
+  Test 5b partial IC (transcript sentiment given the 8-K `5d_llm_sent_cwmean`, 11,182 rows):
+  h1 +0.012 (p 0.30), h2 +0.015 (p 0.21); on the same rows the 8-K sentiment alone has IC
+  +0.031 / +0.037 → the call mostly repeats the press release; no significant increment.
