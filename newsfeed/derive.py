@@ -12,6 +12,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import polars as pl
+
 from newsfeed.config import AppConfig
 from newsfeed.dedupe import rebuild_stories
 from newsfeed.features.baselines import compute_baselines, load_lm_dictionary, make_finbert
@@ -26,7 +28,9 @@ log = logging.getLogger(__name__)
 def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
     """Link every item without links from the current ``linker_id`` *for its current text*
     (a re-parsed item gets relinked). Returns items linked."""
-    pending = store.query(
+    # streamed in batches: all bodies at once (8-Ks + news + ~40k-char transcripts) exceed a
+    # single 2 GB Arrow buffer
+    reader = store.q.execute(
         """
         SELECT i.item_id, i.source, i.title, i.body_text, i.tickers, i.text_hash
         FROM items i
@@ -36,9 +40,19 @@ def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
         )
         """,
         {"lid": linker.linker_id},
-    ).to_dicts()
-    if not pending:
-        return 0
+    ).to_arrow_reader(5000)
+    total = 0
+    for batch in reader:
+        pending = pl.from_arrow(batch).to_dicts()
+        if pending:
+            _link_batch(store, linker, pending, run_id)
+            total += len(pending)
+    return total
+
+
+def _link_batch(
+    store: Store, linker: TickerLinker, pending: list[dict[str, Any]], run_id: str
+) -> None:
     now = utcnow()
     rows: list[dict[str, Any]] = []
     for r in pending:
@@ -79,7 +93,6 @@ def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
                 }
             )
     store.write_ticker_links(rows, run_id)
-    return len(pending)
 
 
 def derive(
