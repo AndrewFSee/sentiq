@@ -53,7 +53,9 @@ class UniverseConfig(_Strict):
     # 500-name universe where names like "Target" or "Ball" collide with ordinary words)
     name_linking: Literal["sec_names", "aliases_only"] = "sec_names"
     # sources whose items link only through their source tags (no name/cashtag matching)
-    source_only_linking: list[str] = Field(default_factory=lambda: ["transcripts"])
+    source_only_linking: list[str] = Field(
+        default_factory=lambda: ["transcripts", "transcripts_qa", "transcripts_prep"]
+    )
     # Company-name aliases for text linking, matched case-sensitively on word boundaries.
     # A cleaned SEC company name is added automatically.
     aliases: dict[str, list[str]] = Field(default_factory=dict)
@@ -148,6 +150,13 @@ class SourcesConfig(_Strict):
     edgar: EdgarConfig = Field(default_factory=EdgarConfig)
     news_api: NewsApiConfig = Field(default_factory=NewsApiConfig)
     transcripts: TranscriptsConfig = Field(default_factory=TranscriptsConfig)
+    # backfill-only section views of the same calls (test 5 robustness)
+    transcripts_qa: TranscriptsConfig = Field(
+        default_factory=lambda: TranscriptsConfig(auto_refresh=False)
+    )
+    transcripts_prep: TranscriptsConfig = Field(
+        default_factory=lambda: TranscriptsConfig(auto_refresh=False)
+    )
 
 
 class CollectConfig(_Strict):
@@ -166,6 +175,9 @@ class DedupeConfig(_Strict):
     window_hours: float = Field(72, gt=0)  # exact/near matches only within this window
     require_ticker_overlap: bool = True  # when both items have tickers
     seed: int = 1
+    # items of these sources only match items of the same source (derived views of documents
+    # stored under another source, e.g. transcript sections, must not join that story)
+    isolated_sources: list[str] = Field(default_factory=list)
 
 
 class LinkPolicy(_Strict):

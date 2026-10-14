@@ -130,3 +130,32 @@ def test_linker_uses_source_cik_for_shared_tickers():
         title=None, body=None, source_tickers=["IR", "TT"], source="transcripts", source_cik=1
     )
     assert {(x.ticker, x.cik) for x in fixed} == {("IR", 1), ("TT", 1)}
+
+
+def test_section_views(cfg, tmp_path):
+    from newsfeed.ingest.transcripts import TranscriptsAdapter as TA
+    from newsfeed.ingest.transcripts import split_sections
+
+    p = tmp_path / "s.parquet"
+    con = duckdb.connect()
+    paras = [
+        para(1, "Operator", "Welcome. A question-and-answer session will follow."),
+        para(2, "Jane CFO", "Revenue grew 12%."),
+        para(3, "Operator", "[Operator Instructions] Our first question comes from Al at UBS."),
+        para(4, "Al", "What about margins?"),
+    ]  # fmt: skip
+    con.execute(
+        "COPY (SELECT 'NEWT' AS symbol, 2026 AS fiscal_year, 2 AS fiscal_quarter, "
+        f"'2026-07-28' AS report_date, 9 AS transcripts_id, [{', '.join(paras)}] AS transcripts"
+        f") TO '{p.as_posix()}' (FORMAT PARQUET)"
+    )
+    tcfg = cfg.sources.transcripts.model_copy(update={"path": p})
+    tmap, uni = TickerMap(ticker_to_cik={"NEWT": 42}), Universe({42: ["NEWT"]})
+    win = (datetime(2026, 7, 1, tzinfo=UTC), datetime(2026, 8, 1, tzinfo=UTC))
+    qa = list(TA(tcfg, uni, tmap, section="qa").backfill(*win, skip=lambda _: False))
+    prep = list(TA(tcfg, uni, tmap, section="prep").backfill(*win, skip=lambda _: False))
+    assert (qa[0].source, qa[0].native_id) == ("transcripts_qa", "defeatbeta:9:qa")
+    assert qa[0].body_text.startswith("Operator: [Operator Instructions] Our first question")
+    assert "Revenue grew" in prep[0].body_text and "margins" not in prep[0].body_text
+    assert prep[0].source == "transcripts_prep" and prep[0].native_id == "defeatbeta:9:prep"
+    assert split_sections(["Operator: Welcome.", "CEO: Hello."]) is None

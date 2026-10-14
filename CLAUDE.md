@@ -582,3 +582,16 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   curve shifted: it drops once it passes ~2 sessions after the release. Conclusion: what
   matters is reading the release within a session or two; the 8-K arrives within minutes via
   EDGAR (live collector + live scoring), so live call transcription would add little.
+- 2026-10-14 PRE-REGISTERED test 5 robustness (owed: the test-5 primary passed nominally) —
+  Q&A vs prepared remarks, before any backfill/scoring. Section views of each call from the
+  pin (D:\sentiq-archive\defeatbeta_pin\860d42ac253f.parquet): sources `transcripts_qa` /
+  `transcripts_prep`; split at the first paragraph after the opening that says questions start
+  now (`transcripts.split_sections`, found in 95.5% of calls; calls without it are skipped);
+  each section capped at 16k tokens; same date-only timing; `dedupe.isolated_sources` keeps
+  them out of the full call's story. Scored MASKED only (`score --masked --unpaired`), Haiku
+  5.5, prompt 6108c555090fa4b3. Feature sets `config/variants/transcripts_{qa,prep}_masked.yaml`.
+  Readout: masked `1d_llm_sent_cwmean` IC of each section at close/1 and close/2 market, and
+  the paired difference IC(Q&A) − IC(prepared) on identical rows (`newsfeed leakage` used as a
+  generic paired comparison: --feature-set prep --masked-set qa). Reading: Q&A carries the
+  signal if its IC ≥ the full-call IC and the difference CI excludes 0; otherwise no evidence
+  that either section dominates. Descriptive robustness, not a new BH family.

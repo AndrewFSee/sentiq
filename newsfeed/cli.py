@@ -72,7 +72,7 @@ NY_TZ = ZoneInfo("America/New_York")
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("newsfeed")
 
-SOURCES = ("edgar", "news_api", "transcripts")
+SOURCES = ("edgar", "news_api", "transcripts", "transcripts_qa", "transcripts_prep")
 ConfigOpt = Annotated[Path | None, typer.Option("--config", help="YAML config path")]
 TickersOpt = Annotated[
     str | None, typer.Option("--tickers", help="Comma-separated subset of the universe")
@@ -208,7 +208,7 @@ class Context:
                 return df["m"][0]
 
             return NewsApiAdapter(ncfg, make_vendor(ncfg), self.universe(), watermark=watermark)
-        if source == "transcripts":
+        if source in ("transcripts", "transcripts_qa", "transcripts_prep"):
             from newsfeed.ingest.transcripts import TranscriptsAdapter
 
             spells = None
@@ -217,7 +217,11 @@ class Context:
                 for r in self.pit.members.select("ticker", "start", "end", "cik").iter_rows():
                     spells.setdefault(r[0], []).append((r[1], r[2], int(r[3])))
             return TranscriptsAdapter(
-                self.cfg.sources.transcripts, self.universe(), self.tmap, spells=spells
+                getattr(self.cfg.sources, source),
+                self.universe(),
+                self.tmap,
+                spells=spells,
+                section={"transcripts": "full", "transcripts_qa": "qa"}.get(source, "prep"),
             )
         raise typer.BadParameter(f"unknown source {source!r}; choose from {SOURCES}")
 
@@ -315,7 +319,7 @@ def backfill(
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         adapter = ctx.adapter(source)
-        windows = ctx.cik_windows(t0, t1) if source in ("edgar", "transcripts") else None
+        windows = ctx.cik_windows(t0, t1) if source != "news_api" else None
         if windows is not None:
             adapter.cik_windows = windows
             stats["cik_windows"] = len(windows)
@@ -504,6 +508,10 @@ def score(
         typer.Option(help="Only pairs whose primary score has these event types (comma-sep.)"),
     ] = None,
     seed: int = 1,
+    unpaired: Annotated[
+        bool,
+        typer.Option("--unpaired", help="Masked/model runs without requiring a primary score"),
+    ] = False,
     replicates: Annotated[int, typer.Option(help="Noise study: re-draw K times")] = 0,
     limit: Annotated[int | None, typer.Option(help="Cap the number of requests")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Estimate cost, call nothing")] = False,
@@ -537,6 +545,7 @@ def score(
             seed=seed,
             limit=limit,
             event_types=_split(event_types) or None,
+            paired=not unpaired,
         )
         typer.echo(
             f"model={job.model} prompt={job.prompt.version}/{job.prompt_hash} "

@@ -479,6 +479,7 @@ def plan_targets(
     seed: int = 1,
     limit: int | None = None,
     event_types: list[str] | None = None,
+    paired: bool = True,
 ) -> list[Target]:
     """Targets still to score for this job.
 
@@ -498,7 +499,8 @@ def plan_targets(
         since_tradable=since_tradable,
     )
     is_study = masked or replicates > 0 or job.model != cfg.scoring.model
-    if is_study:
+    # paired=False: a masked run used on its own (features), not as an agreement study
+    if is_study and paired:
         ok = ok_keys(job.store)
         pairs = [
             p

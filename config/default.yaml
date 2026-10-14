@@ -81,6 +81,8 @@ timing:
     edgar: 60
     news_api: 300
     transcripts: 0                    # published_at is already the END of the call date (NY)
+    transcripts_qa: 0
+    transcripts_prep: 0
 
 sources:
   edgar:
@@ -120,6 +122,12 @@ sources:
     auto_refresh: true                # catch-up polls fetch a newer version (HEAD check first)
     catch_up_every_minutes: 60        # hourly HEAD check (downloads only when the file changes)
     silence_alert_minutes: 20000      # market minutes: calls are seasonal
+  transcripts_qa:                     # test-5 robustness: Q&A section of each call, from the pin
+    path: D:/sentiq-archive/defeatbeta_pin/860d42ac253f.parquet
+    auto_refresh: false
+  transcripts_prep:                   # ... and the prepared remarks
+    path: D:/sentiq-archive/defeatbeta_pin/860d42ac253f.parquet
+    auto_refresh: false
     max_tokens: 16000                 # median call ~10k tokens
     flush_every: 200
 
@@ -137,6 +145,7 @@ dedupe:
   max_chars: 5000
   window_hours: 72          # exact-text / near-dup matches only within this window (URL matches: any time)
   require_ticker_overlap: true
+  isolated_sources: [transcripts_qa, transcripts_prep]   # section views never join the full call's story
   seed: 1
 
 scoring:

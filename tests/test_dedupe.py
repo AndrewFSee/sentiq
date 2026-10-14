@@ -305,3 +305,16 @@ def test_relink_force_sources_writes_a_fresh_batch(store, calendar, corpus):
     assert relink(store, linker, "r") == 5
     assert relink(store, linker, "r") == 0
     assert relink(store, linker, "r", force_sources=["test"]) == 5  # corpus source is "test"
+
+
+def test_isolated_sources_never_join_other_sources_stories():
+    cfg = CFG.model_copy(update={"isolated_sources": ["iso"]})
+    base = text(31)
+    a = StoryAssigner(cfg)
+    a.add(_Node((T0, T0, "a"), "a", "", None, "h1", frozenset({"AAPL"}), make_minhash(base, cfg)))
+    iso = _Node((T0, T0, "b"), "b", "", None, "h2", frozenset({"AAPL"}),
+                make_minhash(base, cfg), group="iso")  # fmt: skip
+    assert a.add(iso).story_id == "b"  # identical text, but isolated -> own story
+    same = _Node((T0, T0, "c"), "c", "", None, "h3", frozenset({"AAPL"}),
+                 make_minhash(base, cfg), group="iso")  # fmt: skip
+    assert a.add(same).story_id == "b"  # matches within its own source

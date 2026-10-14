@@ -329,3 +329,10 @@ def test_event_type_filter_restricts_study_to_primary_event_type(env):
     assert 0 < earn.height < 11
     t = plan_targets(job(FakeLLM(), run_id="m"), c2t, masked=True, event_types=["earnings"])
     assert {(x.item_id, x.ticker) for x in t} == set(earn.select("item_id", "ticker").rows())
+
+
+def test_unpaired_masked_run_needs_no_primary(env):
+    _, _, job, c2t = env
+    assert plan_targets(job(FakeLLM()), c2t, masked=True) == []  # paired: nothing scored yet
+    t = plan_targets(job(FakeLLM()), c2t, masked=True, paired=False)
+    assert len(t) == 11 and all(x.masked for x in t)
