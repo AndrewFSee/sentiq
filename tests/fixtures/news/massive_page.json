@@ -1,0 +1,247 @@
+{
+ "count": 5,
+ "next_url": "https://api.massive.com/v2/reference/news?cursor=REDACTED",
+ "results": [
+  {
+   "amp_url": "<redacted amp_url 0>",
+   "article_url": "<redacted article_url 0>",
+   "author": "<redacted author 0>",
+   "description": "<redacted description 0>",
+   "id": "966fa506893f897f433af404b268765a5670725956761d3aec8494c696e836f4",
+   "image_url": "<redacted image_url 0>",
+   "insights": [
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "META"
+    },
+    {
+     "sentiment": "negative",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "NVDA"
+    }
+   ],
+   "keywords": [
+    "ISM Manufacturing",
+    "S&P 500",
+    "triangle pattern",
+    "new orders",
+    "inventory",
+    "input costs",
+    "soft landing",
+    "Fed policy"
+   ],
+   "published_utc": "2026-07-01T13:06:00Z",
+   "publisher": {
+    "favicon_url": "https://s3.massive.com/public/assets/news/favicons/investing.ico",
+    "homepage_url": "https://www.investing.com/",
+    "logo_url": "https://s3.massive.com/public/assets/news/logos/investing.png",
+    "name": "Investing.com"
+   },
+   "tickers": [
+    "META",
+    "NVDA"
+   ],
+   "title": "<redacted title 0>"
+  },
+  {
+   "article_url": "<redacted article_url 1>",
+   "author": "<redacted author 1>",
+   "description": "<redacted description 1>",
+   "id": "527829648dae40417fc738f0507f12031d0d55672049062a704ba6d6585c39bf",
+   "image_url": "<redacted image_url 1>",
+   "insights": [
+    {
+     "sentiment": "negative",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "BETR"
+    },
+    {
+     "sentiment": "negative",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "BETRW"
+    }
+   ],
+   "keywords": [
+    "securities fraud",
+    "class action lawsuit",
+    "shareholder rights",
+    "misleading statements",
+    "stock decline",
+    "mortgage lending",
+    "interest rates"
+   ],
+   "published_utc": "2026-07-01T13:35:00Z",
+   "publisher": {
+    "favicon_url": "https://s3.massive.com/public/assets/news/favicons/globenewswire.ico",
+    "homepage_url": "https://www.globenewswire.com",
+    "logo_url": "https://s3.massive.com/public/assets/news/logos/globenewswire.svg",
+    "name": "GlobeNewswire Inc."
+   },
+   "tickers": [
+    "BETR",
+    "BETRW"
+   ],
+   "title": "<redacted title 1>"
+  },
+  {
+   "article_url": "<redacted article_url 2>",
+   "author": "<redacted author 2>",
+   "description": "<redacted description 2>",
+   "id": "448ea82ac6fcbe7a5f7bbe1e71744d60eb7ed8fe4fa89a8f8d60241e794212ef",
+   "image_url": "<redacted image_url 2>",
+   "insights": [
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "QCLS"
+    }
+   ],
+   "keywords": [
+    "optical computing",
+    "photonic processing",
+    "AI inference",
+    "optical processing unit",
+    "headquarters relocation",
+    "San Francisco",
+    "integrated photonics lab"
+   ],
+   "published_utc": "2026-07-01T13:44:00Z",
+   "publisher": {
+    "favicon_url": "https://s3.massive.com/public/assets/news/favicons/globenewswire.ico",
+    "homepage_url": "https://www.globenewswire.com",
+    "logo_url": "https://s3.massive.com/public/assets/news/logos/globenewswire.svg",
+    "name": "GlobeNewswire Inc."
+   },
+   "tickers": [
+    "QCLS"
+   ],
+   "title": "<redacted title 2>"
+  },
+  {
+   "article_url": "<redacted article_url 3>",
+   "author": "<redacted author 3>",
+   "description": "<redacted description 3>",
+   "id": "de014de56ada616ac118a796d52868e22a49f673fcced2e0d786fb173d0374e3",
+   "image_url": "<redacted image_url 3>",
+   "insights": [
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "BSAI"
+    }
+   ],
+   "keywords": [
+    "board appointment",
+    "modular AI infrastructure",
+    "SkyMod platform",
+    "data center",
+    "AI factories",
+    "capital formation",
+    "strategic planning"
+   ],
+   "published_utc": "2026-07-01T13:45:00Z",
+   "publisher": {
+    "favicon_url": "https://s3.massive.com/public/assets/news/favicons/globenewswire.ico",
+    "homepage_url": "https://www.globenewswire.com",
+    "logo_url": "https://s3.massive.com/public/assets/news/logos/globenewswire.svg",
+    "name": "GlobeNewswire Inc."
+   },
+   "tickers": [
+    "BSAI"
+   ],
+   "title": "<redacted title 3>"
+  },
+  {
+   "article_url": "<redacted article_url 4>",
+   "author": "<redacted author 4>",
+   "description": "<redacted description 4>",
+   "id": "85d394ae7809e65585970d8d40c906678e578ae8c78fcf5e992016804b18a158",
+   "image_url": "<redacted image_url 4>",
+   "insights": [
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "DELL"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "CSCO"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "HPE"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "HPEpC"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "EQIX"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "NVDA"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "INTC"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "ETN"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "ABBNY"
+    },
+    {
+     "sentiment": "positive",
+     "sentiment_reasoning": "<redacted>",
+     "ticker": "SBGSY"
+    }
+   ],
+   "keywords": [
+    "data center infrastructure",
+    "cloud computing",
+    "artificial intelligence",
+    "high-performance computing",
+    "digital transformation",
+    "hyperscale data centers",
+    "liquid cooling",
+    "edge computing",
+    "hybrid cloud"
+   ],
+   "published_utc": "2026-07-01T13:47:00Z",
+   "publisher": {
+    "favicon_url": "https://s3.massive.com/public/assets/news/favicons/globenewswire.ico",
+    "homepage_url": "https://www.globenewswire.com",
+    "logo_url": "https://s3.massive.com/public/assets/news/logos/globenewswire.svg",
+    "name": "GlobeNewswire Inc."
+   },
+   "tickers": [
+    "DELL",
+    "CSCO",
+    "HPE",
+    "HPEpC",
+    "EQIX",
+    "NVDA",
+    "INTC",
+    "ETN",
+    "ABBNY",
+    "SBGSY"
+   ],
+   "title": "<redacted title 4>"
+  }
+ ],
+ "status": "OK"
+}
