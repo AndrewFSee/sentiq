@@ -52,6 +52,8 @@ class UniverseConfig(_Strict):
     # sec_names: also match cleaned company names; aliases_only: only `aliases` (safer for a
     # 500-name universe where names like "Target" or "Ball" collide with ordinary words)
     name_linking: Literal["sec_names", "aliases_only"] = "sec_names"
+    # sources whose items link only through their source tags (no name/cashtag matching)
+    source_only_linking: list[str] = Field(default_factory=lambda: ["transcripts"])
     # Company-name aliases for text linking, matched case-sensitively on word boundaries.
     # A cleaned SEC company name is added automatically.
     aliases: dict[str, list[str]] = Field(default_factory=dict)
@@ -124,9 +126,28 @@ class NewsApiConfig(_Strict):
     silence_alert_minutes: float = Field(30, gt=0)
 
 
+class TranscriptsConfig(_Strict):
+    """Earnings-call transcripts from local copies of the defeatbeta dataset: ``path`` is a
+    directory of ``<commit12>.parquet`` files plus a ``COMMIT`` pointer (or a single file)."""
+
+    path: Path = Path("data/ref/defeatbeta")
+    dataset_commit: str = "860d42ac253f8df98c93c181b0d873f21e982e48"  # backfill pin (kept)
+    hf_repo: str = "defeatbeta/yahoo-finance-data"
+    hf_file: str = "data/US/stock_earning_call_transcripts.parquet"
+    auto_refresh: bool = True  # catch-up polls download a newer dataset version if any
+    catch_up_every_minutes: float = Field(360, gt=0)  # = refresh check cadence
+    silence_alert_minutes: float = Field(20000, gt=0)  # market minutes; calls are seasonal
+    max_tokens: int = Field(16000, gt=0)  # median call ~10k tokens
+    chars_per_token: float = Field(4.0, gt=0)
+    drop_speakers: list[str] = Field(default_factory=lambda: ["AI Insights", "Disclaimer*"])
+    flush_every: int = Field(200, gt=0)
+    poll_lookback_days: int = Field(10, gt=0)
+
+
 class SourcesConfig(_Strict):
     edgar: EdgarConfig = Field(default_factory=EdgarConfig)
     news_api: NewsApiConfig = Field(default_factory=NewsApiConfig)
+    transcripts: TranscriptsConfig = Field(default_factory=TranscriptsConfig)
 
 
 class CollectConfig(_Strict):
@@ -379,7 +400,10 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
     news = cfg.sources.news_api
     if not news.fixture_path.is_absolute():  # fixtures ship with the code: resolve vs. project
         news = news.model_copy(update={"fixture_path": PROJECT_ROOT / news.fixture_path})
-    sources = cfg.sources.model_copy(update={"news_api": news})
+    trans = cfg.sources.transcripts
+    if not trans.path.is_absolute():  # reference data lives with the project
+        trans = trans.model_copy(update={"path": PROJECT_ROOT / trans.path})
+    sources = cfg.sources.model_copy(update={"news_api": news, "transcripts": trans})
     feats = cfg.features
     uni = cfg.universe
     if not uni.pit_dir.is_absolute():

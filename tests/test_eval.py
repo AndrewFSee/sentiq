@@ -453,3 +453,30 @@ def test_univariate_cells_planted_signal(cfg):
     noise = univariate_cells(inp, c, "1d_lm_tone_decay", [("close", 1, "market")])[0]
     assert sig["ic"] > 0.2 and sig["p"] < 0.01 and abs(noise["ic"]) < 0.05
     assert univariate_cells(inp, c, "1d_llm_sent_decay", [("close", 5, "market")])[0]["n"] == 0
+
+
+def test_partial_ic_removes_what_the_control_explains(cfg):
+    from newsfeed.eval.report import partial_ic_cells
+
+    inp, c, _ = synthetic_inputs(cfg, signal=0.6, n_days=200)
+    rng = np.random.default_rng(9)
+    f = inp.features
+    sig = f["1d_llm_sent_decay"].to_numpy()
+    inp.features = f.with_columns(
+        pl.Series("copy", sig + 0.01 * rng.normal(size=f.height)),  # same information
+        pl.Series("noise", rng.normal(size=f.height)),
+    )
+    cell = [("close", 1, "market")]
+    redundant = partial_ic_cells(inp, c, "copy", "1d_llm_sent_decay", cell)[0]
+    assert redundant["ic_feature"] > 0.2 and abs(redundant["partial_ic"]) < 0.05
+    new_info = partial_ic_cells(inp, c, "1d_llm_sent_decay", "noise", cell)[0]
+    assert new_info["partial_ic"] > 0.2 and new_info["p"] < 0.01
+
+
+def test_bootstrap_p_never_zero_and_floor_note():
+    from newsfeed.eval.report import boot_summary, p_floor_note
+
+    s = boot_summary(0.5, np.full(999, 0.5))  # every rep on one side
+    assert s["p"] == pytest.approx(2 / 1000)
+    assert "no cell can pass BH" in p_floor_note(1000, 180, 0.10)[0]
+    assert "no cell can pass" not in p_floor_note(10000, 180, 0.10)[0]

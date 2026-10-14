@@ -292,6 +292,12 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   retries.
 - `item_id = sha256("<source>:<native_id>")[:32]`, deterministic.
 - Every run records `run_id`, `config_hash` (non-secret, path-independent), git SHA, versions.
+- Archive (moved off C: 2026-10-14, see `D:\sentiq-archive\README.md`): the defeatbeta pin
+  860d42ac253f.parquet (transcripts backfill version), full SEC companyfacts JSON (the
+  project keeps slim copies with only the three share-count tags; verified identical share
+  histories), the fastembed model, M6 run logs. The v1 transcript backup and `data/configs/`
+  (copies of `config/variants/`) were deleted. `data/raw` stays: re-parsing and live
+  collection use it.
 - Bump `PARSER_VERSION` in an adapter when its parsing output changes.
 
 ## Code conventions
@@ -489,3 +495,90 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   found by exploration (pre-holdout IC +0.078, n 1,411 — likely inflated by selection), so its
   holdout test is the first real test. Expected holdout n ≈ 210 (≈188/yr; 38 so far) → power
   roughly 20% even if the true IC were 0.078.
+- 2026-10-12 Hand-labelling: private artifact "News Label Desk" (claude.ai/artifact/
+  7ptLUVXwLY4oxSHYEZxVdb), 200 news pairs stratified 25 per model event type (seed 2026,
+  `scripts/make_label_sample.py`), blind; answer key `data/labeling/news_sample_v1_key.csv`.
+  Labels land in the artifact's db collection `labels`.
+- 2026-10-12 PRE-REGISTERED (EXPLORATORY) text clusters, `newsfeed cluster-explore` with
+  `config/variants/news_massive_masked.yaml`: news founders, title + summary, TF-IDF (1–2-grams,
+  min_df 5, max_df 0.5) → SVD 100 → k-means k = 25, seed 7, fitted on pre-holdout documents;
+  events = masked LLM scores with relevance ≥ secondary, dated to the first decision at or after
+  tradable_at, fanned out to the member ticker; per-cluster IC at close/1 and close/2 market;
+  one BH across ≤ 50 tests. Candidates only.
+- 2026-10-12 RESULT text clusters (run 01c43f, 50 tests): no BH survivor (smallest p 0.010 vs
+  first threshold 0.002). Clusters are interpretable themes — ETFs, 13F stake changes,
+  market-research releases, "article discusses" listicles, two law-firm clusters, IPOs/deals,
+  dividends, AI press releases, generic stock picks, Tesla, Lilly, Nvidia, biotech trials, big
+  tech AI, earnings recaps, Buffett, dividend declarations, data centres, quantum, oil/market,
+  tariffs, analyst-opinion pieces. Largest (nominal) ICs: law-firm Rosen cluster +0.121 at 1d
+  (p 0.010, n 534), IPO/deals +0.062 at 2d (p 0.010), biotech trials −0.101 at 2d (p 0.026),
+  tariffs −0.094 at 2d (p 0.038); all within what 50 tests produce by chance.
+- 2026-10-13 Transcripts source (`ingest/transcripts.py`, `sources.transcripts`): defeatbeta
+  `stock_earning_call_transcripts`, pinned commit 860d42a, local copy in `data/ref/defeatbeta/`.
+  12,415 S&P 500 calls 2019 → 2026-10 (11,873 after merging share-class duplicates); 1,419 hit
+  the 16k-token cap. Date-only timing → published = end of call date (NY), tradable next open
+  (all 09:30). Linking: `universe.source_only_linking: [transcripts]` (own company only).
+  Relink now streams items on its own cursor (bodies exceeded a 2 GB Arrow buffer; writing on
+  the reading connection had ended the stream after one batch).
+- 2026-10-13 PRE-REGISTERED test 5 (earnings calls, before scoring): score transcript founders
+  unmasked and masked (Haiku 5.5, prompt 6108c555090fa4b3, doc type "earnings call
+  transcript"); feature sets `config/variants/transcripts_masked.yaml` (PRIMARY) and
+  `transcripts_unmasked.yaml` (features.sources = coverage_sources = [transcripts], embeddings
+  off, `eval.sample: llm`), 2019-01-01 → 2026-10-10, pre-holdout eval. Primary: masked
+  `1d_llm_sent_cwmean` IC > 0 at close entry, h ∈ {1, 2}, market-adjusted (decision = first
+  15:50 after the 09:30 open following the call, i.e. the day after the call). Secondary 5b
+  (incremental over the press release): on the primary rows, partial rank IC = Spearman of the
+  return with the residual of rank(transcript sentiment) regressed on rank(8-K
+  `5d_llm_sent_cwmean`, feature set 8990ee7a9775, same ticker/as_of); same cells, block
+  bootstrap. Robustness (only if the primary passes): headline-free check not applicable;
+  instead Q&A-only text vs prepared remarks.
+- 2026-10-13 SHARED TICKERS (found by the scoring duplicate check): 17 universe tickers belong
+  to two CIKs. Most are re-registrations of one company (DIS, CI, MDT, AVGO, BLK, XOM, XRX,
+  APA, BG, …); IR (old Ingersoll-Rand plc → TT vs Gardner Denver → IR from 2020-04) and
+  FOX/FOXA (21st Century Fox vs Fox Corp) are different companies. The linker's ticker→CIK
+  lookup is ambiguous for them. Fixes: (1) transcripts parser v2 tags a call with ticker T only
+  if T's membership spell on the call date belongs to the same CIK or to a predecessor CIK
+  with no current ticker (5 Gardner Denver 2019 calls dropped, 26 IR tags removed from them and
+  from TT's post-2020 calls); (2) linker v3 takes `source_cik` for source tags (transcripts
+  pass `meta.cik`); (3) `candidate_pairs` skips duplicate (item, canonical ticker) pairs with
+  a warning; (4) relink also redoes items whose links predate their stored row; (5)
+  `derive --relink-source <src>` forces a fresh link batch (needed once: a collector cycle had
+  relinked the v1 rows under linker v3 while they were being replaced). Lesson: don't move
+  lake files while a collector process is running. 8-K and news links are unchanged.
+- 2026-10-13 RESULT test 5 (transcripts; scoring 11,871 + 11,853 requests, $20.40; feature
+  sets masked 09557d983019 / unmasked b695ae2d4c10; evals a92fbd / 9b6eb3; ~11.3k call-days,
+  1,130 sessions, 565 tickers). Primary (masked) close/market IC h1 +0.029 (CI [+0.004,
+  +0.057], p 0.026), h2 +0.035 (CI [+0.004, +0.067], p 0.024) → passes nominally (×2 for the
+  two primary cells: 0.052 / 0.048). Unmasked +0.029 / +0.031 (p 0.024 / 0.054): masking does
+  not lower it. LM tone negative again (−0.01..−0.03). Masked run: first BH discoveries of the
+  project, both LightGBM lifts (M2 − M1) — close/20/market +0.016 and next_open/1/sector
+  +0.019, bootstrap p "0.000" = < 1/1000, at the 1000-rep resolution limit vs the first BH
+  threshold 0.00056 → needs more reps before it counts; not in the unmasked run.
+  Test 5b partial IC (transcript sentiment given the 8-K `5d_llm_sent_cwmean`, 11,182 rows):
+  h1 +0.012 (p 0.30), h2 +0.015 (p 0.21); on the same rows the 8-K sentiment alone has IC
+  +0.031 / +0.037 → the call mostly repeats the press release; no significant increment.
+- 2026-10-13 defeatbeta latency: the HF repo keeps no history (single squashed commit "Compact
+  finance data history <date>", ~05:29 UTC daily), so past arrival times can't be
+  reconstructed. Forward: collector checks hourly (`sources.transcripts.catch_up_every_minutes:
+  60`), `newsfeed transcripts-latency` reports hours from the Item 2.02 8-K to first_seen and
+  the share in hand by the next open / next 15:50 decision (Q3 season from 2026-10-14).
+- 2026-10-13 RESULT delay sensitivity (masked transcripts, event-level, run 8969bd): close/
+  market IC h1/h2 at +0 sessions +0.030 / +0.035 (reproduces test 5), +1: +0.018 / +0.017
+  (p 0.16 / 0.24), +2: +0.014 / +0.023, +5: +0.010 / +0.016. About half the signal is gone if
+  the call is usable one session later than assumed → a source that lags a day loses most of
+  the significant part.
+- 2026-10-13 CORRECTION: test 5's two "BH discoveries" (masked LightGBM lifts) were a
+  bootstrap-resolution artefact: with 1,000 reps they had p = 0, below any BH threshold. Rerun
+  at 10,000 reps (configs `transcripts_masked_boot_*`): close/20/market lift +0.016, p 0.0016;
+  next_open/1/sector lift +0.019, p 0.005 → BH over the run's 180 tests with these p: no
+  discovery. Fix: `boot_summary` uses (k + 1)/(B + 1) (p is never 0; floor 2/(B+1)), and each
+  report states whether the floor is below the first BH threshold q/n (1,000 reps over 180
+  tests is not: cells at the floor need ≥ 3,600 reps). Use ≥ 10,000 reps for the holdout look.
+- 2026-10-13 RESULT delay sensitivity, earnings 8-Ks (event-level; unmasked / masked): close/
+  market IC h1/h2 at +0 sessions +0.020 / +0.031 (reproduces test 1), +1: +0.029 / +0.031
+  (p 0.016 / 0.036), +2: +0.021 / +0.020 (p ≈ 0.09 / 0.14), +5: +0.023 / +0.013; masked the
+  same. The release-based signal holds for ~1–2 sessions, then fades. Transcript delay 0 is
+  already ~1 session after the release (date-only timing), so the transcript curve is this
+  curve shifted: it drops once it passes ~2 sessions after the release. Conclusion: what
+  matters is reading the release within a session or two; the 8-K arrives within minutes via
+  EDGAR (live collector + live scoring), so live call transcription would add little.

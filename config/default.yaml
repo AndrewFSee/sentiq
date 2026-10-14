@@ -80,6 +80,7 @@ timing:
   backfill_lag_seconds:
     edgar: 60
     news_api: 300
+    transcripts: 0                    # published_at is already the END of the call date (NY)
 
 sources:
   edgar:
@@ -113,9 +114,18 @@ sources:
     flush_every: 100
     silence_alert_minutes: 30
 
+  transcripts:                        # earnings calls, defeatbeta copies (see ingest/transcripts.py)
+    path: data/ref/defeatbeta          # <commit12>.parquet files + COMMIT pointer
+    dataset_commit: 860d42ac253f8df98c93c181b0d873f21e982e48   # backfill pin, never pruned
+    auto_refresh: true                # catch-up polls fetch a newer version (HEAD check first)
+    catch_up_every_minutes: 60        # hourly HEAD check (downloads only when the file changes)
+    silence_alert_minutes: 20000      # market minutes: calls are seasonal
+    max_tokens: 16000                 # median call ~10k tokens
+    flush_every: 200
+
 collect:
   interval_seconds: 120              # = Task Scheduler period for `collect --once` (sentiq-collect)
-  sources: [edgar]
+  sources: [edgar, transcripts]
   max_consecutive_failures: 3
   stalled_after_intervals: 3
   realert_minutes: 60

@@ -7,10 +7,13 @@ rebuilds across processes (``collect`` loop and a concurrent ``backfill``).
 
 from __future__ import annotations
 
+import json
 import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+import polars as pl
 
 from newsfeed.config import AppConfig
 from newsfeed.dedupe import rebuild_stories
@@ -23,26 +26,64 @@ from newsfeed.timeutil import utcnow
 log = logging.getLogger(__name__)
 
 
-def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
-    """Link every item without links from the current ``linker_id`` *for its current text*
-    (a re-parsed item gets relinked). Returns items linked."""
-    pending = store.query(
+def relink(
+    store: Store,
+    linker: TickerLinker,
+    run_id: str,
+    batch_size: int = 5000,
+    force_sources: list[str] | None = None,
+) -> int:
+    """Link every item without links from the current ``linker_id`` for its current text and
+    newer than its stored row (a re-parsed item gets relinked even when only its source tags
+    changed). Returns items linked."""
+    # streamed in batches: all bodies at once (8-Ks + news + ~40k-char transcripts) exceed a
+    # single 2 GB Arrow buffer
+    cur = store.q.cursor()  # own connection: writes below must not end this stream
+    reader = cur.execute(
         """
-        SELECT i.item_id, i.title, i.body_text, i.tickers, i.text_hash
+        SELECT i.item_id, i.source, i.title, i.body_text, i.tickers, i.text_hash, i.meta
         FROM items i
-        WHERE NOT EXISTS (
+        WHERE list_contains($force, i.source) OR NOT EXISTS (
             SELECT 1 FROM item_tickers_all t
             WHERE t.item_id = i.item_id AND t.linker_id = $lid AND t.text_hash = i.text_hash
+              -- links must postdate the item row they describe: a re-parsed item can change
+              -- its source tags without changing its text
+              AND t.linked_at >= i.ingested_at
         )
         """,
-        {"lid": linker.linker_id},
-    ).to_dicts()
-    if not pending:
-        return 0
+        {"lid": linker.linker_id, "force": list(force_sources or [])},
+    ).to_arrow_reader(batch_size)
+    total = 0
+    for batch in reader:
+        pending = pl.from_arrow(batch).to_dicts()
+        if pending:
+            _link_batch(store, linker, pending, run_id)
+            total += len(pending)
+    cur.close()
+    return total
+
+
+def _meta_cik(r: dict[str, Any]) -> int | None:
+    try:
+        cik = json.loads(r.get("meta") or "{}").get("cik")
+        return int(cik) if cik is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _link_batch(
+    store: Store, linker: TickerLinker, pending: list[dict[str, Any]], run_id: str
+) -> None:
     now = utcnow()
     rows: list[dict[str, Any]] = []
     for r in pending:
-        links = linker.link(title=r["title"], body=r["body_text"], source_tickers=r["tickers"])
+        links = linker.link(
+            title=r["title"],
+            body=r["body_text"],
+            source_tickers=r["tickers"],
+            source=r["source"],
+            source_cik=_meta_cik(r) if r["source"] in linker.source_only_sources else None,
+        )
         base = {
             "item_id": r["item_id"],
             "linker_id": linker.linker_id,
@@ -74,7 +115,6 @@ def relink(store: Store, linker: TickerLinker, run_id: str) -> int:
                 }
             )
     store.write_ticker_links(rows, run_id)
-    return len(pending)
 
 
 def derive(
@@ -86,6 +126,7 @@ def derive(
     full_stories: bool = False,
     wait: bool = False,
     embedder: Embedder | None = None,
+    relink_sources: list[str] | None = None,
 ) -> dict[str, Any]:
     """Relink, rebuild stories, compute text baselines for story founders. If another process
     holds the lock, skip (or raise if ``wait``) -- every step is self-healing next cycle."""
@@ -96,7 +137,7 @@ def derive(
         log.info("derive skipped: lock held by another process")
         return {"skipped": True}
     try:
-        linked = relink(store, linker, run_id)
+        linked = relink(store, linker, run_id, force_sources=relink_sources)
         stories = rebuild_stories(store, cfg.dedupe, linker.linker_id, full=full_stories)
         return {
             "linked": linked,

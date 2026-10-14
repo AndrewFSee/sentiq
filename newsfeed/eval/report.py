@@ -93,7 +93,11 @@ def boot_summary(point: float, boots: np.ndarray) -> dict[str, float]:
     b = boots[~np.isnan(boots)]
     if np.isnan(point) or len(b) < 20:
         return {"ci_lo": float("nan"), "ci_hi": float("nan"), "p": float("nan")}
-    p = 2 * min(np.mean(b <= 0), np.mean(b >= 0))
+    # (k + 1) / (B + 1): a finite bootstrap never yields p = 0, which would pass any BH
+    # threshold (it made two cells look like discoveries in eval a92fbd; with 10,000 reps
+    # their p were 0.0016 and 0.005). The smallest attainable two-sided p is 2 / (B + 1).
+    n = len(b)
+    p = 2 * min((np.sum(b <= 0) + 1) / (n + 1), (np.sum(b >= 0) + 1) / (n + 1))
     return {
         "ci_lo": float(np.quantile(b, 0.025)),
         "ci_hi": float(np.quantile(b, 0.975)),
@@ -348,7 +352,25 @@ def run_eval(
         "n_tests": int(np.sum(~np.isnan(p_all))),
         "feature_blocks": {"news": news_cols, "llm": llm_cols, "controls": list(CONTROL_COLS)},
         "holdout": use_holdout,
+        "bootstrap_reps": ec.bootstrap_reps,
     }
+
+
+def p_floor_note(reps: int | None, n_tests: int, q: float) -> list[str]:
+    """Report line: can any cell pass BH at this bootstrap resolution?"""
+    if not reps or not n_tests:
+        return []
+    floor, first = 2 / (reps + 1), q / n_tests
+    line = (
+        f"- bootstrap: {reps} reps, smallest attainable p {floor:.5f}; "
+        f"first BH threshold {first:.5f}"
+    )
+    if floor > first:
+        line += (
+            " -- **no cell can pass BH at this resolution**: rerun cells at the p floor with "
+            f"more reps (>= {int(2 / first)})"
+        )
+    return [line]
 
 
 def eval_config_id(cfg: AppConfig, feature_set_id: str, univariate: list[str]) -> str:
@@ -400,6 +422,7 @@ def render_markdown(result: dict[str, Any], meta: dict[str, Any]) -> str:
         f"- {'**HOLDOUT evaluation**' if result['holdout'] else 'pre-holdout data only'} "
         f"(holdout starts {meta['holdout_start']})",
         f"- tests in this run: {result['n_tests']}; Benjamini-Hochberg q = {meta['fdr_q']}",
+        *p_floor_note(result.get("bootstrap_reps"), result["n_tests"], meta["fdr_q"]),
         f"- experiments tried so far: {meta['experiments']}",
         "",
         "## Sample",
@@ -576,4 +599,74 @@ def univariate_cells(
             rng=rng,
         )
         out.append({**row, "ic": ic, **boot_summary(ic, boots)})
+    return out
+
+
+def rank_residual(x: np.ndarray, c: np.ndarray) -> np.ndarray:
+    """Residual of rank(x) after an OLS fit on rank(c) (with intercept): the part of x's
+    ordering that the control does not explain."""
+    rx, rc = _rank(x), _rank(c)
+    design = np.column_stack([np.ones(len(rc)), rc])
+    beta, *_ = np.linalg.lstsq(design, rx, rcond=None)
+    return rx - design @ beta
+
+
+def partial_ic_cells(
+    inp: EvalInputs,
+    cfg: AppConfig,
+    feature: str,
+    control: str,
+    cells: list[tuple[str, int, str]],
+) -> list[dict[str, Any]]:
+    """Partial rank IC of ``feature`` given ``control`` on the ``assemble`` sample (rows where
+    both are present), pre-holdout, with circular block bootstrap CI / p; also reports the
+    plain ICs of both on the same rows."""
+    ec = cfg.eval
+    rng = np.random.default_rng(ec.seed)
+    base = assemble(inp, cfg)
+    session_idx = {d: i for i, d in enumerate(inp.sessions)}
+    out = []
+    for entry, h, adj in cells:
+        t = inp.targets.filter((pl.col("entry") == entry) & (pl.col("horizon") == h))
+        df = base.join(t, on=["ticker", "date"], how="inner")
+        if df.height:
+            dec = df["date"].to_numpy().astype("datetime64[D]")
+            end = df["label_end"].to_numpy().astype("datetime64[D]")
+            df = df.filter(pl.Series(pre_holdout_mask(dec, end, ec.holdout_start)))
+        n_sample = df.height
+        df = df.filter(pl.col(feature).is_not_null() & pl.col(control).is_not_null())
+        row: dict[str, Any] = {
+            "entry": entry,
+            "horizon": h,
+            "adjustment": adj,
+            "n_sample": n_sample,
+            "n": df.height,
+        }
+        if df.height < 30:
+            nan = float("nan")
+            out.append({**row, "ic_feature": nan, "ic_control": nan, "partial_ic": nan,
+                        "ci_lo": nan, "ci_hi": nan, "p": nan})  # fmt: skip
+            continue
+        s = np.array([session_idx.get(d, -1) for d in df["date"].to_list()])
+        x = df[feature].to_numpy().astype(float)
+        c = df[control].to_numpy().astype(float)
+        y = df[f"ret_{adj}"].to_numpy().astype(float)
+        resid = rank_residual(x, c)
+        pic = spearman(resid, y)
+        boots = block_bootstrap(
+            s,
+            lambda idx, x=x, c=c, y=y: spearman(rank_residual(x[idx], c[idx]), y[idx]),
+            block=h + 1 if entry == "close" else h + 2,
+            reps=ec.bootstrap_reps,
+            rng=rng,
+        )
+        out.append(
+            {
+                **row,
+                "ic_feature": spearman(x, y),
+                "ic_control": spearman(c, y),
+                "partial_ic": pic,
+                **boot_summary(pic, boots),
+            }
+        )
     return out

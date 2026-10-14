@@ -14,6 +14,7 @@ from newsfeed.ingest.base import RawItem
 from newsfeed.ingest.runner import build_row
 from newsfeed.storage import Store
 from newsfeed.tickers import TickerLinker, Universe
+from newsfeed.timeutil import utcnow
 
 CFG = DedupeConfig()
 T0 = datetime(2026, 7, 28, 14, 0, tzinfo=UTC)  # Tue 10:00 EDT, in session
@@ -268,3 +269,39 @@ def test_version_change_forces_full_rebuild(store, calendar, corpus):
     other = CFG.model_copy(update={"near_dup_threshold": 0.95})
     stats = rebuild_stories(store, other, linker.linker_id)
     assert stats["assigned"] == 5
+
+
+def test_relink_streams_every_batch(store, calendar, corpus):
+    # regression: writing links on the reading connection ended the stream after batch 1
+    write(store, calendar, corpus)
+    linker = TickerLinker(UNIVERSE)
+    assert relink(store, linker, "r", batch_size=2) == 5
+    linked = store.query("SELECT count(DISTINCT item_id) AS n FROM item_tickers_all")["n"][0]
+    assert linked == 5 and relink(store, linker, "r", batch_size=2) == 0
+
+
+def test_relink_after_reparse_that_changes_only_tags(store, calendar, corpus):
+    # a re-parsed item (newer parser, later ingest) with the same text but different source
+    # tags must be relinked; links keyed only on (linker, text_hash) would keep the old tags
+    write(store, calendar, corpus[:1])
+    linker = TickerLinker(UNIVERSE)
+    relink(store, linker, "r")
+    old = corpus[0]
+    new = old.model_copy(update={"tickers": ["MSFT"], "parser_version": "u"})
+    later = utcnow() + timedelta(days=1)  # strictly after the first link batch
+    store.write_reparsed_items(
+        [build_row(new, run_id="r2", calendar=calendar, backfill_lag=timedelta(0),
+                   ingested_at=later)],
+        "r2",
+    )  # fmt: skip
+    assert relink(store, linker, "r") == 1
+    got = store.query("SELECT ticker FROM item_tickers WHERE ticker IS NOT NULL")["ticker"]
+    assert sorted(got.to_list()) == ["MSFT"]
+
+
+def test_relink_force_sources_writes_a_fresh_batch(store, calendar, corpus):
+    write(store, calendar, corpus)
+    linker = TickerLinker(UNIVERSE)
+    assert relink(store, linker, "r") == 5
+    assert relink(store, linker, "r") == 0
+    assert relink(store, linker, "r", force_sources=["test"]) == 5  # corpus source is "test"

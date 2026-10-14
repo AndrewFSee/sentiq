@@ -129,3 +129,18 @@ def test_social_media_boilerplate_is_not_a_mention():
     )
     assert lk.link(title="", body=body, source_tickers=[]) == []
     assert lk.link(title="", body="Facebook parent Meta said", source_tickers=[])
+
+
+def test_source_only_sources_skip_text_matching():
+    lk = TickerLinker(
+        Universe({1: ["META"], 2: ["WMT"]}), {"WMT": ["Walmart"]}, None, ["transcripts"]
+    )
+    text = "Our customers include Walmart. Walmart grew. $WMT"
+    kept = lk.link(title=None, body=text, source_tickers=["META"], source="transcripts")
+    assert [(x.ticker, x.method) for x in kept] == [("META", "source")]
+    news = lk.link(title=None, body=text, source_tickers=["META"], source="news_api")
+    assert {x.ticker for x in news} == {"META", "WMT"}
+    assert (
+        lk.linker_id
+        != TickerLinker(Universe({1: ["META"], 2: ["WMT"]}), {"WMT": ["Walmart"]}).linker_id
+    )
