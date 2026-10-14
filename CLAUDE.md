@@ -17,9 +17,12 @@ speed and polish.** It is not a trading system.
   **M6 done** (branch `m6-sp500`): point-in-time S&P 500 universe 2019–present, per-CIK
   backfill windows, price routing (Tradier / renamed / Tiingo for delisted), split-consistent
   market caps, PIT sector ETFs, member-only feature rows, Massive vendor news, masked-score
-  leakage checks, pre-registered tests 1–4b + exploratory per-type breakdown (results in the
-  decisions log). Ongoing: live collection (`scripts\collect_window.cmd`) for the holdout;
-  the single pre-registered holdout look (H1 earnings, H2 guidance) is on/after 2027-08-31.
+  leakage checks, pre-registered tests 1–5 (incl. earnings-call transcripts, partial IC vs the
+  release, delay sensitivity) + exploratory per-type and text-cluster breakdowns (results in
+  the decisions log). Ongoing: live collection of 8-Ks and transcripts
+  (`scripts\collect_window.cmd`) for the holdout; `transcripts-latency` once the Q3-2026
+  season has data; the single pre-registered holdout look (H1 earnings, H2 guidance, ≥ 10,000
+  bootstrap reps) is on/after 2027-08-31.
 - Every command that calls the model costs money: run `score --dry-run` first; jobs estimated
   above `scoring.confirm_above_usd` need `--yes`. Never run paid jobs without the user's OK.
 
