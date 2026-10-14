@@ -292,6 +292,12 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   retries.
 - `item_id = sha256("<source>:<native_id>")[:32]`, deterministic.
 - Every run records `run_id`, `config_hash` (non-secret, path-independent), git SHA, versions.
+- Archive (moved off C: 2026-10-14, see `D:\sentiq-archive\README.md`): the defeatbeta pin
+  860d42ac253f.parquet (transcripts backfill version), full SEC companyfacts JSON (the
+  project keeps slim copies with only the three share-count tags; verified identical share
+  histories), the fastembed model, M6 run logs. The v1 transcript backup and `data/configs/`
+  (copies of `config/variants/`) were deleted. `data/raw` stays: re-parsing and live
+  collection use it.
 - Bump `PARSER_VERSION` in an adapter when its parsing output changes.
 
 ## Code conventions
