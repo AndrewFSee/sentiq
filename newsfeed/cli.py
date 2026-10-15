@@ -33,16 +33,24 @@ from newsfeed.eval.report import (
     DEFAULT_UNIVARIATE,
     EvalInputs,
     add_derived,
+    assemble,
     benjamini_hochberg,
+    bp,
     decision_dates,
     eval_config_id,
+    p_floor_note,
     paired_ic_comparison,
     partial_ic_cells,
     render_markdown,
     run_eval,
     univariate_cells,
 )
-from newsfeed.eval.targets import adjusted_targets, controls, forward_returns
+from newsfeed.eval.targets import (
+    adjusted_targets,
+    controls,
+    forward_returns,
+    volatility_targets,
+)
 from newsfeed.features.aggregate import (
     FeatureSources,
     as_of_grid,
@@ -884,7 +892,8 @@ def _eval_inputs(
         pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
     )
     caps = market_caps(decisions, panel, shares, splits)
-    return EvalInputs(feats, ctl, targets, caps, sessions), price_report
+    vol = volatility_targets(panel, [5, 20]).filter(pl.col("ticker").is_in(tickers))
+    return EvalInputs(feats, ctl, targets, caps, sessions, vol), price_report
 
 
 @app.command("eval")
@@ -1325,6 +1334,94 @@ def partial_ic_cmd(
     _run("partial-ic", cfg, {"feature_set": feature_set, "control_set": control_set}, body)
 
 
+def _llm_events(
+    ctx: Context,
+    cfg: AppConfig,
+    source: str,
+    event_types: list[str],
+    *,
+    masked: bool | None = None,
+) -> tuple[pl.DataFrame, list[datetime], pl.DataFrame]:
+    """Scored story-founder events of one source at relevance >= ``features.min_relevance``:
+    (events with canon ticker, score fields and t_use = tradable_at, or max(tradable_at,
+    scored_at) for live items; the decision grid; canon -> ticker fan-out)."""
+    from newsfeed.features.aggregate import RELEVANCE_RANK
+
+    store, fc = ctx.store, cfg.features
+    now = utcnow()
+    items = store.items_as_of(
+        now, source=source, columns="item_id, tradable_at, ingest_mode, published_at"
+    )
+    founders = store.query("SELECT item_id FROM item_story WHERE story_id = item_id")
+    items = items.join(founders, on="item_id", how="semi")
+    src = feature_sources(ctx)
+    scores = store.query(
+        """
+        SELECT item_id, ticker AS canon, sentiment, relevance, event_type, scored_at,
+               surprise_vs_expectations, materiality
+        FROM scores
+        WHERE status = 'ok' AND masked = $masked AND replicate = 0
+          AND model = $m AND prompt_hash = $h
+        """,
+        {
+            "masked": fc.llm_masked if masked is None else masked,
+            "m": src.llm_model,
+            "h": src.llm_prompt_hash,
+        },
+    )
+    ev = items.join(scores, on="item_id").filter(
+        pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1)
+        >= RELEVANCE_RANK[fc.min_relevance]
+    )
+    if event_types:
+        ev = ev.filter(pl.col("event_type").is_in(event_types))
+    ev = ev.with_columns(
+        pl.when(pl.col("ingest_mode") == "live")
+        .then(pl.max_horizontal("tradable_at", "scored_at"))
+        .otherwise(pl.col("tradable_at"))
+        .alias("t_use"),
+        pl.lit(0).alias("cluster"),
+    )
+    grid = as_of_grid(
+        ctx.calendar, ev["t_use"].min().date(), now.date(), fc.grid, fc.decision_lag_minutes
+    )
+    c2t = ctx.universe(full=True).cik_to_tickers
+    canon_cik = {t: c for c, ts in c2t.items() for t in ts}
+    fan = pl.DataFrame(
+        [{"canon": t, "ticker": x} for t, c in canon_cik.items() for x in c2t[c]],
+        schema={"canon": pl.Utf8, "ticker": pl.Utf8},
+    )
+    return ev, grid, fan
+
+
+def _dated_events(
+    ctx: Context,
+    cfg: AppConfig,
+    ev: pl.DataFrame,
+    grid: list[datetime],
+    fan: pl.DataFrame,
+    *,
+    delay: int = 0,
+) -> pl.DataFrame:
+    """Events (t_use, canon) -> as_of = first decision >= t_use (+ ``delay`` sessions), date in
+    New York, fanned out to the canon ticker's share classes that are members on that date."""
+    from newsfeed.eval.clusters import decision_times
+
+    e = ev.with_columns(
+        pl.Series(
+            "as_of",
+            decision_times(ev["t_use"].to_list(), grid, delay=delay),
+            dtype=pl.Datetime("us", "UTC"),
+        )
+    ).drop_nulls("as_of")
+    e = e.with_columns(
+        pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+    ).join(fan, on="canon")
+    if cfg.universe.mode == "sp500_pit":
+        e = e.filter(ctx.pit.is_member(e.select("ticker", "date")))
+    return e
+
+
 @app.command("delay-sensitivity")
 def delay_sensitivity_cmd(
     source: Annotated[str, typer.Option(help="Item source")] = "transcripts",
@@ -1343,7 +1440,6 @@ def delay_sensitivity_cmd(
     """Event-level rank IC of LLM sentiment when every event becomes usable N sessions later
     than its tradable time: how fast does the signal decay if the data arrives late?"""
     from newsfeed.eval.clusters import cluster_ic, decision_times
-    from newsfeed.features.aggregate import RELEVANCE_RANK
 
     _setup_logging(verbose)
     cfg = load_config(config)
@@ -1351,60 +1447,12 @@ def delay_sensitivity_cmd(
     delay_list = [int(x) for x in _split(delays)]
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
-        store, fc = ctx.store, cfg.features
-        now = utcnow()
-        items = store.items_as_of(
-            now, source=source, columns="item_id, tradable_at, ingest_mode, published_at"
-        )
-        founders = store.query("SELECT item_id FROM item_story WHERE story_id = item_id")
-        items = items.join(founders, on="item_id", how="semi")
-        src = feature_sources(ctx)
-        scores = store.query(
-            """
-            SELECT item_id, ticker AS canon, sentiment, relevance, event_type, scored_at
-            FROM scores
-            WHERE status = 'ok' AND masked = $masked AND replicate = 0
-              AND model = $m AND prompt_hash = $h
-            """,
-            {"masked": fc.llm_masked, "m": src.llm_model, "h": src.llm_prompt_hash},
-        )
-        ev = items.join(scores, on="item_id").filter(
-            pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1)
-            >= RELEVANCE_RANK[fc.min_relevance]
-        )
-        if event_types:
-            ev = ev.filter(pl.col("event_type").is_in(_split(event_types)))
-        ev = ev.with_columns(
-            pl.when(pl.col("ingest_mode") == "live")
-            .then(pl.max_horizontal("tradable_at", "scored_at"))
-            .otherwise(pl.col("tradable_at"))
-            .alias("t_use"),
-            pl.lit(0).alias("cluster"),
-        )
-        grid = as_of_grid(
-            ctx.calendar, ev["t_use"].min().date(), now.date(), fc.grid, fc.decision_lag_minutes
-        )
-        c2t = ctx.universe(full=True).cik_to_tickers
-        canon_cik = {t: c for c, ts in c2t.items() for t in ts}
-        fan = pl.DataFrame(
-            [{"canon": t, "ticker": x} for t, c in canon_cik.items() for x in c2t[c]],
-            schema={"canon": pl.Utf8, "ticker": pl.Utf8},
-        )
+        fc = cfg.features
+        ev, grid, fan = _llm_events(ctx, cfg, source, _split(event_types))
         rows = []
         inp_cache = None
         for d in delay_list:
-            e = ev.with_columns(
-                pl.Series(
-                    "as_of",
-                    decision_times(ev["t_use"].to_list(), grid, delay=d),
-                    dtype=pl.Datetime("us", "UTC"),
-                )
-            ).drop_nulls("as_of")
-            e = e.with_columns(
-                pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
-            ).join(fan, on="canon")
-            if cfg.universe.mode == "sp500_pit":
-                e = e.filter(ctx.pit.is_member(e.select("ticker", "date")))
+            e = _dated_events(ctx, cfg, ev, grid, fan, delay=d)
             if inp_cache is None:  # prices/targets once, over the widest set of decisions
                 wide = ev.with_columns(
                     pl.Series(
@@ -1537,6 +1585,374 @@ def transcripts_latency_cmd(config: ConfigOpt = None) -> None:
                 f"by the next 15:50 decision: {m['by_next_decision'].mean():.0%}"
             )
         typer.echo(f"rows: {out}")
+
+
+def _cells(spec: str) -> list[tuple[str, int, str]]:
+    return [(e, int(h), a) for e, h, a in (c.split("/") for c in _split(spec))]
+
+
+def _write_report(cfg: AppConfig, name: str, md: str, frame: pl.DataFrame) -> Path:
+    out_dir = cfg.paths.data_dir / "reports"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if frame.height:
+        frame.write_parquet(out_dir / f"{name}.parquet")
+    path = out_dir / f"{name}.md"
+    path.write_text(md, encoding="utf-8")
+    typer.echo(md)
+    return path
+
+
+def _num(v: Any, fmt: str = "+.3f") -> str:
+    return "-" if v is None or v != v else format(v, fmt)
+
+
+@app.command("event-ic")
+def event_ic_cmd(
+    source: Annotated[str, typer.Option(help="Item source")] = "edgar",
+    event_types: Annotated[
+        str | None, typer.Option(help="Only LLM events of these types (comma-separated)")
+    ] = "earnings",
+    value: Annotated[
+        str, typer.Option(help="Score field tested (sentiment, surprise_vs_expectations)")
+    ] = "surprise_vs_expectations",
+    control: Annotated[
+        str | None, typer.Option(help="Semi-partial IC: residualise the value on this field")
+    ] = None,
+    by: Annotated[
+        str | None, typer.Option(help="Break down by 'materiality' (high vs medium/low)")
+    ] = None,
+    masked: Annotated[
+        bool | None, typer.Option("--masked/--unmasked", help="Default: features.llm_masked")
+    ] = None,
+    cells: Annotated[str, typer.Option(help="entry/horizon/adjustment cells")] = (
+        "close/1/market,close/2/market"
+    ),
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Event-level rank IC of one LLM score field (test 6: earnings surprise), each event dated
+    to the first decision at or after it became usable; pre-holdout."""
+    from newsfeed.eval.clusters import cluster_ic
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cell_list = _cells(cells)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        ev, grid, fan = _llm_events(ctx, cfg, source, _split(event_types), masked=masked)
+        if by == "materiality":
+            ev = ev.filter(pl.col("materiality").is_not_null()).with_columns(
+                pl.when(pl.col("materiality") == "high")
+                .then(pl.lit("high"))
+                .otherwise(pl.lit("medium/low"))
+                .alias("cluster")
+            )
+        elif by:
+            raise typer.BadParameter(f"unknown --by {by!r}")
+        e = _dated_events(ctx, cfg, ev, grid, fan)
+        inp, _ = _eval_inputs(ctx, cfg, e.select("ticker", "as_of").unique())
+        cols = ["ticker", "date", "cluster", value] + ([control] if control else [])
+        res = pl.DataFrame(
+            cluster_ic(
+                e.select(cols),
+                inp.targets,
+                inp.sessions,
+                cfg,
+                cell_list,
+                value=value,
+                control=control,
+            )
+        )
+        is_masked = cfg.features.llm_masked if masked is None else masked
+        what = f"semi-partial IC of `{value}` given `{control}`" if control else f"`{value}`"
+        head = "| cell | group | n | IC | 95% CI | p |"
+        if control:
+            head += " IC value | IC control |"
+        lines = [
+            f"# Event IC {run_id}",
+            "",
+            f"- {what}; source `{source}`, events {event_types or 'all'}, masked={is_masked}, "
+            f"relevance >= {cfg.features.min_relevance}; event-level, pre-holdout; rows with the "
+            "value present.",
+            "",
+            head,
+            "|---" * head.count(" |") + "|",
+        ]
+        for r in res.iter_rows(named=True):
+            line = (
+                f"| {r['entry']}/{r['horizon']}/{r['adjustment']} | {r['cluster']} | {r['n']} | "
+                f"{_num(r['ic'])} | [{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} |"
+            )
+            if control:
+                line += f" {_num(r.get('ic_value'))} | {_num(r.get('ic_control'))} |"
+            lines.append(line)
+        path = _write_report(cfg, f"event-ic-{run_id}", "\n".join(lines) + "\n", res)
+        stats["report"] = str(path)
+
+    params = {
+        "source": source,
+        "event_types": event_types,
+        "value": value,
+        "control": control,
+        "by": by,
+        "masked": masked,
+        "cells": cells,
+    }
+    _run("event-ic", cfg, params, body)
+
+
+# test 7 controls: trailing volatility, |overnight gap|, |yesterday's return|, liquidity, volume
+VOL_CONTROLS = ["ctl_vol_20d", "abs_gap", "abs_ret_1d", "ctl_log_dvol_20d", "ctl_volume_ratio"]
+
+
+@app.command("vol-test")
+def vol_test_cmd(
+    feature_set: Annotated[str, typer.Option(help="Feature set (all member ticker-days)")],
+    features: Annotated[str, typer.Option(help="Attention features, comma-separated")] = (
+        "1d_n_stories,1d_volume_z,5d_n_stories,1d_llm_sent_maxabs"
+    ),
+    targets: Annotated[str, typer.Option(help="rv_5, rv_20, absret_1")] = "rv_5,rv_20,absret_1",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 7: does news attention predict realised volatility beyond trailing volatility,
+    the overnight gap, yesterday's move and trading volume? Partial rank correlation on every
+    member ticker-day (pre-holdout), all days and non-earnings days."""
+    from newsfeed.eval.report import partial_rank_corr
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cfg = cfg.model_copy(update={"eval": cfg.eval.model_copy(update={"sample": "all"})})
+    feat_list, target_list = _split(features), _split(targets)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        drop = ("feature_set_id", "build_run_id", "built_at")
+        feats = ctx.store.features(feature_set).drop(*drop, strict=False)
+        inp, _ = _eval_inputs(ctx, cfg, feats.select("ticker", "as_of"))
+        inp.features = feats
+        base = assemble(inp, cfg).join(inp.vol_targets, on=["ticker", "date"], how="left")
+        base = base.with_columns(
+            pl.col("ctl_gap").abs().alias("abs_gap"),
+            pl.col("ctl_ret_1d").abs().alias("abs_ret_1d"),
+        )
+        session_idx = {d: i for i, d in enumerate(inp.sessions)}
+        hold = next(
+            (i for i, d in enumerate(inp.sessions) if d >= cfg.eval.holdout_start),
+            len(inp.sessions),
+        )
+        s_all = np.array([session_idx.get(d, -1) for d in base["date"].to_list()])
+        earn = base["1d_llm_evt_earnings"].fill_null(0).to_numpy() > 0
+        ctl = base.select(VOL_CONTROLS).to_numpy().astype(float)
+        rng = np.random.default_rng(cfg.eval.seed)
+        rows = []
+        for tgt in target_list:
+            h = 1 if tgt == "absret_1" else int(tgt.split("_")[1])
+            y = base[tgt].to_numpy().astype(float)
+            pre = (s_all >= 0) & (s_all + h < hold)  # the label ends before the holdout
+            for feat in feat_list:
+                x = base[feat].to_numpy().astype(float)
+                for subset, m in (("all", pre), ("non-earnings", pre & ~earn)):
+                    r = partial_rank_corr(
+                        x[m],
+                        y[m],
+                        ctl[m],
+                        s_all[m],
+                        block=h + 1,
+                        reps=cfg.eval.bootstrap_reps,
+                        rng=rng,
+                    )
+                    rows.append({"feature": feat, "target": tgt, "subset": subset, **r})
+                    log.info("vol-test %s %s %s: %s", feat, tgt, subset, r)
+        res = pl.DataFrame(rows)
+        lines = [
+            f"# Attention -> volatility {run_id}",
+            "",
+            f"- feature set `{feature_set}`, every member ticker-day with the feature present, "
+            "pre-holdout; close entry, raw returns. rv_h = sd of daily log returns over the next "
+            "h sessions; absret_1 = |next-day return|.",
+            f"- partial IC = rank correlation after regressing out {', '.join(VOL_CONTROLS)} "
+            "(ranks); block bootstrap over sessions. Primary (pre-registered): 1d_n_stories vs "
+            "rv_5, all days.",
+            "",
+            "| feature | target | subset | n | raw IC | partial IC | 95% CI | p |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['feature']} | {r['target']} | {r['subset']} | {r['n']} | "
+                f"{_num(r['ic'])} | {_num(r['partial_ic'])} | [{_num(r['ci_lo'])}, "
+                f"{_num(r['ci_hi'])}] | {_num(r['p'], '.3f')} |"
+            )
+        path = _write_report(cfg, f"vol-{run_id}", "\n".join(lines) + "\n", res)
+        stats["report"] = str(path)
+
+    _run("vol-test", cfg, {"feature_set": feature_set, "features": features}, body)
+
+
+ITEM_CODES = "2.02,7.01,8.01,5.02,1.01,5.07,2.03,5.03,1.02,2.01,3.03,3.02,2.05,3.01,2.06"
+
+
+@app.command("item-study")
+def item_study_cmd(
+    feature_set: Annotated[
+        str, typer.Option(help="Feature set whose rows define index members per day")
+    ],
+    codes: Annotated[str, typer.Option(help="8-K item codes")] = ITEM_CODES,
+    horizons: Annotated[str, typer.Option(help="Close-entry horizons")] = "1,5,20",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 8: mean abnormal return after 8-Ks by item code (drift from the first decision
+    after the filing); market-adjusted cells tested with one BH, sector-adjusted reported."""
+    from newsfeed.eval.clusters import decision_times
+    from newsfeed.eval.events import abnormal_returns, event_mean_cells
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    code_list = _split(codes)
+    hs = [int(h) for h in _split(horizons)]
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        fc = cfg.features
+        now = utcnow()
+        items = ctx.store.items_as_of(now, source="edgar", columns="item_id, tradable_at, meta")
+        meta = pl.Struct({"form": pl.Utf8, "cik": pl.Int64, "items": pl.List(pl.Utf8)})
+        items = (
+            items.with_columns(pl.col("meta").str.json_decode(meta).alias("_m"))
+            .unnest("_m")
+            .filter(pl.col("form") == "8-K")
+            .explode("items")
+            .rename({"items": "group"})
+            .filter(pl.col("group").is_in(code_list))
+        )
+        grid = as_of_grid(
+            ctx.calendar,
+            items["tradable_at"].min().date(),
+            now.date(),
+            fc.grid,
+            fc.decision_lag_minutes,
+        )
+        c2t = ctx.universe(full=True).cik_to_tickers
+        fan = pl.DataFrame(
+            [{"cik": c, "ticker": t} for c, ts in c2t.items() for t in ts],
+            schema={"cik": pl.Int64, "ticker": pl.Utf8},
+        )
+        ev = (
+            items.with_columns(
+                pl.Series(
+                    "as_of",
+                    decision_times(items["tradable_at"].to_list(), grid),
+                    dtype=pl.Datetime("us", "UTC"),
+                )
+            )
+            .drop_nulls("as_of")
+            .with_columns(
+                pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+            )
+            .join(fan, on="cik")
+        )
+        if cfg.universe.mode == "sp500_pit":
+            ev = ev.filter(ctx.pit.is_member(ev.select("ticker", "date")))
+        members = ctx.store.features(feature_set).select("ticker", "as_of")
+        inp, _ = _eval_inputs(ctx, cfg, members)
+        members = members.select(
+            "ticker",
+            pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
+        )
+        ar = abnormal_returns(inp.targets, members)
+        cells = [("close", h, a) for h in hs for a in ("market", "sector")]
+        res = pl.DataFrame(event_mean_cells(ev, ar, inp.sessions, cfg, cells))
+        mk = (res["adjustment"] == "market").to_numpy()
+        p_mk = res["p"].to_numpy().astype(float)[mk]
+        flags = np.zeros(res.height, dtype=bool)
+        flags[np.flatnonzero(mk)] = benjamini_hochberg(p_mk, cfg.eval.fdr_q)
+        res = res.with_columns(pl.Series("bh_discovery", flags))
+        n_tests = int(np.sum(~np.isnan(p_mk)))
+        lines = [
+            f"# 8-K item event study {run_id}",
+            "",
+            "- original 8-Ks; one event per (member ticker, decision date, item code); decision "
+            "= first 15:50 ET at or after tradable_at; close entry; pre-holdout.",
+            "- abnormal return (AR) = benchmark-adjusted return minus the same-date "
+            "equal-weighted mean over all index members (members from feature set "
+            f"`{feature_set}`); mean vs 0, block bootstrap over sessions.",
+            f"- BH (q {cfg.eval.fdr_q}) over the {n_tests} market-adjusted tests; "
+            "sector-adjusted columns are descriptive.",
+            *p_floor_note(cfg.eval.bootstrap_reps, n_tests, cfg.eval.fdr_q),
+            "",
+            "| item | h | n | sessions | mean AR (mkt) | 95% CI | p | BH | share > 0 | "
+            "mean AR (sector) | p (sector) |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        sec = res.filter(~pl.Series(mk))
+        for r in res.filter(pl.Series(mk)).sort("group", "horizon").iter_rows(named=True):
+            o = sec.filter((pl.col("group") == r["group"]) & (pl.col("horizon") == r["horizon"]))
+            o = o.to_dicts()[0] if o.height else {"mean": float("nan"), "p": float("nan")}
+            lines.append(
+                f"| {r['group']} | {r['horizon']} | {r['n']} | {r['sessions']} | "
+                f"{bp(r['mean'])} | [{bp(r['ci_lo'])}, {bp(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} | {'yes' if r['bh_discovery'] else ''} | "
+                f"{_num(r['hit'], '.2f')} | {bp(o['mean'])} | {_num(o['p'], '.3f')} |"
+            )
+        path = _write_report(cfg, f"items-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), n_tests=n_tests, discoveries=int(flags.sum()))
+
+    params = {"feature_set": feature_set, "codes": codes, "horizons": horizons}
+    _run("item-study", cfg, params, body)
+
+
+@app.command("ic-detail")
+def ic_detail_cmd(
+    feature_set: Annotated[str, typer.Option(help="Feature set id")],
+    feature: Annotated[str, typer.Option(help="Feature column")] = "1d_llm_sent_cwmean",
+    cells: Annotated[str, typer.Option(help="entry/horizon/adjustment cells")] = (
+        "close/1/market,close/2/market"
+    ),
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 9 (descriptive): pooled IC next to the daily cross-sectional IC, ICIR and Q5 - Q1
+    spread of one feature on the config's eval sample, pre-holdout."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        drop = ("feature_set_id", "build_run_id", "built_at")
+        feats = add_derived(ctx.store.features(feature_set).drop(*drop, strict=False))
+        inp, _ = _eval_inputs(ctx, cfg, feats)
+        res = pl.DataFrame(univariate_cells(inp, cfg, feature, _cells(cells), detail=True))
+        ec = cfg.eval
+        sample = f"`{ec.sample}`"
+        if ec.sample_event_types:
+            sample += f", event types {ec.sample_event_types}"
+        if ec.sample_pure_event_type:
+            sample += f", pure {ec.sample_pure_event_type}"
+        lines = [
+            f"# IC detail {run_id}",
+            "",
+            f"- feature set `{feature_set}`, `{feature}`, sample {sample}; pre-holdout.",
+            "- daily view (descriptive, not BH-tested): sessions with >= 10 names; ICIR = mean /"
+            " sd of the daily IC (per day); Q5 - Q1 = mean daily spread between the top and "
+            "bottom quintile of the feature. CIs: block bootstrap over sessions.",
+            "",
+            "| cell | rows | pooled IC | p | days | daily IC | 95% CI | p | ICIR | Q5 - Q1 | "
+            "95% CI | p |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['entry']}/{r['horizon']}/{r['adjustment']} | {r['n']} | {_num(r['ic'])} | "
+                f"{_num(r['p'], '.3f')} | {r.get('d_days', 0)} | {_num(r.get('d_ic_daily'))} | "
+                f"[{_num(r.get('d_ic_daily_ci_lo'))}, {_num(r.get('d_ic_daily_ci_hi'))}] | "
+                f"{_num(r.get('d_ic_daily_p'), '.3f')} | {_num(r.get('d_icir'))} | "
+                f"{bp(r.get('d_q_spread'))} | [{bp(r.get('d_q_spread_ci_lo'))}, "
+                f"{bp(r.get('d_q_spread_ci_hi'))}] | {_num(r.get('d_q_spread_p'), '.3f')} |"
+            )
+        path = _write_report(cfg, f"ic-detail-{run_id}", "\n".join(lines) + "\n", res)
+        stats["report"] = str(path)
+
+    _run("ic-detail", cfg, {"feature_set": feature_set, "feature": feature, "cells": cells}, body)
 
 
 if __name__ == "__main__":

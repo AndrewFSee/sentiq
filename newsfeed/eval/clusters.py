@@ -21,7 +21,7 @@ import polars as pl
 
 from newsfeed.config import AppConfig
 from newsfeed.eval.cv import pre_holdout_mask
-from newsfeed.eval.report import block_bootstrap, boot_summary, spearman
+from newsfeed.eval.report import block_bootstrap, boot_summary, rank_residual, spearman
 
 
 def fit_text_clusters(
@@ -82,9 +82,14 @@ def cluster_ic(
     cells: list[tuple[str, int, str]],
     *,
     min_n: int = 30,
+    value: str = "sentiment",
+    control: str | None = None,
 ) -> list[dict[str, Any]]:
-    """events: ticker, date, cluster, sentiment. Rank IC of sentiment vs the target per cluster
-    and cell, pre-holdout only, circular block bootstrap over calendar sessions."""
+    """events: ticker, date, cluster, ``value`` (and ``control``). Rank IC of the value vs the
+    target per cluster and cell, pre-holdout only, circular block bootstrap over calendar
+    sessions. With ``control`` (rows where both are present) the tested statistic is the
+    semi-partial IC: the rank residual of the value after the control (``rank_residual``);
+    plain ICs of both on the same rows are reported as ``ic_value`` / ``ic_control``."""
     ec = cfg.eval
     rng = np.random.default_rng(ec.seed)
     session_idx = {d: i for i, d in enumerate(sessions)}
@@ -98,6 +103,11 @@ def cluster_ic(
             df = df.filter(pl.Series(pre_holdout_mask(dec, end, ec.holdout_start)))
         for c in sorted(events["cluster"].unique().to_list()):
             sub = df.filter(pl.col("cluster") == c) if df.height else df
+            if sub.height:
+                sub = sub.filter(
+                    pl.col(value).is_not_null()
+                    & (pl.col(control).is_not_null() if control else pl.lit(True))
+                )
             row: dict[str, Any] = {
                 "cluster": c,
                 "entry": entry,
@@ -110,12 +120,25 @@ def cluster_ic(
                 out.append({**row, "ic": nan, "ci_lo": nan, "ci_hi": nan, "p": nan})
                 continue
             s = np.array([session_idx.get(d, -1) for d in sub["date"].to_list()])
-            x = sub["sentiment"].to_numpy().astype(float)
+            x = sub[value].to_numpy().astype(float)
             y = sub[f"ret_{adj}"].to_numpy().astype(float)
-            ic = spearman(x, y)
+            if control:
+                c_ = sub[control].to_numpy().astype(float)
+                row |= {"ic_value": spearman(x, y), "ic_control": spearman(c_, y)}
+
+                def stat(idx, x=x, c_=c_, y=y):
+                    return spearman(rank_residual(x[idx], c_[idx]), y[idx])
+
+                ic = stat(np.arange(len(x)))
+            else:
+
+                def stat(idx, x=x, y=y):
+                    return spearman(x[idx], y[idx])
+
+                ic = stat(np.arange(len(x)))
             boots = block_bootstrap(
                 s,
-                lambda idx, x=x, y=y: spearman(x[idx], y[idx]),
+                stat,
                 block=h + 1 if entry == "close" else h + 2,
                 reps=ec.bootstrap_reps,
                 rng=rng,
