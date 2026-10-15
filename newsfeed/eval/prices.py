@@ -15,6 +15,7 @@ ticker list has survivorship bias.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -24,6 +25,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote
 
+import httpx
 import polars as pl
 
 from newsfeed.ingest.http import HttpClient
@@ -156,6 +158,8 @@ class CachedPrices:
         meta_p = self._meta(symbol)
         if bars_p.exists() and meta_p.exists() and not refresh:
             m = json.loads(meta_p.read_text())
+            if m.get("not_found"):  # the vendor does not know the symbol at all (404)
+                return pl.read_parquet(bars_p)
             if date.fromisoformat(m["start"]) <= start and date.fromisoformat(m["end"]) >= end:
                 return pl.read_parquet(bars_p).filter(pl.col("date").is_between(start, end))
         if self.source is None:
@@ -169,10 +173,28 @@ class CachedPrices:
                     "start": lo.isoformat(),
                     "end": end.isoformat(),
                     "fetched_at": utcnow().isoformat(),
+                    "not_found": symbol in getattr(self.source, "not_found", ()),
                 }
             )
         )
         return bars.filter(pl.col("date").is_between(start, end))
+
+    def search(self, query: str, *, refresh: bool = False) -> list[dict]:
+        """Vendor ticker search, cached on disk (``search/<sha1>.json``): every eval asks the
+        same questions about the same unpriced names, and on a rate-limited free tier each
+        uncached search costs a throttled request."""
+        p = self.dir / "search" / f"{hashlib.sha1(query.encode()).hexdigest()[:16]}.json"
+        if p.exists() and not refresh:
+            return json.loads(p.read_text())["hits"]
+        search = getattr(self.source, "search", None)
+        if search is None:
+            return []
+        hits = search(query)
+        if hits or getattr(self.source, "last_search_ok", True):  # don't cache a failure
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"query": query, "fetched_at": utcnow().isoformat(),
+                                     "hits": hits}))  # fmt: skip
+        return hits
 
     def dividends(self, symbol: str, *, refresh: bool = False) -> pl.DataFrame:
         p = self.dir / f"{symbol}.dividends.parquet"
@@ -230,6 +252,8 @@ class TiingoPrices:
         )
         self._divs: dict[str, pl.DataFrame] = {}
         self._splits: dict[str, pl.DataFrame] = {}
+        self.not_found: set[str] = set()  # symbols Tiingo answered 404 for (unknown ticker)
+        self.last_search_ok = True
 
     def daily_bars(self, symbol: str, start: date, end: date) -> pl.DataFrame:
         url = (
@@ -240,6 +264,8 @@ class TiingoPrices:
             rows = self.http.get(url).json() or []
         except Exception as exc:  # unknown ticker -> 404
             log.info("tiingo: no data for %s (%r)", symbol, exc)
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+                self.not_found.add(symbol)
             rows = []
         if not rows:
             self._divs[symbol] = pl.DataFrame(schema=DIV_SCHEMA)
@@ -275,10 +301,13 @@ class TiingoPrices:
         """Tiingo ticker search (finds securities filed under a later ticker)."""
         url = f"https://api.tiingo.com/tiingo/utilities/search?query={quote(query)}"
         try:
-            return [r for r in self.http.get(url).json() or [] if isinstance(r, dict)]
+            hits = [r for r in self.http.get(url).json() or [] if isinstance(r, dict)]
         except Exception as exc:
             log.info("tiingo: search %r failed (%r)", query, exc)
+            self.last_search_ok = False
             return []
+        self.last_search_ok = True
+        return hits
 
     def dividends(self, symbol: str) -> pl.DataFrame:
         if symbol not in self._divs:
@@ -491,7 +520,7 @@ def _tiingo_candidates(rt: PriceRoute, cache: CachedPrices, exclude: set[str]) -
     if isinstance(src, TiingoPrices) and rt.name:
         words = [w for w in re.findall(r"[a-z0-9&]+", rt.name.lower()) if w not in _NAME_STOP]
         if words:
-            hits = src.search(" ".join(words[:3]))
+            hits = cache.search(" ".join(words[:3]))
             ok = {
                 str(h["ticker"]).upper()
                 for h in hits

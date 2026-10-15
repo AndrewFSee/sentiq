@@ -350,7 +350,7 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   CPU, ~1–3 chunks/s × ~355k 300-word chunks, single write at the end): left running.
 - 2026-10-11 (M6): batch scoring 55,493 requests (7 batches, byte-capped), done in ~25 min,
   $15.91 (55,471 ok, 22 max_tokens). Feature set 8990ee7a9775 (embeddings off, config
-  `data/configs/sp500_noemb.yaml`): 984,567 rows, 1,954 sessions, ~504 members/day.
+  `config/variants/sp500_noemb.yaml`): 984,567 rows, 1,954 sessions, ~504 members/day.
 - 2026-10-11 (M6, eval e1a1af, pre-holdout, ~52k news ticker-days, 1,878 sessions, 659
   tickers): no BH discovery out of 180 tests. LLM sentiment univariate IC is small and
   positive for `close` entry (≈ +0.01–0.016 at 1–2d; best p 0.01, sector-adj), ≈ 0 for

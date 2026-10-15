@@ -339,3 +339,29 @@ def test_load_shares_caches_404_as_empty(tmp_path):
     http = mock_http(handler)
     assert load_shares(http, 1132979, tmp_path).height == 0
     assert load_shares(None, 1132979, tmp_path).height == 0 and len(calls) == 1  # cached
+
+
+def test_tiingo_404_and_search_are_cached(tmp_path):
+    calls: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(req.url.path)
+        if "search" in req.url.path:
+            return httpx.Response(200, json=[{"ticker": "NEWT", "name": "Oldt Co"}])
+        return httpx.Response(404, json={"detail": "Not found."})
+
+    src = TiingoPrices("tok")
+    src.http = mock_http(handler)
+    cache = CachedPrices(src, tmp_path)
+    assert cache.daily_bars("GONE", date(2021, 1, 4), date(2021, 2, 1)).height == 0
+    # a wider window would normally refetch; a 404 means the vendor has no such symbol
+    assert cache.daily_bars("GONE", date(2019, 1, 1), date(2022, 1, 1)).height == 0
+    assert cache.search("oldt co") == [{"ticker": "NEWT", "name": "Oldt Co"}]
+    assert cache.search("oldt co")[0]["ticker"] == "NEWT"
+    assert len(calls) == 2  # one price request, one search
+    # a failed search is not cached
+    src.http = mock_http(lambda req: httpx.Response(500))
+    assert cache.search("other") == []
+    assert len(list((tmp_path / "search").glob("*.json"))) == 1
+    src.http = mock_http(lambda req: httpx.Response(200, json=[{"ticker": "Z"}]))
+    assert cache.search("other") == [{"ticker": "Z"}]
