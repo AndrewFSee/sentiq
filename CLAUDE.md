@@ -606,3 +606,44 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   sentiments correlate 0.68. By the pre-registered reading: no evidence that either section
   dominates; both carry similar signal (Q&A slightly higher at 5–20d, +0.011..+0.016,
   p 0.10–0.20, n.s.). Test 5's signal is not an artefact of one part of the call.
+- 2026-10-15 PRE-REGISTERED tests 6–9 (signal families of "Machine Learning for Trading"
+  §10.5 that were not yet tested; no LLM cost, existing scores and feature sets only;
+  pre-holdout; each run counts as a tried variant):
+  6. **LLM earnings surprise** (`newsfeed event-ic`): events = 8-K story founders with LLM
+     event_type earnings, relevance ≥ secondary, unmasked Haiku 5.5 prompt 6108c555090fa4b3,
+     non-null `surprise_vs_expectations` (≈ 22% of releases: the prompt asks for null unless the
+     text compares results with expectations); event-level, dated to the first 15:50 decision
+     ≥ tradable_at (as `delay-sensitivity` at delay 0), fanned out to member tickers. Primary:
+     rank IC of surprise > 0 at close entry, h ∈ {1, 2}, market-adjusted. Secondary: (a)
+     semi-partial IC of surprise given LLM sentiment on the same rows (beyond sentiment?), (b)
+     masked surprise, (c) transcript surprise. Exploratory: sentiment IC by materiality (high
+     vs medium/low).
+  7. **Attention → volatility** (`newsfeed vol-test`): all member ticker-days of feature set
+     8990ee7a9775 (8-K attention) where the feature is non-null. Targets, close entry, raw:
+     RV_h = sd of daily log close-to-close returns over sessions i+1..i+h, h ∈ {5, 20}, and
+     |r| close[i] → close[i+1]. Statistic: partial rank correlation (Pearson of the rank
+     residuals of feature and target, each regressed on the ranks of ctl_vol_20d, |ctl_gap|,
+     |ctl_ret_1d|, ctl_log_dvol_20d, ctl_volume_ratio), circular block bootstrap over sessions
+     (block h + 1). Primary: `1d_n_stories` vs RV5, partial IC > 0. Secondary: `1d_volume_z`,
+     `5d_n_stories`, `1d_llm_sent_maxabs` (news days only), targets RV20 and |r1|, and every
+     cell again on non-earnings days (`1d_llm_evt_earnings` = 0). Expectation: the primary is
+     positive mostly through earnings releases (known event-volatility effect), so the
+     non-earnings rows are the informative ones. A pass says attention predicts risk, not
+     direction (not a return signal).
+  8. **8-K item event study** (`newsfeed item-study`): original 8-Ks (form 8-K, not 8-K/A),
+     one event per (member ticker, decision date, item code) from `meta.items`; codes with
+     ≥ 100 pre-holdout filings except 9.01 (exhibits): 2.02, 7.01, 8.01, 5.02, 1.01, 5.07, 2.03,
+     5.03, 1.02, 2.01, 3.03, 3.02, 2.05, 3.01, 2.06 (15 codes; 4.02 restatements has only 14,
+     not tested). Decision = first 15:50 ≥ tradable_at. Statistic: mean abnormal return =
+     market-adjusted return minus the same-date equal-weighted mean market-adjusted return of
+     all index members (removes the equal- vs cap-weighted drift), close entry, h ∈ {1, 5, 20};
+     circular block bootstrap over sessions; two-sided; one BH (q 0.10) over the 45 tests.
+     Sector-adjusted abnormal returns reported, not tested. This is drift after the first
+     tradable decision, not the announcement reaction.
+  9. **ICIR + quintile spreads** (reporting, no new hypothesis): for univariate cells, daily
+     cross-sectional rank IC on sessions with ≥ 10 names (mean, sd, ICIR = mean/sd, days) and
+     the Q5 − Q1 mean return (quintiles by within-day rank), averaged over days, CIs by
+     circular block bootstrap over sessions. Descriptive only, never added to a BH family; the
+     pooled IC stays the pre-registered statistic. Reported by `newsfeed ic-detail` for the
+     primaries of test 1, test 5 (masked) and H2 guidance (pre-holdout), and in future eval
+     reports.
