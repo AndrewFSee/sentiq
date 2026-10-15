@@ -238,13 +238,15 @@ decisions log). Rank IC of LLM sentiment vs market-adjusted returns from the 15:
 | 4b. vendor news, cleaned | ~12k | −0.001 | +0.003 | no |
 | **5. earnings calls (masked)** | ~11.3k call-days | **+0.029 (p 0.026)** | **+0.035 (p 0.024)** | no |
 | ↳ 5b. beyond the 8-K release (partial IC) | same rows | +0.012 | +0.015 | — |
+| ↳ prepared remarks / Q&A only (masked) | ~10.8k, identical rows | +0.028 / +0.020 | +0.031 / +0.030 | — |
 
 - The only effect that holds up is on **earnings 8-Ks**: ≈ +0.03 IC at 2–10 days, half of it
   overnight; hiding identities does not reduce it (no evidence of training-data recall), and
   Loughran-McDonald tone is negative on the same filings. Exploratory per-type analysis adds
   **8-K guidance** (+0.078 at 2 days, n 1,411) as a candidate.
 - **Earnings calls** carry about the same signal as the press release (+0.03, robust to
-  masking) but add little beyond it (partial IC +0.01, n.s.).
+  masking) but add little beyond it (partial IC +0.01, n.s.). Prepared remarks and the Q&A
+  carry similar signal on their own (no significant difference).
 - **Timing:** the release-based signal holds for 1–2 sessions after the release and then
   fades; a transcript usable one session later than assumed loses about half its IC. The 8-K
   arrives within minutes through EDGAR, so speed is not the bottleneck; live call

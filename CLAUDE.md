@@ -598,3 +598,11 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   generic paired comparison: --feature-set prep --masked-set qa). Reading: Q&A carries the
   signal if its IC ≥ the full-call IC and the difference CI excludes 0; otherwise no evidence
   that either section dominates. Descriptive robustness, not a new BH family.
+- 2026-10-15 RESULT test 5 robustness (sections: 11,866 items each, 544 calls without a Q&A
+  boundary skipped; masked scoring 11,355 + 11,354 requests, $10.59; feature sets Q&A
+  a8fa32903f0c / prepared 69b725996572). Identical rows (10,811), close/market IC h1/h2:
+  prepared +0.028 / +0.031, Q&A +0.020 / +0.030, diff Q&A − prepared −0.008 (p 0.28) / −0.001
+  (p 0.87); vs the full call (10,773 rows, +0.028 / +0.034): Q&A −0.008 / −0.004, n.s. Section
+  sentiments correlate 0.68. By the pre-registered reading: no evidence that either section
+  dominates; both carry similar signal (Q&A slightly higher at 5–20d, +0.011..+0.016,
+  p 0.10–0.20, n.s.). Test 5's signal is not an artefact of one part of the call.
