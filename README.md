@@ -206,6 +206,19 @@ paired block bootstrap; `partial-ic` asks whether one source adds information be
 when each document becomes usable N sessions later; `explore-types` and `cluster-explore` are
 explicitly exploratory per-type and per-text-cluster breakdowns with one BH correction each.
 
+```bash
+uv run newsfeed event-ic --value surprise_vs_expectations [--control sentiment] [--masked]
+uv run newsfeed vol-test --feature-set <id>      # attention vs realised volatility
+uv run newsfeed item-study --feature-set <id>    # mean abnormal return by 8-K item code
+uv run newsfeed ic-detail --feature-set <id> --config <variant>   # daily IC, ICIR, Q5 - Q1
+```
+`event-ic` is the event-level IC of any LLM score field (optionally beyond another field);
+`vol-test` asks whether news attention predicts realised volatility beyond trailing volatility,
+the gap, yesterday's move and volume (partial rank correlation); `item-study` measures the
+drift after 8-Ks by item code (abnormal return vs the equal-weighted index members);
+`ic-detail` adds the daily cross-sectional view (mean daily IC, ICIR, top-minus-bottom quintile
+spread), which eval reports now also include as a descriptive table.
+
 Bootstrap p-values are (k + 1)/(B + 1), never 0, and each report states whether the smallest
 attainable p is below the first Benjamini-Hochberg threshold. With 1,000 reps over 180 tests it
 is not: cells at the floor need at least ~3,600 reps (`eval.bootstrap_reps`).
@@ -239,6 +252,15 @@ decisions log). Rank IC of LLM sentiment vs market-adjusted returns from the 15:
 | **5. earnings calls (masked)** | ~11.3k call-days | **+0.029 (p 0.026)** | **+0.035 (p 0.024)** | no |
 | ↳ 5b. beyond the 8-K release (partial IC) | same rows | +0.012 | +0.015 | — |
 | ↳ prepared remarks / Q&A only (masked) | ~10.8k, identical rows | +0.028 / +0.020 | +0.031 / +0.030 | — |
+| 6. LLM earnings surprise (8-K, event-level) | 3.5k releases | +0.033 | +0.040 (p 0.044) | — |
+| ↳ beyond sentiment (semi-partial) | same rows | −0.011 | −0.015 | — |
+
+Other signal families (tests 7–8, no LLM direction involved):
+
+| test | result |
+|---|---|
+| 7. 8-K count → realised volatility, beyond trailing vol / gap / volume | partial IC −0.001 (p 0.64): nothing |
+| 8. drift after 8-Ks by item code (15 codes × 1/5/20 days) | no BH discovery; large codes within a few bp of 0 |
 
 - The only effect that holds up is on **earnings 8-Ks**: ≈ +0.03 IC at 2–10 days, half of it
   overnight; hiding identities does not reduce it (no evidence of training-data recall), and
@@ -251,6 +273,14 @@ decisions log). Rank IC of LLM sentiment vs market-adjusted returns from the 15:
   fades; a transcript usable one session later than assumed loses about half its IC. The 8-K
   arrives within minutes through EDGAR, so speed is not the bottleneck; live call
   transcription would add little.
+- The LLM's **surprise vs expectations** score (present when a release compares results with
+  consensus or guidance) predicts drift about as well as sentiment, but adds nothing beyond it.
+  On those releases sentiment itself is stronger (+0.06 at 2 days): a candidate subgroup.
+- **Daily cross-section:** for earnings 8-Ks the mean daily IC (days with ≥ 10 releases) is
+  only ≈ +0.01 against +0.03 pooled, so much of the pooled IC is not a same-day ranking edge;
+  for earnings calls the daily IC matches the pooled one (+0.037, ICIR ≈ 0.13 per day).
+- Filing type alone (8-K item codes) and 8-K counts carry no tradable drift or volatility
+  information beyond standard controls.
 - Vendor news (headlines + summaries from Motley Fool, GlobeNewswire, Benzinga, Investing.com)
   shows nothing, pooled, cleaned, by type or by text cluster.
 - All pre-holdout ICs are upper bounds: the model's training data likely covers the period.

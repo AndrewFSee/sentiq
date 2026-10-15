@@ -17,8 +17,9 @@ speed and polish.** It is not a trading system.
   **M6 done** (branch `m6-sp500`): point-in-time S&P 500 universe 2019–present, per-CIK
   backfill windows, price routing (Tradier / renamed / Tiingo for delisted), split-consistent
   market caps, PIT sector ETFs, member-only feature rows, Massive vendor news, masked-score
-  leakage checks, pre-registered tests 1–5 (incl. earnings-call transcripts, partial IC vs the
-  release, delay sensitivity) + exploratory per-type and text-cluster breakdowns (results in
+  leakage checks, pre-registered tests 1–9 (incl. earnings-call transcripts, partial IC vs the
+  release, delay sensitivity, LLM surprise, attention → volatility, 8-K item event study,
+  daily IC / quintile view) + exploratory per-type and text-cluster breakdowns (results in
   the decisions log). Ongoing: live collection of 8-Ks and transcripts
   (`scripts\collect_window.cmd`) for the holdout; `transcripts-latency` once the Q3-2026
   season has data; the single pre-registered holdout look (H1 earnings, H2 guidance, ≥ 10,000
@@ -647,3 +648,48 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
      pooled IC stays the pre-registered statistic. Reported by `newsfeed ic-detail` for the
      primaries of test 1, test 5 (masked) and H2 guidance (pre-holdout), and in future eval
      reports.
+- 2026-10-15 RESULT test 6 (LLM earnings surprise, event-level; runs 6ef6e6 primary, 3cbc44
+  semi-partial, 21de45 masked, d5c0ac transcripts, ea04fb materiality; sanity: `--value
+  sentiment` run ebe354 reproduces the 8-K earnings delay-0 IC +0.020 / +0.031). Surprise is
+  present on 3,504 of 15,938 earnings events. Primary close/market IC h1 +0.033 (p 0.078), h2
+  +0.040 (CI [+0.001, +0.075], p 0.044; ×2 primary cells = 0.088) → weak: h2 nominal only.
+  (a) Beyond sentiment: semi-partial IC −0.011 / −0.015 (p 0.52 / 0.35); on the same rows
+  sentiment alone has IC +0.047 / +0.060 → surprise adds nothing; sentiment already contains
+  it. (b) Masked surprise +0.045 / +0.044 (p 0.006 / 0.018): masking does not lower it. (c)
+  Transcript surprise +0.007 / +0.021 (n 6,502, n.s.). Materiality split uninformative: 94% of
+  earnings releases are "high" (high +0.018 / +0.029; medium/low n 904, ≈ 0). Not
+  pre-registered, noted only: sentiment IC is about twice as large on releases that state a
+  comparison with expectations (+0.060 at h2) as on all releases (+0.031) — a candidate
+  subgroup, not a finding.
+- 2026-10-15 RESULT test 7 (attention → volatility, run e58be9; ~0.93M member ticker-days,
+  1,000 reps so p ≥ 0.002): primary FAILS — `1d_n_stories` vs rv_5 partial IC −0.001
+  (p 0.64; raw +0.012): once trailing volatility, |gap|, |yesterday's return|, dollar volume
+  and volume ratio are controlled, the 8-K count adds nothing. Secondary (no BH family, read
+  with care): `1d_volume_z` partial +0.047 (rv_5) / +0.097 (rv_20), same on non-earnings days;
+  `5d_n_stories` −0.036 / −0.077; `1d_llm_sent_maxabs` (news days only, n ≈ 47k) +0.026
+  (rv_5), +0.048 (|r1|; non-earnings +0.024). Caveat: volume_z = (count − own baseline mean)
+  / sd is mostly a *cross-sectional* filing-frequency measure on the ~95% of days with no
+  8-K (frequent filers sit below zero), so its sign may reflect who files often rather than
+  attention shocks; checking it only on days with an 8-K would separate the two. Strong LLM
+  |sentiment| days are followed by bigger moves, as expected for material news.
+- 2026-10-15 RESULT test 8 (8-K item event study, run 81e0c0; 15 codes × close/{1,5,20},
+  45 market-adjusted tests): no BH discovery (smallest p 0.052: 3.01 delisting notices, 5d,
+  −118 bp, n 88). The large codes (2.02 n 15.8k, 8.01 13.3k, 7.01 11.6k, 5.02 9.5k, 1.01 5.1k,
+  5.07 4.1k) sit within a few bp of zero at 1–5 days (1.01 −11 bp at 5d, p 0.08). For S&P 500
+  members the filing type alone carries no drift after the first tradable decision; whatever
+  the market does with the item happens before 15:50 on the first day.
+- 2026-10-15 RESULT test 9 (descriptive daily view, `ic-detail`; `1d_llm_sent_cwmean`,
+  close/market h1 / h2 / h5). Test 1 earnings (run 817cdc): pooled +0.019 / +0.032 / +0.031;
+  only 464 sessions have ≥ 10 earnings names; daily IC +0.011 / +0.012 / +0.011 (all n.s.),
+  ICIR ≈ 0.04 per day, Q5 − Q1 +8 / +9 / +1 bp (n.s.). Test 5 transcripts masked (run
+  322f51): pooled +0.031 / +0.036 / +0.032; 332 days; daily IC +0.037 (p 0.022) / +0.036
+  (p 0.050) / +0.026, ICIR 0.13 / 0.13 / 0.09 per day, Q5 − Q1 +16 / +5 / −3 bp (n.s.). H2
+  guidance (run a99584): pooled +0.041 / +0.082 / +0.054, but no session has ≥ 10 guidance
+  names, so no daily view. Reading: for earnings 8-Ks most of the pooled IC is not a same-day
+  cross-sectional ranking on busy days — either it lives on thin days (< 10 releases) or in the
+  between-day component (days with more positive releases are followed by better
+  market-adjusted returns); the pooled statistic of H1 stays as pre-registered. Quintile
+  spreads are small and noisy everywhere (a few bp per 1–2 days, CIs ±20–40 bp).
+- 2026-10-15 Infra: Tiingo name searches and 404 (unknown ticker) answers are now cached in
+  the price cache (`search/`, meta `not_found`); before, every eval repeated about a dozen
+  throttled requests for unpriced names (~25 min, and 429s when runs overlapped).
