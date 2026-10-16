@@ -186,6 +186,9 @@ class CollectConfig(_Strict):
     sources: list[str] = Field(default_factory=lambda: ["edgar"])
     max_consecutive_failures: int = Field(3, gt=0)  # alert threshold
     stalled_after_intervals: float = Field(3, gt=1)  # heartbeat older than N intervals = stalled
+    # live coverage: a successful poll covers the time since the previous successful poll if
+    # that is at most this long AND the poll reached back to it (user decision 2026-10-16)
+    coverage_max_gap_minutes: float = Field(60, gt=0)
     realert_minutes: float = Field(60, gt=0)  # repeat an ongoing alert at most this often
 
 

@@ -737,3 +737,14 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   cap (stable large firms may change their filings less); the daily view (sessions with ≥ 10
   filings: daily IC, ICIR, Q5 − Q1). Expectation from the paper (monthly portfolios, months of
   drift): a small positive IC that grows with the horizon.
+- 2026-10-16 (user decision) LIVE COVERAGE RULE: was "successful polls ≤ 3 intervals (360 s)
+  apart"; collect cycles of 2–3 min plus the 120 s pause broke live coverage 34 times since
+  10-12 (22 gaps of 6–8 min, 10 of 11–64 min, 2 of 7.8 h / 14.5 h), so no live interval lasted
+  24 h and every 1d feature of the live holdout period was null. New rule: a successful poll
+  covers [previous successful poll, now] if that is ≤ `collect.coverage_max_gap_minutes` (60)
+  AND the poll saw everything since the previous one — the 8-K feed paged back to an entry at
+  or before the previous poll (`EdgarAdapter.last_poll_reach`; the feed holds 500 entries ≈
+  40 h), or a catch-up sweep ran, or the adapter re-reads its whole dataset (transcripts).
+  Items from a gap are still timed by when we first saw them, so nothing becomes earlier.
+  Past gaps re-evaluated with `coverage --bridge-live-since 2026-10-12` (adds tagged
+  `bridge-*` live rows for gaps ≤ 60 min; recorded rows are never edited). Gaps > 60 min stay.

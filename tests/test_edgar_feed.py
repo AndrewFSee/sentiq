@@ -112,12 +112,14 @@ def test_feed_poll_pages_until_previous_high_water(cfg, ticker_map, store, clock
     list(a.poll(skip=store.has_item))  # first poll: no high water -> reads all pages
     assert len(t.requests) == 4  # 3 full pages + empty page 6
     assert a.last_activity_at == utc(2026, 7, 30, 20, 59)
+    assert a.last_poll_reach == utc(2026, 7, 30, 20, 54)  # oldest entry paged to (16:54 EDT)
 
     t.requests.clear()
     t.pages = {0: feed(entry("0009999999-26-000100", 9999999, "2026-07-30T17:05:00-04:00"), e[0])}
     list(a.poll(skip=store.has_item))  # overlaps previous newest on page 0 -> stops
     assert len(t.requests) == 1
     assert a.last_activity_at == utc(2026, 7, 30, 21, 5)
+    assert a.last_poll_reach == utc(2026, 7, 30, 20, 59)  # reset per poll, not kept from before
 
 
 def test_feed_poll_ignores_entries_older_than_lookback(cfg, ticker_map, store, clock):

@@ -850,11 +850,24 @@ def coverage_cmd(
     rebuild_from_runs: Annotated[
         bool, typer.Option("--rebuild-from-runs", help="Recreate backfill coverage from runs")
     ] = False,
+    bridge_live_since: Annotated[
+        str | None,
+        typer.Option(
+            help="Add live coverage for poll gaps <= collect.coverage_max_gap_minutes after "
+            "this date (YYYY-MM-DD); rows are added, never edited"
+        ),
+    ] = None,
     config: ConfigOpt = None,
 ) -> None:
     """Show collected coverage (tradable-time ranges) per source and ticker."""
     cfg = load_config(config)
     with Store(cfg.paths) as store:
+        if bridge_live_since:
+            tag = f"bridge-{utcnow():%Y%m%dT%H%M%SZ}"
+            gap = timedelta(minutes=cfg.collect.coverage_max_gap_minutes)
+            for src in cfg.collect.sources:
+                n = coverage.bridge_live_gaps(store, src, gap, _parse_day(bridge_live_since), tag)
+                typer.echo(f"{src}: {n} bridge rows ({tag})")
         if rebuild_from_runs:
             cal = get_calendar(cfg.market.calendar, cfg.market.calendar_start)
             n = coverage.rebuild_from_runs(

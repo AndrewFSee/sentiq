@@ -296,6 +296,9 @@ class EdgarAdapter:
         # sp500_pit: per-CIK ingestion windows; None = every CIK over the requested range
         self.cik_windows: dict[int, tuple[datetime, datetime]] | None = None
         self._feed_high_water: datetime | None = None  # newest feed entry seen by last poll
+        # oldest feed entry the last poll paged back to (None: feed empty); live coverage
+        # requires it to be at or before the previous successful poll
+        self.last_poll_reach: datetime | None = None
 
     def item_id(self, ref: FilingRef) -> str:
         return make_item_id(self.name, ref.accession)
@@ -587,6 +590,7 @@ class EdgarAdapter:
         size = self.cfg.current_feed_page_size
         found: dict[str, tuple[FilingRef, set[str], datetime]] = {}
         newest: datetime | None = None
+        self.last_poll_reach = None
         for page in range(self.cfg.current_feed_max_pages):
             url = f"{self.cfg.current_feed_url}&start={page * size}&count={size}"
             body = self.http.get(url).content
@@ -620,6 +624,9 @@ class EdgarAdapter:
                 else:
                     found[e.accession] = (ref, tick, seen_at)
             oldest = min(e.updated for e in entries)
+            self.last_poll_reach = (
+                oldest if self.last_poll_reach is None else min(self.last_poll_reach, oldest)
+            )
             hw = self._feed_high_water
             if oldest < cutoff or (hw is not None and oldest <= hw) or len(entries) < size:
                 break

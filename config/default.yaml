@@ -148,6 +148,7 @@ collect:
   max_consecutive_failures: 3
   stalled_after_intervals: 3
   realert_minutes: 60
+  coverage_max_gap_minutes: 60       # live coverage bridges poll gaps up to this if the poll reached back
 
 dedupe:
   near_dup_threshold: 0.8   # estimated Jaccard over word 5-shingles

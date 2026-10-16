@@ -226,14 +226,41 @@ def test_live_polls_record_coverage_and_stalls_leave_gaps(setup, store):
     clock.t += timedelta(minutes=1)
     make().cycle()
     assert coverage.merged(store, "edgar")["AAPL"] == [(t0, t0 + timedelta(minutes=2))]
-    clock.t += timedelta(minutes=30)  # stalled (> 3 intervals): the gap is not covered
+    clock.t += timedelta(minutes=30)  # a late poll that paged back: no gap
+    make().cycle()
+    assert coverage.merged(store, "edgar")["AAPL"] == [(t0, t0 + timedelta(minutes=32))]
+    clock.t += timedelta(minutes=90)  # stalled beyond collect.coverage_max_gap_minutes: gap
     make().cycle()
     clock.t += timedelta(minutes=1)
     make().cycle()
     assert coverage.merged(store, "edgar")["AAPL"] == [
-        (t0, t0 + timedelta(minutes=2)),
-        (t0 + timedelta(minutes=32), t0 + timedelta(minutes=33)),
+        (t0, t0 + timedelta(minutes=32)),
+        (t0 + timedelta(minutes=122), t0 + timedelta(minutes=123)),
     ]
+    # a poll whose feed did not reach back to the previous poll leaves a gap even if prompt
+    # (FakeAdapter.poll never runs a sweep after the first cycle's catch-up)
+    clock.t += timedelta(minutes=2)
+    adapter.last_poll_reach = clock.t - timedelta(minutes=1)
+    make().cycle()
+    assert coverage.merged(store, "edgar")["AAPL"][-1] == (
+        t0 + timedelta(minutes=122),
+        t0 + timedelta(minutes=123),
+    )
+
+
+def test_bridge_live_gaps_adds_rows_only_for_short_gaps(store):
+    from newsfeed import coverage
+
+    t = datetime(2026, 10, 12, 14, 30, tzinfo=UTC)
+    m = timedelta(minutes=1)
+    coverage.record_live(store, "edgar", ["AAPL"], t, t + 10 * m, "r")
+    coverage.record_live(store, "edgar", ["AAPL"], t + 17 * m, t + 30 * m, "r")  # 7-min gap
+    coverage.record_live(store, "edgar", ["AAPL"], t + 130 * m, t + 140 * m, "r")  # 100-min gap
+    n = coverage.bridge_live_gaps(store, "edgar", timedelta(minutes=60), t, "bridge-x")
+    assert n == 1
+    assert coverage.merged(store, "edgar")["AAPL"] == [(t, t + 30 * m), (t + 130 * m, t + 140 * m)]
+    # nothing before ``since`` is bridged; re-running adds nothing new to bridge
+    assert coverage.bridge_live_gaps(store, "edgar", timedelta(minutes=60), t, "b2") == 0
 
 
 def test_edgar_silence_ignores_federal_holidays_when_nyse_is_open(calendar):
