@@ -656,6 +656,7 @@ class Store:
         tickers: Iterable[str] | None = None,
         source: str | None = None,
         columns: str = "*",
+        item_ids: Iterable[str] | None = None,
     ) -> pl.DataFrame:
         """THE point-in-time accessor: only items with ``tradable_at <= as_of``.
 
@@ -672,6 +673,9 @@ class Store:
         if source is not None:
             where.append("source = $source")
             params["source"] = source
+        if item_ids is not None:
+            where.append("item_id IN (SELECT unnest($item_ids))")
+            params["item_ids"] = list(item_ids)
         sql = f"SELECT {columns} FROM items WHERE {' AND '.join(where)} ORDER BY tradable_at"
         return self.q.execute(sql, params).pl()
 

@@ -2004,5 +2004,156 @@ def ic_detail_cmd(
     _run("ic-detail", cfg, {"feature_set": feature_set, "feature": feature, "cells": cells}, body)
 
 
+@app.command("doc-change")
+def doc_change_cmd(
+    primary_cells: Annotated[str, typer.Option(help="Pre-registered cells")] = (
+        "close/20/market,close/60/market"
+    ),
+    secondary_cells: Annotated[str, typer.Option(help="Reported, not primary")] = (
+        "close/1/market,close/5/market,close/10/market,close/20/sector,close/60/sector"
+    ),
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 10: does a 10-K / 10-Q that changed little from the year-earlier report predict
+    higher returns ("Lazy Prices")? Event-level rank IC of document similarity, pre-holdout."""
+    from newsfeed.eval.clusters import cluster_ic, decision_times
+    from newsfeed.eval.cv import pre_holdout_mask
+    from newsfeed.eval.docchange import filing_meta, pair_filings, similarities
+    from newsfeed.eval.report import ic_detail
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    prim, sec = _cells(primary_cells), _cells(secondary_cells)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        store, fc, src = ctx.store, cfg.features, "edgar_periodic"
+        now = utcnow()
+        f = filing_meta(store.items_as_of(now, source=src, columns="item_id, tradable_at, meta"))
+        pairs = pair_filings(f)
+        log.info("doc-change: %d filings, %d with a year-earlier pair", f.height, pairs.height)
+
+        def load(ids: list[str]) -> dict[str, str]:
+            b = store.items_as_of(now, source=src, item_ids=ids, columns="item_id, body_text")
+            return dict(zip(b["item_id"].to_list(), b["body_text"].to_list(), strict=True))
+
+        sim = similarities(f, pairs, load)
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        sim.write_parquet(out_dir / f"doc-change-{run_id}-similarity.parquet")
+        grid = as_of_grid(
+            ctx.calendar, sim["tradable_at"].min().date(), now.date(), fc.grid,
+            fc.decision_lag_minutes,
+        )  # fmt: skip
+        c2t = ctx.universe(full=True).cik_to_tickers
+        fan = pl.DataFrame(
+            [{"cik": c, "ticker": t} for c, ts in c2t.items() for t in ts],
+            schema={"cik": pl.Int64, "ticker": pl.Utf8},
+        )
+        ev = (
+            sim.with_columns(
+                pl.Series(
+                    "as_of",
+                    decision_times(sim["tradable_at"].to_list(), grid),
+                    dtype=pl.Datetime("us", "UTC"),
+                )
+            )
+            .drop_nulls("as_of")
+            .with_columns(
+                pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+            )
+            .join(fan, on="cik")
+        )
+        if cfg.universe.mode == "sp500_pit":
+            ev = ev.filter(ctx.pit.is_member(ev.select("ticker", "date")))
+        inp, _ = _eval_inputs(ctx, cfg, ev.select("ticker", "as_of").unique())
+        ev = ev.join(inp.caps.select("ticker", "date", "mcap"), on=["ticker", "date"], how="left")
+        # NaN (section missing in one filing) -> null, so it counts as absent, not as a value
+        ev = ev.with_columns(
+            pl.col("mcap").log().alias("log_mcap"),
+            *[pl.col(c).fill_nan(None) for c in ("cos", "jac", "cos_mda", "cos_rf")],
+        )
+        stacked = pl.concat(
+            [
+                ev.with_columns(pl.lit("all").alias("cluster")),
+                ev.with_columns(pl.col("form").alias("cluster")),
+            ]
+        )
+        cols = ["ticker", "date", "cluster", "cos", "jac", "cos_mda", "cos_rf", "log_mcap"]
+        stacked = stacked.select(cols)
+        rows = []
+        for tier, cells in (("primary", prim), ("secondary", sec)):
+            for value, control in (("cos", None), ("jac", None), ("cos_mda", None),
+                                   ("cos_rf", None), ("cos", "log_mcap")):  # fmt: skip
+                if tier == "primary" or value == "cos":
+                    for r in cluster_ic(
+                        stacked, inp.targets, inp.sessions, cfg, cells, value=value,
+                        control=control,
+                    ):  # fmt: skip
+                        rows.append({"tier": tier, "value": value, "control": control or "", **r})
+        res = pl.DataFrame(rows)
+        # descriptive daily view for the primary measure / cells, all filings
+        session_idx = {d: i for i, d in enumerate(inp.sessions)}
+        daily = []
+        rng = np.random.default_rng(cfg.eval.seed + 1)
+        for entry, h, adj in prim:
+            t = inp.targets.filter((pl.col("entry") == entry) & (pl.col("horizon") == h))
+            d = ev.join(t, on=["ticker", "date"]).filter(pl.col("cos").is_not_null())
+            dec = d["date"].to_numpy().astype("datetime64[D]")
+            end = d["label_end"].to_numpy().astype("datetime64[D]")
+            d = d.filter(pl.Series(pre_holdout_mask(dec, end, cfg.eval.holdout_start)))
+            s = np.array([session_idx.get(x, -1) for x in d["date"].to_list()])
+            daily.append(
+                {"cell": f"{entry}/{h}/{adj}", **ic_detail(
+                    s, d["cos"].to_numpy().astype(float), d[f"ret_{adj}"].to_numpy().astype(float),
+                    block=h + 1, reps=cfg.eval.bootstrap_reps, rng=rng,
+                )}
+            )  # fmt: skip
+        n_pre = ev.filter(pl.col("date") < cfg.eval.holdout_start)
+        lines = [
+            f"# Document change (Lazy Prices) {run_id}",
+            "",
+            f"- {f.height} 10-K/10-Q filings, {pairs.height} with a year-earlier same-form pair; "
+            f"{n_pre.height} member-ticker events before the holdout "
+            f"({n_pre['ticker'].n_unique()} tickers).",
+            "- similarity: cosine of term-frequency vectors (words of >= 2 letters, numbers "
+            "dropped); high = little change; event dated to the first decision after tradable_at;"
+            " pre-holdout; block bootstrap over sessions.",
+            f"- median cosine: all {sim['cos'].median():.3f}, 10-K "
+            f"{sim.filter(pl.col('form') == '10-K')['cos'].median():.3f}, 10-Q "
+            f"{sim.filter(pl.col('form') == '10-Q')['cos'].median():.3f}; MD&A found in both "
+            f"filings for {sim['cos_mda'].is_not_nan().sum()} pairs, risk factors for "
+            f"{sim['cos_rf'].is_not_nan().sum()}.",
+            "",
+            "| tier | value | control | cell | group | n | IC | 95% CI | p |",
+            "|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['tier']} | {r['value']} | {r['control'] or '-'} | "
+                f"{r['entry']}/{r['horizon']}/{r['adjustment']} | {r['cluster']} | {r['n']} | "
+                f"{_num(r['ic'])} | [{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} |"
+            )
+        lines += [
+            "",
+            "Daily view (descriptive; sessions with >= 10 filings):",
+            "",
+            "| cell | days | daily IC | 95% CI | ICIR | Q5 - Q1 | 95% CI |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for d in daily:
+            lines.append(
+                f"| {d['cell']} | {d['days']} | {_num(d['ic_daily'])} | "
+                f"[{_num(d['ic_daily_ci_lo'])}, {_num(d['ic_daily_ci_hi'])}] | "
+                f"{_num(d['icir'])} | {bp(d['q_spread'])} | [{bp(d['q_spread_ci_lo'])}, "
+                f"{bp(d['q_spread_ci_hi'])}] |"
+            )
+        path = _write_report(cfg, f"doc-change-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), filings=f.height, pairs=pairs.height)
+
+    _run("doc-change", cfg, {"primary": primary_cells, "secondary": secondary_cells}, body)
+
+
 if __name__ == "__main__":
     app()
