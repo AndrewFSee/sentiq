@@ -83,6 +83,7 @@ timing:
     transcripts: 0                    # published_at is already the END of the call date (NY)
     transcripts_qa: 0
     transcripts_prep: 0
+    edgar_periodic: 60
 
 sources:
   edgar:
@@ -102,6 +103,16 @@ sources:
     poll_lookback_hours: 48
     catch_up_every_minutes: 60        # per-CIK sweep to catch anything the feed window missed
     silence_alert_minutes: 45         # market-open minutes with no new 8-K from ANY company
+
+  edgar_periodic:                     # 10-K / 10-Q full text (Lazy Prices etc.); backfill for now
+    forms: ["10-K", "10-Q"]           # originals only: amendments change little and would pair badly
+    exhibit_type_prefixes: []         # primary document only
+    max_tokens: 400000                # effectively uncapped (largest 10-Ks ~300k tokens)
+    ingest_margin_before_days: 400    # one year before membership: the comparison filing
+    raw_dir: D:/sentiq-data/raw       # ~0.3-1.5 MB gzipped per filing; C: is short of space
+    current_feed_url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=10-&company=&dateb=&owner=include&output=atom
+    catch_up_every_minutes: 1440
+    silence_alert_minutes: 20000      # reports cluster in filing seasons
 
   news_api:
     vendor: fixture                   # no vendor licensed yet; recorded/synthetic fixtures
@@ -145,7 +156,7 @@ dedupe:
   max_chars: 5000
   window_hours: 72          # exact-text / near-dup matches only within this window (URL matches: any time)
   require_ticker_overlap: true
-  isolated_sources: [transcripts_qa, transcripts_prep]   # section views never join the full call's story
+  isolated_sources: [transcripts_qa, transcripts_prep, edgar_periodic]   # never join other sources' stories
   seed: 1
 
 scoring:
@@ -219,7 +230,7 @@ eval:
   market_etf: SPY
   sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
                 JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}
-  horizons: [1, 2, 5, 10, 20]       # trading sessions after entry
+  horizons: [1, 2, 5, 10, 20, 60]   # trading sessions after entry (60 added 2026-10-15)
   entries: [close, next_open]       # decision at session close - 10 min (= NYSE MOC cutoff)
   adjustments: [market, sector]     # forward return minus SPY / the sector ETF (same window)
   holdout_start: "2026-07-01"       # frozen: eval refuses data from here on without --use-holdout

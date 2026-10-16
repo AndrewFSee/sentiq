@@ -690,6 +690,23 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   between-day component (days with more positive releases are followed by better
   market-adjusted returns); the pooled statistic of H1 stays as pre-registered. Quintile
   spreads are small and noisy everywhere (a few bp per 1–2 days, CIs ±20–40 bp).
+- 2026-10-15 (user decision) eval horizons += 60 sessions (default config; variants keep their
+  own lists, so earlier eval ids are unchanged). Price windows and post-delisting cash padding
+  now scale with the longest horizon (`prices.horizon_days`: 20 → 45 days / 25 sessions as
+  before, 60 → 105 days / 65 sessions). Caveat grows with the horizon: delisted names are held
+  as cash at the last trade for up to 65 sessions. Cache: a series that stopped > 30 days
+  before the end of the window it was fetched for is treated as ended (no refetch for a later
+  end).
+- 2026-10-15 (user: "that order sounds good") new source `edgar_periodic` = 10-K / 10-Q
+  originals (no amendments), primary document only, full visible text (no truncation in
+  practice), section offsets in `meta.sections` (10-K items 1, 1A, 7, 7A; 10-Q MD&A "I-2" found
+  by its title, risk factors "II-1A"; cross-referenced sections, e.g. banks' MD&A, are
+  missing). Same header timing as 8-Ks (backfill lag 60 s). Raw HTML on D:
+  (`sources.edgar_periodic.raw_dir`); ingest windows start 400 days before membership so each
+  filing has its year-earlier comparison. Isolated in dedupe; not in `collect.sources`; the
+  live scoring hook now plans only `collect.sources` (guard: a 10-K is ~100k tokens). Not added
+  to `universe.source_only_linking` (that would change the linker id → full relink); analyses
+  use the filer CIK from `meta.cik`.
 - 2026-10-15 Infra: Tiingo name searches and 404 (unknown ticker) answers are now cached in
   the price cache (`search/`, meta `not_found`); before, every eval repeated about a dozen
   throttled requests for unpriced names (~25 min, and 429s when runs overlapped).

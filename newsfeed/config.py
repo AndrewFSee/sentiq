@@ -110,6 +110,26 @@ class EdgarConfig(_Strict):
     poll_lookback_hours: float = Field(48, gt=0)  # entries older than this are ignored by poll
     catch_up_every_minutes: float = Field(60, gt=0)  # per-CIK submissions sweep (missed entries)
     silence_alert_minutes: float = Field(45, gt=0)  # market-open minutes w/o feed activity
+    # raw-document store root for this source (None = paths.raw_dir); big 10-K HTML lives on D:
+    raw_dir: Path | None = None
+    # overrides universe.ingest_margin_before_days for this source (10-K similarity needs the
+    # filing one year before the first in-window one)
+    ingest_margin_before_days: int | None = Field(None, ge=0)
+
+
+def _periodic_default() -> EdgarConfig:
+    return EdgarConfig(
+        forms=["10-K", "10-Q"],
+        exhibit_type_prefixes=[],
+        max_tokens=400_000,
+        ingest_margin_before_days=400,
+        current_feed_url=(
+            "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=10-"
+            "&company=&dateb=&owner=include&output=atom"
+        ),
+        catch_up_every_minutes=1440,
+        silence_alert_minutes=20000,
+    )
 
 
 class NewsApiConfig(_Strict):
@@ -148,6 +168,8 @@ class TranscriptsConfig(_Strict):
 
 class SourcesConfig(_Strict):
     edgar: EdgarConfig = Field(default_factory=EdgarConfig)
+    # 10-K / 10-Q annual and quarterly reports: full text, separate from 8-K features/scoring
+    edgar_periodic: EdgarConfig = Field(default_factory=_periodic_default)
     news_api: NewsApiConfig = Field(default_factory=NewsApiConfig)
     transcripts: TranscriptsConfig = Field(default_factory=TranscriptsConfig)
     # backfill-only section views of the same calls (test 5 robustness)
@@ -415,7 +437,12 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
     trans = cfg.sources.transcripts
     if not trans.path.is_absolute():  # reference data lives with the project
         trans = trans.model_copy(update={"path": PROJECT_ROOT / trans.path})
-    sources = cfg.sources.model_copy(update={"news_api": news, "transcripts": trans})
+    per = cfg.sources.edgar_periodic
+    if per.raw_dir is not None and not per.raw_dir.is_absolute():
+        per = per.model_copy(update={"raw_dir": (root or PROJECT_ROOT) / per.raw_dir})
+    sources = cfg.sources.model_copy(
+        update={"news_api": news, "transcripts": trans, "edgar_periodic": per}
+    )
     feats = cfg.features
     uni = cfg.universe
     if not uni.pit_dir.is_absolute():

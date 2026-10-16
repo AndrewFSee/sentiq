@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -140,6 +141,16 @@ class TradierPrices:
         )
 
 
+ENDED_GAP_DAYS = 30
+
+
+def horizon_days(max_horizon: int) -> tuple[int, int]:
+    """(calendar days of prices needed after a membership window / the last decision,
+    cash-padding sessions after a delisting) for labels of up to ``max_horizon`` sessions.
+    Horizons up to 20 sessions give (45, 25), the values used through test 9."""
+    return max(45, math.ceil(max_horizon * 1.5) + 15), max(25, max_horizon + 5)
+
+
 class CachedPrices:
     """Disk cache in front of a PriceSource: data/ref/prices/<SYMBOL>.parquet (+ dividends)."""
 
@@ -160,8 +171,15 @@ class CachedPrices:
             m = json.loads(meta_p.read_text())
             if m.get("not_found"):  # the vendor does not know the symbol at all (404)
                 return pl.read_parquet(bars_p)
-            if date.fromisoformat(m["start"]) <= start and date.fromisoformat(m["end"]) >= end:
+            m_start, m_end = date.fromisoformat(m["start"]), date.fromisoformat(m["end"])
+            if m_start <= start and m_end >= end:
                 return pl.read_parquet(bars_p).filter(pl.col("date").is_between(start, end))
+            if m_start <= start:
+                # a series that stopped well before the end of the window it was fetched for has
+                # ended (delisted / renamed): asking for a later end returns nothing new
+                bars = pl.read_parquet(bars_p)
+                if bars.height and bars["date"].max() < m_end - timedelta(days=ENDED_GAP_DAYS):
+                    return bars.filter(pl.col("date").is_between(start, end))
         if self.source is None:
             raise RuntimeError(f"no cached prices for {symbol} {start}..{end} and no source")
         lo = start - timedelta(days=45)  # room for trailing controls
@@ -407,6 +425,7 @@ def build_panel(
     sessions: list[date],
     *,
     refresh: bool = False,
+    max_pad: int = 25,
 ) -> tuple[pl.DataFrame, list[dict], dict[str, pl.DataFrame]]:
     """Fetch every route (Tiingo when the Tradier series starts late or has gaps and Tiingo's
     is better; then same-CIK / name-search candidates on Tiingo), pad series that stop trading
@@ -439,7 +458,7 @@ def build_panel(
             last = p["date"].max()
             if any(last < d <= rt.end for d in sessions):  # stopped trading inside window
                 before = p.height
-                p = pad_delisted(p.drop("synthetic"), sessions, {rt.ticker}).filter(
+                p = pad_delisted(p.drop("synthetic"), sessions, {rt.ticker}, max_pad).filter(
                     pl.col("date") <= rt.end
                 )
                 padded = p.height - before

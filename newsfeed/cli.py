@@ -27,6 +27,7 @@ from newsfeed.eval.prices import (
     TiingoPrices,
     TradierPrices,
     build_panel,
+    horizon_days,
     route_prices,
 )
 from newsfeed.eval.report import (
@@ -80,7 +81,14 @@ NY_TZ = ZoneInfo("America/New_York")
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("newsfeed")
 
-SOURCES = ("edgar", "news_api", "transcripts", "transcripts_qa", "transcripts_prep")
+SOURCES = (
+    "edgar",
+    "edgar_periodic",
+    "news_api",
+    "transcripts",
+    "transcripts_qa",
+    "transcripts_prep",
+)
 ConfigOpt = Annotated[Path | None, typer.Option("--config", help="YAML config path")]
 TickersOpt = Annotated[
     str | None, typer.Option("--tickers", help="Comma-separated subset of the universe")
@@ -185,16 +193,16 @@ class Context:
         return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
 
     def cik_windows(
-        self, start: datetime, end: datetime
+        self, start: datetime, end: datetime, before_days: int | None = None
     ) -> dict[int, tuple[datetime, datetime]] | None:
-        """sp500_pit: per-CIK ingestion windows (membership +- margins) inside [start, end)."""
+        """sp500_pit: per-CIK ingestion windows (membership +- margins) inside [start, end);
+        ``before_days`` overrides ``universe.ingest_margin_before_days``."""
         if self.cfg.universe.mode != "sp500_pit":
             return None
         uc = self.cfg.universe
         u = self.universe()
-        w = self.pit.ingest_windows(
-            start.date(), end.date(), uc.ingest_margin_before_days, uc.ingest_margin_after_days
-        )
+        before = uc.ingest_margin_before_days if before_days is None else before_days
+        w = self.pit.ingest_windows(start.date(), end.date(), before, uc.ingest_margin_after_days)
         return {
             c: (_parse_day(s.isoformat()), _parse_day(e.isoformat()))
             for c, (s, e) in w.items()
@@ -206,6 +214,13 @@ class Context:
             return EdgarAdapter(
                 self.cfg.sources.edgar, self.http(), self.universe(), self.store.raw
             )
+        if source == "edgar_periodic":
+            from newsfeed.ingest.edgar_periodic import EdgarPeriodicAdapter
+            from newsfeed.storage import RawStore
+
+            pcfg = self.cfg.sources.edgar_periodic
+            raw = RawStore(pcfg.raw_dir) if pcfg.raw_dir is not None else self.store.raw
+            return EdgarPeriodicAdapter(pcfg, self.http(), self.universe(), raw)
         if source == "news_api":
             ncfg = self.cfg.sources.news_api
 
@@ -279,7 +294,14 @@ class Context:
         """Collect-loop hook: score new story founders live (scoring.live_in_collect)."""
         job = self.scoring_job(run_id, None, self.llm_client())
         since = utcnow() - timedelta(hours=self.cfg.scoring.live_lookback_hours)
-        targets = plan_targets(job, self.universe(full=True).cik_to_tickers, since_tradable=since)
+        # only what the loop collects: a backfill running alongside (e.g. 10-K full text, ~100k
+        # tokens each) must never be scored by the live hook
+        targets = plan_targets(
+            job,
+            self.universe(full=True).cik_to_tickers,
+            since_tradable=since,
+            sources=list(self.cfg.collect.sources),
+        )
         return job.run_live(targets).as_dict() if targets else {"calls": 0}
 
 
@@ -327,7 +349,8 @@ def backfill(
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         adapter = ctx.adapter(source)
-        windows = ctx.cik_windows(t0, t1) if source != "news_api" else None
+        before = getattr(getattr(cfg.sources, source), "ingest_margin_before_days", None)
+        windows = ctx.cik_windows(t0, t1, before) if source != "news_api" else None
         if windows is not None:
             adapter.cik_windows = windows
             stats["cik_windows"] = len(windows)
@@ -851,7 +874,8 @@ def _eval_inputs(
             cfg.paths.ref_dir / "prices_tiingo",
         ),
     }
-    lo, end = dates[0], min(dates[-1] + timedelta(days=45), utcnow().date())
+    after_days, max_pad = horizon_days(max(ec.horizons))
+    lo, end = dates[0], min(dates[-1] + timedelta(days=after_days), utcnow().date())
     tickers = sorted(feats["ticker"].unique().to_list())
     bench = [ec.market_etf, *sorted(set(ec.sector_etfs.values()))]
     pit = cfg.universe.mode == "sp500_pit"
@@ -859,7 +883,12 @@ def _eval_inputs(
         bench += sorted(set(ec.gics_sector_etfs.values()) - set(bench))
         members = ctx.pit.members.filter(pl.col("ticker").is_in(tickers))
         routes = route_prices(
-            members, ctx.tmap.ticker_to_cik, lo, end, overrides=ec.price_overrides
+            members,
+            ctx.tmap.ticker_to_cik,
+            lo,
+            end,
+            after_days=after_days,
+            overrides=ec.price_overrides,
         )
     else:
         routes = [PriceRoute(t, t, "tradier", lo, end, "", "current") for t in tickers]
@@ -867,7 +896,9 @@ def _eval_inputs(
     # sessions = the market ETF's trading days (fetched first)
     spy, _, _ = build_panel(routes[-len(bench) :][:1], caches, [], refresh=refresh_prices)
     sessions = sorted(spy["date"].to_list())
-    panel, price_report, splits = build_panel(routes, caches, sessions, refresh=refresh_prices)
+    panel, price_report, splits = build_panel(
+        routes, caches, sessions, refresh=refresh_prices, max_pad=max_pad
+    )
     panel = panel.drop("synthetic")
     fwd = forward_returns(panel, ec.horizons, ec.entries)
     sector_of = ctx.pit.sector_etf_frame(ec.gics_sector_etfs) if pit else ec.sector_etfs

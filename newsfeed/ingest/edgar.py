@@ -258,6 +258,18 @@ def compose_body(
     return "\n\n".join(parts)
 
 
+@dataclass(frozen=True)
+class _Fetched:
+    header_text: str
+    hdr: dict[str, Any]
+    published_at: datetime
+    convention: str
+    docs: list[IndexDocument]
+    index_accepted: str | None
+    primary_name: str
+    filing_date: str
+
+
 # --------------------------------------------------------------------------- adapter
 class EdgarAdapter:
     name = SOURCE
@@ -284,6 +296,9 @@ class EdgarAdapter:
         # sp500_pit: per-CIK ingestion windows; None = every CIK over the requested range
         self.cik_windows: dict[int, tuple[datetime, datetime]] | None = None
         self._feed_high_water: datetime | None = None  # newest feed entry seen by last poll
+
+    def item_id(self, ref: FilingRef) -> str:
+        return make_item_id(self.name, ref.accession)
 
     # ---- listing
     def _folder(self, cik: int, accession: str) -> str:
@@ -365,21 +380,15 @@ class EdgarAdapter:
     # ---- fetching
     def _get_raw(self, ref: FilingRef, name: str) -> bytes:
         """Fetch a filing document, using the raw store as a cache (re-parse without re-fetch)."""
-        cached = self.raw.get(SOURCE, ref.accession, name)
+        cached = self.raw.get(self.name, ref.accession, name)
         if cached is not None:
             return cached
         body = self.http.get(f"{self._folder(ref.cik, ref.accession)}/{name}").content
-        self.raw.put(SOURCE, ref.accession, name, body)
+        self.raw.put(self.name, ref.accession, name, body)
         return body
 
-    def fetch_filing(
-        self,
-        ref: FilingRef,
-        tickers: list[str],
-        *,
-        first_seen_at: datetime,
-        ingest_mode: IngestMode,
-    ) -> RawItem:
+    def _timing_and_index(self, ref: FilingRef) -> _Fetched:
+        """Header (authoritative acceptance time), JSON-convention check and document index."""
         header_text = self._get_raw(ref, f"{ref.accession}.hdr.sgml").decode("latin-1")
         hdr = parse_header(header_text)
         published_at = parse_et_wall(hdr["ACCEPTANCE-DATETIME"])
@@ -413,6 +422,52 @@ class EdgarAdapter:
         )
         if not primary_name:
             raise ValueError(f"no primary document for {ref.accession}")
+        filing_date = ref.filing_date
+        if not filing_date and len(hdr.get("FILING-DATE", "")) == 8:
+            fd = hdr["FILING-DATE"]
+            filing_date = f"{fd[:4]}-{fd[4:6]}-{fd[6:]}"
+        return _Fetched(
+            header_text, hdr, published_at, convention, docs, index_accepted, primary_name,
+            filing_date,
+        )  # fmt: skip
+
+    def _meta(self, ref: FilingRef, f: _Fetched) -> dict[str, Any]:
+        """Metadata shared by every EDGAR form."""
+        return {
+            "cik": ref.cik,
+            "accession": ref.accession,
+            "form": ref.form,
+            "company": f.hdr.get("CONFORMED-NAME", ""),
+            "filing_date": f.filing_date,
+            "feed_updated": ref.feed_updated.isoformat() if ref.feed_updated else None,
+            "period": f.hdr.get("PERIOD"),
+            "acceptance_header_et": f.hdr["ACCEPTANCE-DATETIME"],
+            "acceptance_index_et": f.index_accepted,
+            "acceptance_json_raw": ref.acceptance_json_raw,
+            "json_convention": f.convention,
+            "primary_document": f.primary_name,
+        }
+
+    def _raw_json(self, ref: FilingRef, f: _Fetched) -> str:
+        return json.dumps(
+            {
+                "submissions_row": ref.row,
+                "header": f.header_text,
+                "index_documents": [d.__dict__ for d in f.docs],
+            },
+            sort_keys=True,
+        )
+
+    def fetch_filing(
+        self,
+        ref: FilingRef,
+        tickers: list[str],
+        *,
+        first_seen_at: datetime,
+        ingest_mode: IngestMode,
+    ) -> RawItem:
+        f = self._timing_and_index(ref)
+        hdr, docs, primary_name = f.hdr, f.docs, f.primary_name
         primary_text = html_to_text(self._get_raw(ref, primary_name))
         items = split_items(primary_text)
 
@@ -433,13 +488,8 @@ class EdgarAdapter:
             f"Item {c} {ITEM_NAMES.get(c, '')}".strip() for c in item_codes
         )
 
-        filing_date = ref.filing_date
-        if not filing_date and len(hdr.get("FILING-DATE", "")) == 8:
-            fd = hdr["FILING-DATE"]
-            filing_date = f"{fd[:4]}-{fd[4:6]}-{fd[6:]}"
-
         return RawItem(
-            source=SOURCE,
+            source=self.name,
             native_id=ref.accession,
             publisher=PUBLISHER,
             url=f"{self._folder(ref.cik, ref.accession)}/{ref.accession}-index.htm",
@@ -448,36 +498,18 @@ class EdgarAdapter:
             body_tokens_est=estimate_tokens(body, self.cfg.chars_per_token),
             body_truncated=truncated,
             tickers=tickers,
-            published_at=published_at,
+            published_at=f.published_at,
             published_at_raw=f"{hdr['ACCEPTANCE-DATETIME']} America/New_York",
             first_seen_at=first_seen_at,
             ingest_mode=ingest_mode,
             meta={
-                "cik": ref.cik,
-                "accession": ref.accession,
-                "form": ref.form,
-                "company": company,
+                **self._meta(ref, f),
                 "items": item_codes,
                 "items_found_in_text": sorted(items),
-                "filing_date": filing_date,
-                "feed_updated": ref.feed_updated.isoformat() if ref.feed_updated else None,
-                "period": hdr.get("PERIOD"),
-                "acceptance_header_et": hdr["ACCEPTANCE-DATETIME"],
-                "acceptance_index_et": index_accepted,
-                "acceptance_json_raw": ref.acceptance_json_raw,
-                "json_convention": convention,
-                "primary_document": primary_name,
                 "exhibits": [{"type": d.doc_type, "file": d.filename} for d, _ in exhibits],
                 "body_tokens_est_full": estimate_tokens(body_full, self.cfg.chars_per_token),
             },
-            raw_json=json.dumps(
-                {
-                    "submissions_row": ref.row,
-                    "header": header_text,
-                    "index_documents": [d.__dict__ for d in docs],
-                },
-                sort_keys=True,
-            ),
+            raw_json=self._raw_json(ref, f),
             parser_version=PARSER_VERSION,
         )
 
@@ -516,7 +548,7 @@ class EdgarAdapter:
     ) -> Iterator[RawItem]:
         start, end = ensure_utc(start, name="start"), ensure_utc(end, name="end")
         for ref, tickers, wins in self._gather(start, end):
-            if skip(ref.item_id):
+            if skip(self.item_id(ref)):
                 continue
             try:
                 item = self.fetch_filing(
@@ -581,7 +613,7 @@ class EdgarAdapter:
                     row={"feed_entry": {**e.__dict__, "updated": e.updated.isoformat()}},
                     feed_updated=e.updated,
                 )
-                if skip(ref.item_id):
+                if skip(self.item_id(ref)):
                     continue
                 if e.accession in found:  # co-registrant: merge tickers, keep earliest sighting
                     found[e.accession][1].update(tick)
@@ -618,7 +650,7 @@ class EdgarAdapter:
             refs = self.list_filings(cik)
             seen_at = self.clock()
             for ref in refs:
-                if ref.accepted_upper_bound < cutoff or skip(ref.item_id):
+                if ref.accepted_upper_bound < cutoff or skip(self.item_id(ref)):
                     continue
                 tick = set(self.universe.tickers_for(cik))
                 if ref.accession in found:
