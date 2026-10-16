@@ -145,7 +145,7 @@ def derive(
         log.info("derive skipped: lock held by another process")
         return {"skipped": True}
     try:
-        fp = lake_fingerprint(store, derive_inputs(cfg, linker))
+        fp = lake_fingerprint(store, derive_inputs(cfg, linker), cfg.dedupe.excluded_sources)
         fp_path = store.state_dir / "derive-fingerprint.json"
         quick = if_changed and not full_stories and not relink_sources
         if quick and fp_path.exists() and json.loads(fp_path.read_text())["fingerprint"] == fp:
@@ -183,11 +183,16 @@ def derive_inputs(cfg: AppConfig, linker: TickerLinker) -> str:
     )
 
 
-def lake_fingerprint(store: Store, inputs: str) -> str:
+def lake_fingerprint(store: Store, inputs: str, ignore_sources: list[str] | None = None) -> str:
     """Hash of the item lake's Parquet files (count, total size, newest mtime) + ``inputs``.
-    Items are append-only and written by atomic rename, so any new item changes it."""
+    Items are append-only and written by atomic rename, so any new item changes it.
+    ``ignore_sources`` (``dedupe.excluded_sources``: no stories, not scored live) are left out,
+    so a long 10-K backfill does not make every collect cycle re-derive; their links are made
+    by the backfill's own derive or the next derive that runs for other items."""
+    skip = {f"src={s}" for s in ignore_sources or []}
     n = size = newest = 0
-    for root, _, files in os.walk(store.items_dir):
+    for root, dirs, files in os.walk(store.items_dir):
+        dirs[:] = [d for d in dirs if d not in skip]
         for name in files:
             if name.endswith(".parquet"):
                 st = os.stat(os.path.join(root, name))

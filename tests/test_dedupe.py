@@ -354,3 +354,16 @@ def test_excluded_sources_get_no_stories_and_force_no_recompute(store, calendar,
     relink(store, linker, "r")
     assert rebuild_stories(store, cfg_x, linker.linker_id) == {"assigned": 0, "months_rewritten": 0}
     assert "k1" not in assignments(store)
+
+
+def test_fingerprint_ignores_excluded_sources(store, calendar, corpus):
+    from newsfeed.derive import lake_fingerprint
+
+    write(store, calendar, corpus[:2])
+    before = lake_fingerprint(store, "x", ["tenk"])
+    old = raw("k1", T0, text(30)).model_copy(update={"source": "tenk"})
+    write(store, calendar, [old])
+    assert lake_fingerprint(store, "x", ["tenk"]) == before
+    assert lake_fingerprint(store, "x") != before
+    write(store, calendar, corpus[2:3])
+    assert lake_fingerprint(store, "x", ["tenk"]) != before
