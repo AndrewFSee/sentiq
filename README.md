@@ -28,6 +28,7 @@ uv run newsfeed backfill --start 2025-01-01 --end 2026-01-01 --tickers AAPL,MSFT
 uv run newsfeed backfill --start 2024-10-13 --end 2026-10-12 --source news_api \
     --config config/variants/news_massive.yaml                               # Massive news
 uv run newsfeed backfill --start 2019-01-01 --end 2026-10-12 --source transcripts  # earnings calls
+uv run newsfeed backfill --start 2017-10-01 --end 2026-10-16 --source edgar_periodic  # 10-K / 10-Q
 ```
 Backfill is idempotent and resumable. Re-running skips stored items without re-downloading
 them, and failures are logged to the `failures` table and retried on the next run. Each run
@@ -211,6 +212,7 @@ uv run newsfeed event-ic --value surprise_vs_expectations [--control sentiment] 
 uv run newsfeed vol-test --feature-set <id>      # attention vs realised volatility
 uv run newsfeed item-study --feature-set <id>    # mean abnormal return by 8-K item code
 uv run newsfeed ic-detail --feature-set <id> --config <variant>   # daily IC, ICIR, Q5 - Q1
+uv run newsfeed doc-change                       # 10-K/10-Q change vs year-earlier report
 ```
 `event-ic` is the event-level IC of any LLM score field (optionally beyond another field);
 `vol-test` asks whether news attention predicts realised volatility beyond trailing volatility,
@@ -261,6 +263,7 @@ Other signal families (tests 7–8, no LLM direction involved):
 |---|---|
 | 7. 8-K count → realised volatility, beyond trailing vol / gap / volume | partial IC −0.001 (p 0.64): nothing |
 | 8. drift after 8-Ks by item code (15 codes × 1/5/20 days) | no BH discovery; large codes within a few bp of 0 |
+| 10. 10-K/10-Q change vs the year-earlier report ("Lazy Prices"), 20/60 days | IC −0.011 / −0.029 (n.s., wrong sign) |
 
 - The only effect that holds up is on **earnings 8-Ks**: ≈ +0.03 IC at 2–10 days, half of it
   overnight; hiding identities does not reduce it (no evidence of training-data recall), and

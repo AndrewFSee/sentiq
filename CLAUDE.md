@@ -748,3 +748,20 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   Items from a gap are still timed by when we first saw them, so nothing becomes earlier.
   Past gaps re-evaluated with `coverage --bridge-live-since 2026-10-12` (adds tagged
   `bridge-*` live rows for gaps ≤ 60 min; recorded rows are never edited). Gaps > 60 min stay.
+- 2026-10-16 10-K/10-Q backfill done: 19,294 filings fetched (18,535 distinct items; 0
+  failures, 14 truncated above 400k tokens), ~7 h with two processes at 3.5 req/s. The first
+  collect cycle that saw a new 8-K afterwards linked the whole 18.5k-item backlog (50 min, then
+  18 and 12 min); those cycles ran under the old rule, so live coverage has an 87-min gap on
+  10-16 10:03–11:30 UTC (pre-open) that the bridge cannot close (the polls in between were never
+  recorded). Quiet collect cycles now take ~13 s.
+- 2026-10-16 RESULT test 10 (document change, run a1d37f; 15,976 filings with a year-earlier
+  pair, 15.5k member-ticker events, 657 tickers): primary FAILS — cosine similarity close/
+  market IC h20 −0.011 (CI [−0.063, +0.048], p 0.69), h60 −0.029 (p 0.33): wrong sign, n.s.
+  10-K alone −0.010 / −0.051, 10-Q −0.029 / −0.010; Jaccard, MD&A and risk-factor similarity,
+  size-controlled and sector-adjusted versions all ≈ 0 (one secondary cell of ~60 at p < 0.05:
+  10-Q risk factors h60 +0.060, p 0.026 — chance level). Daily view: h20 +0.001, h60 +0.020
+  (CI [−0.006, +0.046]), Q5 − Q1 −19 / +55 bp, n.s. Caveat on the measure: median cosine is
+  0.997 (raw term frequencies are dominated by function words; no stop-word removal or TF-IDF,
+  as pre-registered), so the cosine ranks small differences; Jaccard on word sets avoids that
+  and is null too. Lazy Prices does not show up in the 2019–2026 S&P 500 (the paper's sample
+  ends before publication; the anomaly may have been arbitraged away).
