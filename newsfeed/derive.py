@@ -7,8 +7,10 @@ rebuilds across processes (``collect`` loop and a concurrent ``backfill``).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -127,9 +129,15 @@ def derive(
     wait: bool = False,
     embedder: Embedder | None = None,
     relink_sources: list[str] | None = None,
+    if_changed: bool = False,
 ) -> dict[str, Any]:
     """Relink, rebuild stories, compute text baselines for story founders. If another process
-    holds the lock, skip (or raise if ``wait``) -- every step is self-healing next cycle."""
+    holds the lock, skip (or raise if ``wait``) -- every step is self-healing next cycle.
+
+    ``if_changed`` (the collect loop): return ``{"unchanged": True}`` without touching anything
+    when the item lake and the derive inputs are exactly as at the last successful derive.
+    Each step otherwise scans every stored item (~2 min at 300k items), which made collect
+    cycles overrun their interval although almost every cycle ingests nothing."""
     lock = FileLock(store.state_dir / "derive.lock")
     if not lock.acquire():
         if wait:
@@ -137,16 +145,55 @@ def derive(
         log.info("derive skipped: lock held by another process")
         return {"skipped": True}
     try:
+        fp = lake_fingerprint(store, derive_inputs(cfg, linker))
+        fp_path = store.state_dir / "derive-fingerprint.json"
+        quick = if_changed and not full_stories and not relink_sources
+        if quick and fp_path.exists() and json.loads(fp_path.read_text())["fingerprint"] == fp:
+            return {"unchanged": True}
         linked = relink(store, linker, run_id, force_sources=relink_sources)
         stories = rebuild_stories(store, cfg.dedupe, linker.linker_id, full=full_stories)
-        return {
+        out = {
             "linked": linked,
             **stories,
             "baselines": derive_baselines(store, cfg, run_id),
             "embeddings": derive_embeddings(store, cfg, run_id, embedder),
         }
+        # taken before the steps ran: items written meanwhile change it, so they are derived
+        # next time
+        fp_path.write_text(json.dumps({"fingerprint": fp, "run_id": run_id}))
+        return out
     finally:
         lock.release()
+
+
+def derive_inputs(cfg: AppConfig, linker: TickerLinker) -> str:
+    """Everything besides the items that decides what derive produces."""
+    fc = cfg.features
+    return json.dumps(
+        [
+            linker.linker_id,
+            cfg.dedupe.model_dump(mode="json"),
+            str(fc.lm_dictionary),
+            fc.finbert,
+            fc.finbert_model,
+            fc.embeddings,
+            fc.embedding_model,
+        ],
+        sort_keys=True,
+    )
+
+
+def lake_fingerprint(store: Store, inputs: str) -> str:
+    """Hash of the item lake's Parquet files (count, total size, newest mtime) + ``inputs``.
+    Items are append-only and written by atomic rename, so any new item changes it."""
+    n = size = newest = 0
+    for root, _, files in os.walk(store.items_dir):
+        for name in files:
+            if name.endswith(".parquet"):
+                st = os.stat(os.path.join(root, name))
+                n, size, newest = n + 1, size + st.st_size, max(newest, st.st_mtime_ns)
+    blob = f"{inputs}|{n}|{size}|{newest}"
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
 def derive_baselines(store: Store, cfg: AppConfig, run_id: str) -> dict[str, int]:

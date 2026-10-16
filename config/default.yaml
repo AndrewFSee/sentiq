@@ -156,7 +156,8 @@ dedupe:
   max_chars: 5000
   window_hours: 72          # exact-text / near-dup matches only within this window (URL matches: any time)
   require_ticker_overlap: true
-  isolated_sources: [transcripts_qa, transcripts_prep, edgar_periodic]   # never join other sources' stories
+  isolated_sources: [transcripts_qa, transcripts_prep]   # section views never join the full call's story
+  excluded_sources: [edgar_periodic]  # 10-K/10-Q: no stories (standalone; backfill out of order)
   seed: 1
 
 scoring:

@@ -223,7 +223,9 @@ def rebuild_stories(
         FROM items i
         LEFT JOIN (SELECT item_id, list(DISTINCT ticker ORDER BY ticker) AS tickers
                    FROM item_tickers GROUP BY item_id) t USING (item_id)
-        """
+        WHERE i.source NOT IN (SELECT unnest($excluded))
+        """,
+        {"excluded": list(cfg.excluded_sources) or [""]},
     ).to_dicts()
     if not meta:
         return {"assigned": 0, "months_rewritten": 0}

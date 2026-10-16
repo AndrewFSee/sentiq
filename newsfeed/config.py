@@ -200,6 +200,10 @@ class DedupeConfig(_Strict):
     # items of these sources only match items of the same source (derived views of documents
     # stored under another source, e.g. transcript sections, must not join that story)
     isolated_sources: list[str] = Field(default_factory=list)
+    # sources left out of stories entirely (no item_story rows -> never founders, never scored
+    # by the founders-only planner): standalone documents such as 10-K / 10-Q full text, whose
+    # out-of-order backfill would otherwise force a full story recompute every collect cycle
+    excluded_sources: list[str] = Field(default_factory=list)
 
 
 class LinkPolicy(_Strict):

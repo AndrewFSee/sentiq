@@ -703,10 +703,20 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   by its title, risk factors "II-1A"; cross-referenced sections, e.g. banks' MD&A, are
   missing). Same header timing as 8-Ks (backfill lag 60 s). Raw HTML on D:
   (`sources.edgar_periodic.raw_dir`); ingest windows start 400 days before membership so each
-  filing has its year-earlier comparison. Isolated in dedupe; not in `collect.sources`; the
+  filing has its year-earlier comparison. Excluded from stories; not in `collect.sources`; the
   live scoring hook now plans only `collect.sources` (guard: a 10-K is ~100k tokens). Not added
   to `universe.source_only_linking` (that would change the linker id → full relink); analyses
   use the filer CIK from `meta.cik`.
+- 2026-10-16 Collector cycles had slowed from ~30 s (10-12) to ~2 min (each derive step scans
+  every stored item: relink 39 s, baselines 35 s, live-scoring plan 29 s, stories 22 s, even
+  when nothing was ingested), so poll gaps exceeded the 6-min live-coverage limit more often
+  (16 on 10-15). Fixes: the collect loop's derive returns `unchanged` when the item lake
+  fingerprint (Parquet count / size / newest mtime + derive inputs) matches the last
+  successful derive, and live scoring then runs only after API errors; `dedupe.excluded_
+  sources: [edgar_periodic]` keeps 10-K / 10-Q items out of stories (standalone documents;
+  their out-of-order backfill would otherwise force a full story recompute — ~8 min — every
+  cycle). Manual `derive` and backfills always run in full. Cycles with new 8-Ks still pay the
+  ~2-min scan; coverage gaps already recorded stay as they are (gaps are honest nulls).
 - 2026-10-15 Infra: Tiingo name searches and 404 (unknown ticker) answers are now cached in
   the price cache (`search/`, meta `not_found`); before, every eval repeated about a dozen
   throttled requests for unpriced names (~25 min, and 429s when runs overlapped).

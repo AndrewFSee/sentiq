@@ -163,7 +163,7 @@ def test_periodic_config_defaults_and_8k_untouched():
     assert per.forms == ["10-K", "10-Q"] and per.exhibit_type_prefixes == []
     assert per.ingest_margin_before_days == 400 and per.raw_dir is not None
     assert cfg.sources.edgar.forms == ["8-K", "8-K/A"] and cfg.sources.edgar.raw_dir is None
-    assert "edgar_periodic" in cfg.dedupe.isolated_sources
+    assert "edgar_periodic" in cfg.dedupe.excluded_sources
     assert "edgar_periodic" not in cfg.collect.sources
     assert 60 in cfg.eval.horizons
 

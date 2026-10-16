@@ -249,9 +249,15 @@ class Context:
         raise typer.BadParameter(f"unknown source {source!r}; choose from {SOURCES}")
 
     def derive_fn(
-        self, run_id: str, full: bool = False, relink_sources: list[str] | None = None
+        self,
+        run_id: str,
+        full: bool = False,
+        relink_sources: list[str] | None = None,
+        *,
+        if_changed: bool = False,
     ) -> Callable[[], dict[str, Any]]:
         linker = self.linker()
+        retry = self.store.state_dir / "live-scoring-retry"
 
         def fn() -> dict[str, Any]:
             out = run_derive(
@@ -261,9 +267,16 @@ class Context:
                 run_id,
                 full_stories=full,
                 relink_sources=relink_sources,
+                if_changed=if_changed,
             )
-            if self.cfg.scoring.live_in_collect and not out.get("skipped"):
+            # nothing new -> nothing to score, unless the last attempt hit API errors
+            new_or_retry = not out.get("unchanged") or retry.exists()
+            if self.cfg.scoring.live_in_collect and not out.get("skipped") and new_or_retry:
                 out["scoring"] = self.score_recent(run_id)
+                if out["scoring"].get("by_status", {}).get("error"):
+                    retry.touch()
+                else:
+                    retry.unlink(missing_ok=True)
             return out
 
         return fn
@@ -421,7 +434,12 @@ def collect(
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         adapters = {s: ctx.adapter(s) for s in srcs}
         collector = Collector(
-            cfg, ctx.store, adapters, ctx.calendar, run_id, derive_fn=ctx.derive_fn(run_id)
+            cfg,
+            ctx.store,
+            adapters,
+            ctx.calendar,
+            run_id,
+            derive_fn=ctx.derive_fn(run_id, if_changed=True),
         )
         try:
             collector.run(max_cycles=1 if once else max_cycles)
