@@ -720,3 +720,20 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
 - 2026-10-15 Infra: Tiingo name searches and 404 (unknown ticker) answers are now cached in
   the price cache (`search/`, meta `not_found`); before, every eval repeated about a dozen
   throttled requests for unpriced names (~25 min, and 429s when runs overlapped).
+- 2026-10-16 PRE-REGISTERED test 10 (document change, "Lazy Prices", Cohen-Malloy-Nguyen; no LLM
+  cost; written before any similarity was computed). Documents: `edgar_periodic` 10-K / 10-Q
+  originals. Pair each filing with the same CIK's filing of the same form whose period of
+  report is 300–430 days earlier (10-K vs the prior 10-K; 10-Q vs the same fiscal quarter's
+  10-Q a year earlier; closest to 365 days if several); no pair → no event. Text: full visible
+  text, lower-cased, words = runs of ≥ 2 letters (numbers dropped), term-frequency vectors.
+  Primary measure: cosine similarity of the two term-frequency vectors (high = little change).
+  Event = filing dated to the first 15:50 decision ≥ tradable_at, fanned out to the filer's
+  member tickers on that date, pre-holdout (label end before 2026-07-01). Primary: event-level
+  rank IC of cosine similarity > 0 (non-changers outperform) at close entry, h ∈ {20, 60},
+  market-adjusted; reported like earlier tests (nominal p per cell, ×2 for the two cells).
+  Secondary (no BH family): sector-adjusted; h ∈ {1, 5, 10}; 10-K and 10-Q separately; Jaccard
+  similarity of word sets; section-level cosine for MD&A (10-K item 7 / 10-Q "I-2") and risk
+  factors (10-K item 1A) where both filings have the section; semi-partial IC given log market
+  cap (stable large firms may change their filings less); the daily view (sessions with ≥ 10
+  filings: daily IC, ICIR, Q5 − Q1). Expectation from the paper (monthly portfolios, months of
+  drift): a small positive IC that grows with the horizon.
