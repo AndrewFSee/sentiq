@@ -44,6 +44,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["newsfeed"]
 
+# torch (finbert extra) from PyTorch's CUDA 12.8 index: PyPI only has CPU builds for Windows,
+# and the RTX 50xx (Blackwell) GPU needs CUDA >= 12.8. CUDA builds still run on CPU-only machines.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

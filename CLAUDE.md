@@ -782,3 +782,17 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   0.60. The test-4 null is not explained by misread sentiment; test 4b's type filter kept
   analyst_action, which is almost all non-events. News sample only, so it says nothing about
   8-K labels (H2 guidance); one labeller.
+- 2026-10-20 PRE-REGISTERED (descriptive, written before any 8-K hand label) 8-K label check:
+  `make_label_sample.py --source edgar --name edgar_8k_sample_v1 --counts guidance=60,earnings=40
+  --qualifying` (8-K founders with unmasked model relevance ≥ secondary, published before
+  2026-07-01, seed 2026; 99 8-K + one 8-K/A, 52 cut at the 6k-token cap, text = what the model
+  saw). Blind desk "8-K Label Desk" (claude.ai/artifact/HXR6qd5UChabPouMDxf6Xb, labels in db
+  collection `labels`): has_results, has_outlook (yes/no), event_type, direction, relevance.
+  Readouts: (1) precision of model guidance and model earnings vs the hand event type under the
+  same rubric; (2) share of model-guidance filings with reported results (has_results = yes),
+  i.e. how much of what the model calls guidance is results + outlook, which the rubric assigns
+  to earnings; (3) sentiment agreement as in the news check. Reading: H2's definition stays
+  frozen; this only describes what its events are. If fewer than half of model-guidance filings
+  are outlook-only (has_outlook yes, has_results no), H2 is reported as "8-Ks the model labels
+  guidance (mostly results + outlook)", not as guidance-only releases. Sample covers guidance
+  founders in general, not only H2's pure-guidance days (a superset). No BH family.
