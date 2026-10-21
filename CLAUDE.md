@@ -765,3 +765,20 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   as pre-registered), so the cosine ranks small differences; Jaccard on word sets avoids that
   and is null too. Lazy Prices does not show up in the 2019–2026 S&P 500 (the paper's sample
   ends before publication; the anomaly may have been arbitraged away).
+- 2026-10-20 RESULT hand labels vs Haiku 5.5 (news sample v1, 200 pairs, 25 per model event
+  type; labels exported from the News Label Desk db to `data/labeling/news_sample_v1_labels.csv`
+  (data/ is gitignored, so this file and the artifact db are the only copies);
+  `scripts/label_agreement.py`, stratified bootstrap, rates also reweighted to the population's
+  model event-type mix). **Sentiment is read well**: Spearman(model sentiment, hand direction)
+  +0.886 [+0.850, +0.914], AUC positive vs negative 0.996, 3-class kappa 0.83 with the model
+  neutral band |s| ≤ 0.1, one opposite sign (INTU "beat and raise" but the stock fell; the hand
+  label followed the price move). Masked: Spearman +0.775, AUC 0.988. **Relevance**: unmasked
+  exact 0.885 (kappa 0.88), "≥ secondary" agreement 0.945; masked clearly worse (exact 0.745,
+  "≥ secondary" 0.81), so masked feature sets filter on noisier relevance. **Event type**:
+  agreement 0.64 (weighted 0.665, kappa 0.59). Precise: other 0.96, legal 0.88, m&a 0.84,
+  earnings 0.80. Weak: analyst_action 0.08 (19/25 hand "other", Motley Fool picks citing Wall
+  Street targets, no event), guidance 0.48 (10/25 hand "earnings": results + outlook, which the
+  prompt itself assigns to earnings), macro 0.48 (11/25 "other": stock-pick lists), product
+  0.60. The test-4 null is not explained by misread sentiment; test 4b's type filter kept
+  analyst_action, which is almost all non-events. News sample only, so it says nothing about
+  8-K labels (H2 guidance); one labeller.

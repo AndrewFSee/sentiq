@@ -1,0 +1,201 @@
+id,relevance,event_type,direction,unsure,note,labeled_at
+n001,primary,earnings,neutral,False,preview; results not yet reported,2026-10-13T03:25:23.920Z
+n002,passing,analyst_action,positive,False,The article mentions AI-focused companies but doesn't explicitly mention Meta.,2026-10-13T03:26:00.499Z
+n003,primary,other,positive,True,no event,2026-10-13T11:22:10.414Z
+n004,passing,other,neutral,False,"no event, target not mentioned",2026-10-13T11:22:26.640Z
+n005,secondary,other,positive,False,buyback increase; one of five companies,2026-10-13T11:23:01.212Z
+n006,primary,guidance,neutral,False,weak guidance drove plunge; article is long-term bullish,2026-10-13T11:38:17.385Z
+n007,passing,m&a,neutral,False,article is about Intel; Nvidia is one of three investors,2026-10-13T14:20:22.267Z
+n008,secondary,m&a,neutral,False,Exxon is the seller of Esso France stake; price adjustment announced by buyer,2026-10-13T14:21:00.256Z
+n009,secondary,product,positive,False,AMD announcement; Dell PCs launched,2026-10-13T14:22:07.490Z
+n010,primary,guidance,negative,False,,2026-10-13T14:22:27.018Z
+n011,primary,other,positive,False,no event,2026-10-13T21:32:06.021Z
+n012,primary,earnings,neutral,False,"solid Q1, weak Q2 outlook",2026-10-13T21:32:45.283Z
+n013,passing,other,neutral,False,no event; target not mentioned,2026-10-13T21:33:45.885Z
+n014,passing,m&a,neutral,False,speculative bidder for Roku; one of five,2026-10-13T21:34:56.987Z
+n015,primary,legal_regulatory,negative,False,,2026-10-13T21:35:29.237Z
+n016,passing,other,positive,False,no event; stock-pick list,2026-10-13T21:36:01.562Z
+n017,primary,product,positive,False,FDA approvals treated as product news,2026-10-13T21:36:47.529Z
+n018,passing,other,neutral,False,no event; mentioned as a competitor,2026-10-13T21:37:56.255Z
+n019,primary,other,positive,False,no event; prediction piece,2026-10-13T21:38:27.310Z
+n020,passing,other,neutral,False,no event; third-party seller press release,2026-10-13T21:40:02.804Z
+n021,passing,other,neutral,False,no event; target not mentioned,2026-10-13T21:48:47.379Z
+n022,primary,guidance,negative,False,capex raise; stock fell 10%,2026-10-13T21:49:39.094Z
+n023,primary,other,positive,False,no event,2026-10-13T21:50:19.902Z
+n024,secondary,m&a,neutral,False,"subject is GFiber, an Alphabet unit; Alphabet keeps a minority stake",2026-10-13T21:51:29.639Z
+n025,passing,macro,neutral,False,target not mentioned; market wrap,2026-10-13T21:52:14.606Z
+n026,secondary,other,negative,False,no event; one of four REITs; SL Green singled out for leverage concerns,2026-10-13T21:53:14.612Z
+n027,primary,earnings,neutral,False,"beat, but China headwind",2026-10-13T21:53:58.451Z
+n028,primary,earnings,positive,False,retrospective on results and guidance,2026-10-13T21:54:52.550Z
+n029,primary,guidance,positive,False,2026 capex plan and capital returns,2026-10-13T21:55:14.875Z
+n030,passing,other,neutral,False,no event; target not mentioned,2026-10-14T00:05:48.877Z
+n031,passing,other,neutral,False,no event; target not mentioned,2026-10-14T00:06:30.304Z
+n032,secondary,m&a,neutral,False,speculation about Constellation as acquirer,2026-10-14T00:10:07.824Z
+n033,passing,other,neutral,False,no event; beginner guide,2026-10-15T01:21:50.563Z
+n034,passing,other,neutral,False,no event; target not mentioned,2026-10-15T01:22:16.349Z
+n035,passing,other,neutral,False,"no event; Citi analyst action is on BioNTech, not Citi",2026-10-15T01:23:07.695Z
+n036,passing,macro,neutral,False,valuation piece,2026-10-15T01:23:52.881Z
+n037,secondary,earnings,neutral,False,"Nvidia beat, but the index fell after the report",2026-10-15T01:26:14.211Z
+n038,primary,other,positive,False,no discrete Alphabet event; SpaceX stake and IPO,2026-10-15T01:26:47.477Z
+n039,passing,product,neutral,False,listed as launch partner,2026-10-15T16:47:42.211Z
+n040,secondary,product,positive,False,market wrap; Oracle AI compute deal,2026-10-15T16:48:18.361Z
+n041,passing,macro,neutral,False,target not mentioned; tariffs,2026-10-15T16:48:51.296Z
+n042,primary,m&a,neutral,False,agreed to be acquired by Sycamore,2026-10-15T16:49:31.366Z
+n043,primary,product,positive,False,fragrance licence renewal,2026-10-15T16:50:17.473Z
+n044,primary,other,neutral,False,no event; turnaround commentary,2026-10-15T16:50:58.785Z
+n045,primary,m&a,positive,False,OpenAI deal restructure and equity stake,2026-10-15T16:52:14.419Z
+n046,primary,legal_regulatory,negative,False,"DOJ antitrust suit is the dominant news, the overall sentiment of the article could be seen as neutral but the antitrust suit is the focus and that is negative.",2026-10-15T16:54:48.577Z
+n047,primary,earnings,positive,False,preview; results not yet reported,2026-10-15T16:55:17.129Z
+n048,passing,other,neutral,False,no event; Nvidia not in summary; AMD preview,2026-10-15T16:56:08.117Z
+n049,primary,legal_regulatory,negative,False,law firm investigation after loss and weak guidance,2026-10-15T17:00:53.258Z
+n050,secondary,m&a,positive,False,Netflix declined to match Paramount bid; JPM upgrade,2026-10-15T17:02:27.305Z
+n051,primary,other,neutral,False,buyback and dividends,2026-10-15T17:02:54.329Z
+n052,passing,macro,neutral,False,target not mentioned; market wrap,2026-10-15T17:03:17.005Z
+n053,passing,other,neutral,False,no event; target not mentioned,2026-10-15T17:10:17.387Z
+n054,primary,legal_regulatory,negative,False,,2026-10-15T17:10:52.035Z
+n055,primary,earnings,negative,False,preview; framed around a sales slump and tariffs,2026-10-15T17:11:27.871Z
+n056,passing,macro,neutral,False,Goldman sector view on Magnificent Seven,2026-10-15T17:11:57.856Z
+n057,primary,legal_regulatory,negative,False,,2026-10-15T17:12:52.999Z
+n058,passing,other,positive,False,no event; undervalued list,2026-10-15T17:13:36.001Z
+n059,passing,macro,neutral,False,target not mentioned; market report,2026-10-15T17:14:09.283Z
+n060,primary,earnings,positive,False,,2026-10-15T17:14:27.808Z
+n061,primary,earnings,positive,False,,2026-10-15T17:14:39.925Z
+n062,passing,product,neutral,False,Vertex is CRISPR's partner on Casgevy,2026-10-15T17:16:06.976Z
+n063,primary,m&a,neutral,False,small asset acquisition from insolvent firm,2026-10-15T17:17:06.048Z
+n064,primary,other,neutral,False,no event; comparison piece favoring GE Vernova,2026-10-15T17:18:30.594Z
+n065,primary,earnings,negative,False,miss plus guidance cut,2026-10-15T17:19:32.084Z
+n066,primary,legal_regulatory,negative,False,,2026-10-15T21:55:37.695Z
+n067,passing,other,neutral,False,no event; target not mentioned,2026-10-15T21:55:59.238Z
+n068,passing,other,neutral,False,no event; ETF article,2026-10-15T21:56:39.887Z
+n069,primary,legal_regulatory,negative,False,,2026-10-15T21:57:07.731Z
+n070,passing,macro,neutral,False,target not mentioned; market report,2026-10-15T21:58:01.504Z
+n071,passing,other,neutral,False,no event; target not mentioned,2026-10-15T21:58:29.408Z
+n072,primary,guidance,neutral,False,capex plan; headwind vs strong cash flow,2026-10-15T21:59:17.148Z
+n073,primary,legal_regulatory,negative,False,,2026-10-15T21:59:40.373Z
+n074,primary,m&a,neutral,False,speculative; author suggests Disney buy Build-A-Bear,2026-10-15T22:00:21.588Z
+n075,primary,earnings,positive,False,,2026-10-15T22:00:46.568Z
+n076,primary,m&a,positive,False,completed site acquisition plus capacity expansion,2026-10-17T13:06:03.253Z
+n077,passing,other,neutral,False,no event; target not mentioned,2026-10-17T13:06:35.589Z
+n078,passing,earnings,neutral,False,upcoming earnings mention in market preview,2026-10-17T13:07:05.565Z
+n079,passing,macro,neutral,False,target not mentioned; industry shift to memory,2026-10-17T13:10:11.471Z
+n080,secondary,other,positive,False,no company event; Ackman bought Amazon,2026-10-17T13:10:34.337Z
+n081,secondary,macro,positive,False,"Goldman index target raise, not a Micron rating",2026-10-17T13:11:26.345Z
+n082,primary,other,neutral,False,"sales report, not earnings; mixed outlook",2026-10-17T13:11:58.437Z
+n083,primary,earnings,negative,False,beat but lowered outlook,2026-10-17T13:13:13.245Z
+n084,secondary,earnings,positive,False,market wrap,2026-10-17T13:15:09.231Z
+n085,primary,product,positive,False,new UK fund launch,2026-10-17T13:15:37.754Z
+n086,passing,product,positive,False,one-sentence Dell mention in a CoreWeave story,2026-10-17T13:17:02.729Z
+n087,secondary,other,neutral,False,no event; valuation comparison with Tesla,2026-10-17T13:17:35.937Z
+n088,passing,other,neutral,False,no event; Google search changes cited in Reddit suit,2026-10-17T13:18:18.155Z
+n089,primary,m&a,positive,False,selling mobile games business,2026-10-17T13:19:10.648Z
+n090,secondary,legal_regulatory,neutral,False,suit is against Activision over the Microsoft deal,2026-10-17T13:19:44.013Z
+n091,primary,m&a,positive,False,sale process and bids,2026-10-17T13:20:00.689Z
+n092,passing,other,neutral,False,no event; ETF distribution notice,2026-10-17T13:20:28.931Z
+n093,passing,other,neutral,False,no event; target not mentioned,2026-10-17T13:21:02.565Z
+n094,primary,guidance,positive,False,2026 outlook and $4B buyback,2026-10-17T13:21:24.875Z
+n095,primary,other,negative,False,no event; article favors CAE,2026-10-17T13:22:14.593Z
+n096,primary,other,positive,False,no event; dividend-stock pitch,2026-10-17T13:26:43.124Z
+n097,secondary,other,positive,False,no event; one of three picks,2026-10-17T13:27:39.650Z
+n098,secondary,product,positive,False,Joby article; Dubai air taxi launch with Uber,2026-10-17T13:28:08.812Z
+n099,secondary,other,positive,False,no event; one of several picks,2026-10-17T13:28:35.453Z
+n100,primary,legal_regulatory,negative,False,,2026-10-17T13:29:15.012Z
+n101,primary,other,positive,False,speculative stock split; one of two companies,2026-10-17T13:29:43.361Z
+n102,passing,macro,neutral,False,target not mentioned; market report,2026-10-17T13:30:23.921Z
+n103,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-17T13:31:03.876Z
+n104,primary,product,positive,False,streaming app merger and ESPN launch,2026-10-17T13:32:36.056Z
+n105,primary,product,positive,False,FDA approval; Sanofi partner,2026-10-17T13:33:11.996Z
+n106,primary,legal_regulatory,negative,False,,2026-10-17T13:33:20.677Z
+n107,passing,other,neutral,False,no event; target not mentioned,2026-10-17T13:33:46.846Z
+n108,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-17T13:34:17.082Z
+n109,primary,legal_regulatory,negative,False,,2026-10-17T13:34:30.204Z
+n110,passing,macro,negative,False,AI trade weakness; Meta in a list,2026-10-17T13:34:51.884Z
+n111,primary,legal_regulatory,negative,False,,2026-10-17T13:35:09.504Z
+n112,primary,earnings,positive,False,,2026-10-17T13:35:24.170Z
+n113,secondary,legal_regulatory,negative,False,Freeport named in one sentence of a Coupang release,2026-10-17T13:37:04.062Z
+n114,primary,earnings,positive,False,,2026-10-17T13:37:20.342Z
+n115,secondary,earnings,positive,False,several companies covered,2026-10-17T13:37:44.708Z
+n116,passing,product,neutral,False,target not mentioned in summary,2026-10-17T13:38:14.337Z
+n117,passing,other,neutral,False,no event; ETF article,2026-10-17T13:38:40.140Z
+n118,passing,other,neutral,False,no event; one of several possible entrants,2026-10-17T15:03:02.228Z
+n119,secondary,earnings,neutral,False,preview; options-implied move,2026-10-17T15:17:26.689Z
+n120,passing,other,neutral,False,no event; target not mentioned,2026-10-17T15:17:46.090Z
+n121,primary,earnings,negative,False,miss plus guidance below consensus,2026-10-17T15:18:24.602Z
+n122,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-17T15:18:46.160Z
+n123,primary,legal_regulatory,negative,False,law firm release after outlook drop,2026-10-17T15:19:22.791Z
+n124,primary,earnings,negative,False,"beat, weak Q4 outlook",2026-10-17T15:19:46.719Z
+n125,passing,product,positive,False,turbine order mentioned in SoftBank story,2026-10-17T15:20:53.791Z
+n126,primary,earnings,negative,False,"results, soft guidance, and recall",2026-10-17T15:21:11.952Z
+n127,secondary,m&a,neutral,False,"subject is Esso SAF; Exxon is the seller, same deal as n008",2026-10-17T15:22:06.449Z
+n128,passing,product,neutral,False,partner compatibility mention,2026-10-17T15:22:33.905Z
+n129,primary,m&a,positive,False,Canada divestiture,2026-10-17T15:23:41.105Z
+n130,secondary,guidance,positive,False,one of four companies raising guidance,2026-10-17T15:24:07.114Z
+n131,passing,other,neutral,False,no event; target not mentioned,2026-10-17T15:24:26.725Z
+n132,passing,other,neutral,False,no event; competitor news,2026-10-17T15:24:49.000Z
+n133,primary,earnings,negative,False,mixed Q4 and weak FY26 guidance,2026-10-17T15:25:10.741Z
+n134,primary,legal_regulatory,negative,False,,2026-10-18T16:22:09.380Z
+n135,primary,earnings,positive,False,,2026-10-18T16:24:30.435Z
+n136,secondary,guidance,negative,False,market wrap; lowered profit guidance,2026-10-18T16:25:00.825Z
+n137,primary,other,positive,False,no event; one of two stocks,2026-10-18T16:25:27.804Z
+n138,primary,legal_regulatory,negative,False,,2026-10-18T16:25:47.376Z
+n139,primary,analyst_action,positive,False,,2026-10-18T16:26:13.080Z
+n140,passing,other,neutral,False,no event; target not mentioned,2026-10-18T16:30:23.390Z
+n141,passing,earnings,neutral,False,preview; one of several reporters,2026-10-18T16:30:52.116Z
+n142,passing,other,positive,False,no event; one of five dividend picks,2026-10-18T16:31:28.204Z
+n143,primary,m&a,negative,False,speculative SpaceX merger; analyst warns of 20-25% value loss,2026-10-18T16:32:36.942Z
+n144,passing,other,neutral,False,no event; target not mentioned,2026-10-18T16:33:22.297Z
+n145,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-18T16:33:52.788Z
+n146,passing,other,neutral,False,no event; compatibility mention,2026-10-18T16:35:02.987Z
+n147,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-18T16:35:22.414Z
+n148,primary,guidance,positive,False,free cash flow guidance and dividend,2026-10-18T16:36:03.971Z
+n149,primary,other,positive,False,free cash flow guidance and dividend,2026-10-18T16:36:33.294Z
+n150,primary,other,positive,False,capital return plan,2026-10-18T16:36:48.451Z
+n151,passing,macro,neutral,False,market report,2026-10-18T16:37:34.474Z
+n152,primary,legal_regulatory,negative,False,ad review board recommendation,2026-10-18T16:38:00.369Z
+n153,primary,guidance,positive,False,2028 targets plus dividend and buyback,2026-10-18T16:39:05.038Z
+n154,secondary,other,positive,False,no event; one of three dividend picks,2026-10-18T16:39:44.630Z
+n155,secondary,m&a,neutral,False,Netflix is one bidder for WBD,2026-10-18T16:40:24.091Z
+n156,passing,m&a,neutral,False,spin-off mentioned in 3M article,2026-10-18T16:41:22.172Z
+n157,passing,other,neutral,False,no event; exchange listing list,2026-10-18T16:42:45.885Z
+n158,primary,other,positive,False,no event,2026-10-18T16:43:30.072Z
+n159,secondary,m&a,neutral,False,speculative; one of three possible GameStop targets,2026-10-18T16:45:02.779Z
+n160,passing,other,neutral,False,no event; target not mentioned,2026-10-18T16:45:18.072Z
+n161,primary,legal_regulatory,negative,False,,2026-10-18T16:45:58.901Z
+n162,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-18T16:46:31.115Z
+n163,secondary,legal_regulatory,positive,False,favorable DOJ ruling; market wrap,2026-10-18T16:46:53.876Z
+n164,primary,legal_regulatory,negative,False,,2026-10-18T16:47:14.603Z
+n165,primary,earnings,neutral,False,earnings down 35% but fundamentals strong,2026-10-18T16:47:54.356Z
+n166,secondary,other,positive,False,no event; one of three picks,2026-10-18T16:48:39.600Z
+n167,secondary,product,positive,False,Hollister collection launch at Target,2026-10-18T16:49:05.975Z
+n168,passing,other,neutral,False,no event; target not mentioned,2026-10-18T16:49:24.919Z
+n169,primary,m&a,positive,False,,2026-10-18T16:51:25.349Z
+n170,secondary,legal_regulatory,negative,False,reminder covering three companies,2026-10-18T16:52:29.440Z
+n171,primary,other,positive,False,"no single event; outlook, cost cuts, Ketjen sale",2026-10-18T16:52:54.024Z
+n172,passing,other,positive,False,no event; one of 11 picks,2026-10-18T16:53:33.293Z
+n173,primary,guidance,neutral,False,capex guidance raised; investor concern vs returns,2026-10-18T16:53:55.018Z
+n174,primary,earnings,negative,False,beat plus capex guidance; stock fell,2026-10-18T16:54:14.452Z
+n175,primary,product,positive,False,partnership launch,2026-10-18T16:54:45.928Z
+n176,secondary,m&a,neutral,False,Informatica shareholder investigation; Salesforce is acquirer,2026-10-18T17:18:38.084Z
+n177,passing,product,neutral,False,Microsoft is a Nebius customer,2026-10-18T17:29:19.648Z
+n178,secondary,other,positive,False,no event; Ackman holding,2026-10-18T17:29:41.592Z
+n179,primary,earnings,negative,False,loss and weak guidance,2026-10-18T17:30:13.442Z
+n180,primary,earnings,negative,False,"beat and raise, but stock fell 18.6%",2026-10-18T17:30:39.216Z
+n181,secondary,other,positive,False,no event; one of three picks,2026-10-18T17:31:36.248Z
+n182,passing,macro,positive,False,software sector view,2026-10-18T17:32:02.754Z
+n183,primary,earnings,positive,False,results and guidance,2026-10-18T17:33:54.298Z
+n184,passing,other,neutral,False,no event; target not mentioned,2026-10-18T17:34:21.579Z
+n185,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-18T17:34:36.356Z
+n186,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-18T17:34:42.030Z
+n187,passing,other,neutral,False,no event; target not mentioned in summary,2026-10-18T17:35:46.998Z
+n188,primary,other,neutral,False,summary is boilerplate; judged from title only,2026-10-18T17:36:05.285Z
+n189,primary,earnings,positive,False,,2026-10-18T17:36:17.646Z
+n190,primary,guidance,negative,False,$200B capex plan,2026-10-18T17:36:36.813Z
+n191,passing,macro,neutral,False,market report,2026-10-18T17:36:57.218Z
+n192,primary,m&a,positive,False,acquisition strategy; no discrete deal,2026-10-18T17:37:36.658Z
+n193,primary,earnings,negative,False,stock reaction after earnings,2026-10-18T17:37:53.129Z
+n194,primary,other,positive,False,no event; one of two picks,2026-10-18T17:38:21.200Z
+n195,passing,other,neutral,False,no event; target not mentioned,2026-10-18T17:38:53.065Z
+n196,primary,earnings,neutral,False,earnings date announcement,2026-10-18T17:39:11.233Z
+n197,primary,other,neutral,False,debt exchange offers,2026-10-18T17:39:32.034Z
+n198,passing,other,neutral,False,Intel is the precedent in a Micron article,2026-10-18T17:39:46.778Z
+n199,primary,other,positive,False,KKR investment and buyback increase,2026-10-18T17:40:01.396Z
+n200,passing,macro,neutral,False,target not mentioned; market wrap,2026-10-18T17:40:19.571Z
