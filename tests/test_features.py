@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -127,6 +128,18 @@ def test_feature_set_id_tracks_config_and_sources(env):
     )
     assert feature_set_id(other, src) != a
     assert feature_set_id(env.cfg, src.__class__(**{**src.__dict__, "llm_prompt_hash": "x"})) != a
+    # machine paths are not (the project moved from C:\Users\Andrew to C:\Users\andre)
+    moved = env.cfg.model_copy(
+        update={
+            "features": env.cfg.features.model_copy(
+                update={
+                    "embedding_cache": Path("Z:/elsewhere/models"),
+                    "lm_dictionary": Path("Z:/elsewhere/lm.csv"),
+                }
+            )
+        }
+    )
+    assert feature_set_id(moved, src) == a
     # the universe is part of the id (a 12-ticker and an S&P 500 build must not collide)
     small = env.cfg.model_copy(
         update={"universe": env.cfg.universe.model_copy(update={"tickers": ["AAPL"]})}

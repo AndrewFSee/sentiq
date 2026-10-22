@@ -105,6 +105,19 @@ def test_file_lock_is_exclusive_and_breaks_stale(tmp_path):
     stale.release()
 
 
+def test_file_lock_holder_heartbeat_keeps_a_long_job_from_looking_stale(tmp_path):
+    p = tmp_path / "x.lock"
+    holder = FileLock(p, stale_after=0.4)  # touched every 0.1 s while held
+    assert holder.acquire()
+    time.sleep(1.2)  # three times the stale age: without the heartbeat this would be broken
+    assert not FileLock(p, stale_after=0.4).acquire()
+    holder.release()
+    assert not p.exists() and not holder._beat.is_alive()
+    late = FileLock(p, stale_after=0.4)
+    assert late.acquire()
+    late.release()
+
+
 def test_view_prefers_live_row_over_backfill_duplicate(store: Store, calendar):
     """If a race stores both a backfill and a live copy, the truthful live timing wins."""
     t = datetime(2026, 7, 28, 15, tzinfo=UTC)

@@ -31,6 +31,7 @@ import logging
 import os
 import platform
 import subprocess
+import threading
 import time
 import uuid
 from collections import defaultdict
@@ -316,13 +317,25 @@ def write_table_atomic(table: pa.Table, path: Path) -> None:
 
 
 class FileLock:
-    """Cross-process exclusive lock via O_EXCL lock file. Stale locks (older than ``stale_after``
-    seconds, e.g. from a killed process) are broken."""
+    """Cross-process exclusive lock via O_EXCL lock file. Stale locks (not touched for
+    ``stale_after`` seconds, e.g. from a killed process) are broken. The holder touches the file
+    every ``stale_after / 4`` seconds (at most every 60 s) from a daemon thread, so a long job
+    is never taken for dead: on 2026-10-21 a 35-min relink lost its lock to the collector,
+    which started a second full relink next to it (two ~15 GB processes on a 16 GB laptop).
+    PID liveness isn't used: on Windows ``os.kill(pid, 0)`` terminates the process."""
 
     def __init__(self, path: Path, stale_after: float = 1800.0) -> None:
         self.path = path
         self.stale_after = stale_after
         self._held = False
+        self._stop: threading.Event | None = None
+        self._beat: threading.Thread | None = None
+
+    def _heartbeat(self, stop: threading.Event) -> None:
+        every = min(60.0, self.stale_after / 4)
+        while not stop.wait(every):
+            with contextlib.suppress(OSError):
+                os.utime(self.path, None)
 
     def acquire(self) -> bool:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -343,11 +356,19 @@ class FileLock:
             with os.fdopen(fd, "w") as f:
                 f.write(json.dumps({"pid": os.getpid(), "at": utcnow().isoformat()}))
             self._held = True
+            self._stop = threading.Event()
+            self._beat = threading.Thread(
+                target=self._heartbeat, args=(self._stop,), daemon=True, name="lock-heartbeat"
+            )
+            self._beat.start()
             return True
         return False
 
     def release(self) -> None:
         if self._held:
+            if self._stop is not None and self._beat is not None:
+                self._stop.set()
+                self._beat.join(timeout=5)
             with contextlib.suppress(FileNotFoundError):
                 self.path.unlink()
             self._held = False

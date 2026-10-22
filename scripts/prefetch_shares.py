@@ -24,7 +24,7 @@ def main() -> None:
         timeout=e.timeout_seconds,
         max_retries=e.max_retries,
     )
-    ciks = sorted({int(c) for c in PitUniverse.load(cfg.universe.pit_dir).members["cik"]})
+    ciks = sorted({int(c) for c in PitUniverse.load_for(cfg.universe).members["cik"]})
     empty, failed = [], []
     for i, cik in enumerate(ciks, 1):
         try:

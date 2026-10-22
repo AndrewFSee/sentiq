@@ -827,3 +827,35 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   (ModernBERT-base, 8k news rows, 256 tokens, 1.4 min): vs Haiku on news test sentiment r 0.72,
   relevance 87%, event type 72%; vs hand labels sentiment Spearman 0.71 (Haiku 0.89), event
   type 62.5% (Haiku 64%).
+- 2026-10-21 (user decision) NASDAQ-100 EXTRAS: `universe.extra_members` in default.yaml = the
+  Nasdaq-100 members (as of 2026-10-21) that are not in the S&P 500 and file 8-Ks: SPCX
+  (SpaceX, listed 2026-06-11), ALNY, ALAB (2024-03-20), CRWV (2025-03-28), MELI, MSTR, RKLB
+  (from the 2021-08-25 SPAC merger, not the SPAC listing), SHOP (8-Ks only since 2025). NOT
+  point-in-time: picked by today's index, members from max(2019-01-01, listing) on —
+  survivorship bias, exploratory use only. The seven 6-K filers (ARM, ASML, CCEP, FER, NBIS,
+  PDD, TRI) are left out (EDGAR source reads 8-Ks). Added in memory by
+  `PitUniverse.load_for` (never written to `sp500_members.parquet`); `UniverseConfig.hashable()`
+  and `universe_sig` ignore an empty list, so the frozen S&P 500 variants (H1/H2, tests 1–10)
+  keep their samples and ids. Backfills: 569 8-Ks (2018-10 → 2026-10-21, 4 req/s) and 128
+  calls from defeatbeta's *current* version (not the test-5 pin), all `backfill` rule; share
+  counts fetched. Full relink: 165,139 items, stories recomputed (97 month files) — S&P
+  stories can differ only where an item now links an extra. Scoring not run yet (dry-run →
+  user OK). News (Massive) not backfilled for the extras.
+- 2026-10-21 FEATURE-SET IDS: they hashed the absolute `features.embedding_cache` path, so ids
+  depended on the machine (old laptop: C:\Users\Andrew\…); now excluded. Ids also change
+  whenever FeaturesConfig gains a field, and 8990ee7a9775 predates the universe joining the
+  hash (10-12), so recorded ids are build fingerprints, not reproducible names. Checked
+  against the `experiments` records: today's sp500_noemb (H1/H2) and transcripts_masked (test
+  5) feature settings equal the recorded ones except fields added later at neutral defaults
+  (None / [] / False). The holdout look rebuilds features anyway; it is pinned by config file
+  + model + prompt hash.
+- 2026-10-21 DERIVE LOCK: a 35-min manual relink outlived `FileLock.stale_after` (30 min); the
+  collector broke the lock and started a second full relink (two ~15 GB processes, commit
+  63/63.5 GB on this 16 GB laptop). Fix: the holder touches the lock file every
+  min(60 s, stale_after/4) from a daemon thread; a killed process still goes stale. RAM is the
+  binding constraint until the 32 GB upgrade: run heavy jobs (full derive, training,
+  backfill + its derive) one at a time. Distillation trainer now keeps tokens as flat int32
+  arrays (Python int lists of 148k documents were paged out and starved the GPU at 17%), reads
+  only the selected sources lazily, pre-cuts texts to 8 chars/token and caches tokenization in
+  `data/distill/v1/tok_cache/`; GPU memory capped at 92% (Windows spills to system RAM instead
+  of raising OOM; 2×2048-token batches = 6k tok/s, 4×2048 thrashed at 1k tok/s).

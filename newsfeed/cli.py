@@ -160,7 +160,7 @@ class Context:
             d = self.cfg.universe.pit_dir
             if not (d / "sp500_members.parquet").exists():
                 raise typer.BadParameter(f"no PIT universe in {d}; run `newsfeed universe build`")
-            self._pit = PitUniverse.load(d)
+            self._pit = PitUniverse.load_for(self.cfg.universe)
         return self._pit
 
     def universe(self, full: bool = False) -> Universe:
@@ -192,7 +192,10 @@ class Context:
         import hashlib
 
         p = self.cfg.universe.pit_dir / "sp500_members.parquet"
-        return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+        h = hashlib.sha256(p.read_bytes())
+        if self.cfg.universe.extra_members:  # absent -> same signature as before extras existed
+            h.update(json.dumps(self.cfg.universe.hashable()["extra_members"]).encode())
+        return h.hexdigest()[:16]
 
     def cik_windows(
         self, start: datetime, end: datetime, before_days: int | None = None
@@ -846,6 +849,8 @@ def universe_cmd(
         f"{m['ticker'].n_unique()} tickers, {m['cik'].n_unique()} CIKs, "
         f"{m.filter(pl.col('end').is_null()).height} current members"
     )
+    for e in uc.extra_members:
+        typer.echo(f"  + extra ({e.index}, not PIT): {e.ticker} {e.name} from {e.start}")
 
 
 @app.command("coverage")

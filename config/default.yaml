@@ -18,6 +18,22 @@ universe:
   ingest_margin_before_days: 90
   ingest_margin_after_days: 30
   name_linking: aliases_only        # names of 500+ companies collide with ordinary words
+  # Nasdaq-100 members not in the S&P 500 that file 8-Ks (user decision 2026-10-21). NOT
+  # point-in-time: picked by the index on 2026-10-21 and treated as members from the later of
+  # 2019-01-01 and their listing (survivorship bias). The frozen S&P 500 variants (H1/H2 etc.)
+  # don't list them, so their samples and ids are unchanged. 6-K filers (ARM, ASML, CCEP, FER,
+  # NBIS, PDD, TRI) are left out: their reports are 6-Ks, which the EDGAR source doesn't read.
+  extra_members:
+    - {ticker: SPCX, cik: 1181412, name: SpaceX, start: "2026-06-11", sector: Industrials}
+    - {ticker: ALNY, cik: 1178670, name: Alnylam Pharmaceuticals, start: "2019-01-01", sector: Health Care}
+    - {ticker: ALAB, cik: 1736297, name: Astera Labs, start: "2024-03-20", sector: Information Technology}
+    - {ticker: CRWV, cik: 1769628, name: CoreWeave, start: "2025-03-28", sector: Information Technology}
+    - {ticker: MELI, cik: 1099590, name: MercadoLibre, start: "2019-01-01", sector: Consumer Discretionary}
+    - {ticker: MSTR, cik: 1050446, name: Strategy, start: "2019-01-01", sector: Information Technology}
+    - {ticker: RKLB, cik: 1819994, name: Rocket Lab, start: "2021-08-25", sector: Industrials,
+       note: "listed via SPAC (Vector Acquisition); start = merger close, not the SPAC listing"}
+    - {ticker: SHOP, cik: 1594805, name: Shopify, start: "2019-01-01", sector: Information Technology,
+       note: "files 10-K/8-K only since 2025; 40-F/6-K before, so few 8-Ks pre-2025"}
   # Original development universe (static mode); in sp500_pit mode an optional subset only.
   tickers: []
   # static dev set was: [AAPL, MSFT, NVDA, AMZN, GOOGL, GOOG, META, JPM, XOM, JNJ, WMT, BRK-B]

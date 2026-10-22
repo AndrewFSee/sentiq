@@ -16,6 +16,7 @@ config.json, and the weights with --save-model. No API calls.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -59,39 +60,101 @@ class Student(nn.Module):
         return torch.tanh(self.sent(pooled)).squeeze(-1), self.rel(pooled), self.evt(pooled)
 
 
-def batches(lengths: np.ndarray, size: int, shuffle: bool, rng: random.Random) -> list[list[int]]:
-    """Length-grouped batches: sort within chunks of 50 batches so padding stays small."""
+def batches(
+    lengths: np.ndarray,
+    size: int,
+    shuffle: bool,
+    rng: random.Random,
+    max_tokens: int | None = None,
+) -> list[list[int]]:
+    """Length-grouped batches: sort within chunks of 2,000 rows so padding stays small. A batch
+    holds at most ``size`` rows and, with ``max_tokens``, at most that many padded tokens
+    (rows x longest row), so short news and 2k-token 8-Ks both fill the GPU."""
     idx = list(range(len(lengths)))
     if shuffle:
         rng.shuffle(idx)
     out = []
-    chunk = size * 50
-    for s in range(0, len(idx), chunk):
-        part = sorted(idx[s : s + chunk], key=lambda i: lengths[i])
-        out += [part[k : k + size] for k in range(0, len(part), size)]
+    for s in range(0, len(idx), 2000):
+        cur: list[int] = []
+        for i in sorted(idx[s : s + 2000], key=lambda i: lengths[i]):
+            width = lengths[i]  # ascending order: the newest row is the widest
+            if cur and (len(cur) >= size or (max_tokens and (len(cur) + 1) * width > max_tokens)):
+                out.append(cur)
+                cur = []
+            cur.append(i)
+        if cur:
+            out.append(cur)
     if shuffle:
         rng.shuffle(out)
     return out
 
 
-def collate(ids: list[list[int]], rows: list[int], pad: int, dev: str) -> tuple:
-    width = max(len(ids[i]) for i in rows)
+class Tokens:
+    """Ragged token ids as one flat int32 array + offsets: ~4 bytes per token instead of the
+    ~36 of Python int lists (148k documents as lists took several GB and got paged out on a
+    16 GB laptop, starving the GPU)."""
+
+    def __init__(self, flat: np.ndarray, offs: np.ndarray) -> None:
+        self.flat, self.offs = flat, offs
+        self.lengths = np.diff(offs)
+
+    def __len__(self) -> int:
+        return len(self.lengths)
+
+    def __getitem__(self, i: int) -> np.ndarray:
+        return self.flat[self.offs[i] : self.offs[i + 1]]
+
+    def subset(self, idx: np.ndarray) -> Tokens:
+        parts = [self[int(i)] for i in idx]
+        offs = np.zeros(len(parts) + 1, np.int64)
+        offs[1:] = np.cumsum([len(p) for p in parts])
+        flat = np.concatenate(parts) if parts else np.zeros(0, np.int32)
+        return Tokens(flat, offs)
+
+
+def tokenize(tok, texts: list[str], max_len: int, cache: Path | None) -> Tokens:
+    """Tokenize in chunks (texts pre-cut to 8 characters per token, far above the ~4 a
+    tokenizer averages, so nothing within max_len is lost) and cache to ``cache``."""
+    if cache is not None and cache.exists():
+        z = np.load(cache)
+        if len(z["offs"]) == len(texts) + 1:
+            return Tokens(z["flat"], z["offs"])
+    chunks, lens = [], []
+    for s in range(0, len(texts), 2000):
+        part = [t[: max_len * 8] for t in texts[s : s + 2000]]
+        for ids in tok(part, truncation=True, max_length=max_len)["input_ids"]:
+            chunks.append(np.asarray(ids, np.int32))
+            lens.append(len(ids))
+    offs = np.zeros(len(lens) + 1, np.int64)
+    offs[1:] = np.cumsum(lens)
+    out = Tokens(np.concatenate(chunks) if chunks else np.zeros(0, np.int32), offs)
+    if cache is not None:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(cache, flat=out.flat, offs=out.offs)
+    return out
+
+
+def collate(ids: Tokens, rows: list[int], pad: int, dev: str) -> tuple:
+    width = int(max(ids.lengths[i] for i in rows))
     x = torch.full((len(rows), width), pad, dtype=torch.long)
     m = torch.zeros((len(rows), width), dtype=torch.long)
     for j, i in enumerate(rows):
-        x[j, : len(ids[i])] = torch.tensor(ids[i])
-        m[j, : len(ids[i])] = 1
+        n = int(ids.lengths[i])
+        x[j, :n] = torch.from_numpy(ids[i].astype(np.int64))
+        m[j, :n] = 1
     return x.to(dev, non_blocking=True), m.to(dev, non_blocking=True)
 
 
 @torch.no_grad()
-def predict(model: Student, ids: list[list[int]], pad: int, dev: str, bs: int) -> dict:
+def predict(
+    model: Student, ids: Tokens, pad: int, dev: str, bs: int, max_tokens: int | None
+) -> dict:
     model.eval()
-    lengths = np.array([len(t) for t in ids])
+    lengths = ids.lengths
     sent = np.zeros(len(ids), np.float32)
     rel = np.zeros((len(ids), len(RELEVANCE)), np.float32)
     evt = np.zeros((len(ids), len(EVENT_TYPES)), np.float32)
-    for rows in batches(lengths, bs, False, random.Random(0)):
+    for rows in batches(lengths, bs, False, random.Random(0), max_tokens):
         x, m = collate(ids, rows, pad, dev)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=dev == "cuda"):
             s, r, e = model(x, m)
@@ -154,6 +217,7 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=5e-5)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--grad-accum", type=int, default=2)
+    ap.add_argument("--batch-tokens", type=int, default=0, help="padded-token cap per batch")
     ap.add_argument("--sent-weight", type=float, default=4.0, help="MSE weight vs the two CEs")
     ap.add_argument("--train-splits", default="train")
     ap.add_argument("--limit-train", type=int, default=0, help="subsample training rows (smoke)")
@@ -166,33 +230,53 @@ def main() -> None:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
+    if dev == "cuda":
+        # Windows drivers spill to system RAM instead of raising OOM, and a near-full GPU ran
+        # 6x slower (measured: 4x2048 tokens at 7.1 GiB = 1k tok/s vs 2x2048 at 6k tok/s on an
+        # 8 GB card); cap PyTorch so an oversized batch fails loudly instead
+        torch.cuda.set_per_process_memory_fraction(0.92)
     out = ROOT / "data/distill/runs" / args.name
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
 
-    df = pl.read_parquet(args.dataset).filter(pl.col("source").is_in(args.sources.split(",")))
+    sources = sorted(args.sources.split(","))
+    # lazy scan: only the selected sources' rows are materialised (8-K text alone is ~1 GB)
+    df = (
+        pl.scan_parquet(args.dataset)
+        .filter(pl.col("source").is_in(sources))
+        .collect()
+        .with_row_index("_row")
+    )
+    tok = AutoTokenizer.from_pretrained(args.model)
+    t0 = time.time()
+    # one tokenization of every selected row, cached per dataset file + tokenizer + length
+    ds = Path(args.dataset).stat()
+    key = f"{ds.st_size}-{int(ds.st_mtime)}-{','.join(sources)}-{args.model}-{args.max_len}"
+    cache = (
+        Path(args.dataset).parent
+        / "tok_cache"
+        / f"{hashlib.sha256(key.encode()).hexdigest()[:16]}.npz"
+    )
+    all_ids = tokenize(tok, df["text"].to_list(), args.max_len, cache)
+    df = df.drop("text")
+    print(f"tokenized {len(all_ids)} rows in {time.time() - t0:.0f}s (cache {cache.name})")
     train_mask = pl.col("split").is_in(args.train_splits.split(","))
     tr = df.filter(train_mask)
     if args.limit_train and tr.height > args.limit_train:
         tr = tr.sample(args.limit_train, seed=args.seed)
     ev = df.filter(~train_mask)
+    tr_ids = all_ids.subset(tr["_row"].to_numpy())
+    ev_ids = all_ids.subset(ev["_row"].to_numpy())
+    del all_ids
     print(f"device {dev}; train {tr.height} rows; eval {ev.height} rows; max_len {args.max_len}")
-
-    tok = AutoTokenizer.from_pretrained(args.model)
-    t0 = time.time()
-
-    def encode(texts: list[str]) -> list[list[int]]:
-        return tok(texts, truncation=True, max_length=args.max_len)["input_ids"]
-
-    tr_ids, ev_ids = encode(tr["text"].to_list()), encode(ev["text"].to_list())
-    print(f"tokenized in {time.time() - t0:.0f}s")
     pad = tok.pad_token_id
 
     model = Student(args.model, args.grad_ckpt).to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     rng = random.Random(args.seed)
-    lengths = np.array([len(t) for t in tr_ids])
-    steps_per_epoch = math.ceil(len(tr_ids) / args.batch_size)
+    lengths = tr_ids.lengths
+    max_tokens = args.batch_tokens or None
+    steps_per_epoch = len(batches(lengths, args.batch_size, False, random.Random(0), max_tokens))
     total_opt_steps = math.ceil(steps_per_epoch * args.epochs / args.grad_accum)
     sched = get_linear_schedule_with_warmup(opt, int(0.06 * total_opt_steps), total_opt_steps)
     y_s = torch.tensor(tr["sentiment"].to_numpy(), dtype=torch.float32)
@@ -201,10 +285,10 @@ def main() -> None:
     ce = nn.CrossEntropyLoss()
 
     model.train()
-    step, done, t0, run_loss = 0, 0, time.time(), 0.0
+    step, done, rows_done, t0, run_loss = 0, 0, 0, time.time(), 0.0
     budget = int(steps_per_epoch * args.epochs)
     while done < budget:
-        for rows in batches(lengths, args.batch_size, True, rng):
+        for rows in batches(lengths, args.batch_size, True, rng, max_tokens):
             if done >= budget:
                 break
             x, m = collate(tr_ids, rows, pad, dev)
@@ -218,6 +302,7 @@ def main() -> None:
             (loss / args.grad_accum).backward()
             run_loss += loss.item()
             done += 1
+            rows_done += len(rows)
             if done % args.grad_accum == 0 or done == budget:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 opt.step()
@@ -228,14 +313,14 @@ def main() -> None:
                 el = time.time() - t0
                 print(
                     f"batch {done}/{budget}  loss {run_loss / 200:.3f}  "
-                    f"{done * args.batch_size / el:.1f} rows/s  "
+                    f"{rows_done / el:.1f} rows/s  "
                     f"eta {(budget - done) * el / done / 60:.0f} min",
                     flush=True,
                 )
                 run_loss = 0.0
     train_minutes = (time.time() - t0) / 60
 
-    p = predict(model, ev_ids, pad, dev, args.batch_size * 2)
+    p = predict(model, ev_ids, pad, dev, args.batch_size * 2, max_tokens and 2 * max_tokens)
     ev = ev.with_columns(
         pl.Series("pred_sent", p["sent"]),
         pl.Series("pred_rel", p["rel"].argmax(1)),
@@ -255,7 +340,7 @@ def main() -> None:
         ev.filter(pl.col("split") == "gold"), ROOT / "data/labeling"
     )
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    ev.drop("text").write_parquet(out / "predictions.parquet")
+    ev.drop("_row").write_parquet(out / "predictions.parquet")
     if args.save_model:
         torch.save(model.state_dict(), out / "student.pt")
     print(json.dumps(metrics, indent=2))

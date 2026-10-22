@@ -39,6 +39,20 @@ class PathsConfig(_Strict):
         return PathsConfig(**{k: fix(v) for k, v in self.model_dump().items()})
 
 
+class ExtraMember(_Strict):
+    """A company added on top of the PIT S&P 500 (e.g. a Nasdaq-100 member that isn't in the
+    S&P 500). NOT point-in-time: chosen by *today's* index membership and treated as a member
+    from ``start`` on (survivorship bias; keep out of pre-registered S&P 500 tests)."""
+
+    ticker: str
+    cik: int
+    name: str
+    start: date  # later of the study start and the listing date
+    sector: str  # GICS sector name as in the S&P sector table (sector-adjusted returns)
+    index: str = "nasdaq100"
+    note: str = ""
+
+
 class UniverseConfig(_Strict):
     # static: the `tickers` list below. sp500_pit: point-in-time S&P 500 membership built by
     # `newsfeed universe build` (universe_pit.py); `tickers` is then only an optional subset.
@@ -64,6 +78,15 @@ class UniverseConfig(_Strict):
     products: dict[str, list[str]] = Field(default_factory=dict)
     people: dict[str, list[str]] = Field(default_factory=dict)
     places: dict[str, list[str]] = Field(default_factory=dict)
+    # sp500_pit only: companies added on top of the S&P 500 membership (not PIT, see
+    # ExtraMember). Empty = the S&P 500 alone; ids/hashes then match configs without the field.
+    extra_members: list[ExtraMember] = Field(default_factory=list)
+
+    def hashable(self) -> dict:
+        """model_dump for content hashes: drops pit_dir (a path) and an empty extra_members,
+        so configs written before the field existed keep their feature-set ids."""
+        exclude = {"pit_dir"} | (set() if self.extra_members else {"extra_members"})
+        return self.model_dump(mode="json", exclude=exclude)
 
     @field_validator("tickers")
     @classmethod
