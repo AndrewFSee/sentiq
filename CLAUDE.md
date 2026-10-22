@@ -859,3 +859,14 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   only the selected sources lazily, pre-cuts texts to 8 chars/token and caches tokenization in
   `data/distill/v1/tok_cache/`; GPU memory capped at 92% (Windows spills to system RAM instead
   of raising OOM; 2×2048-token batches = 6k tok/s, 4×2048 thrashed at 1k tok/s).
+- 2026-10-22 RESULT distillation step 2 (run `full_v1`: ModernBERT-base, 8-K + news train
+  splits = 103,284 rows, 8-Ks cut at 2,048 tokens (Haiku saw ≤ 6k), 1 epoch, 3,072-token
+  batches × 10 accumulation, lr 5e-5, 206 min on the RTX 5060; weights
+  `data/distill/runs/full_v1/student.pt`). Student vs Haiku on the held-out test periods:
+  8-K sentiment r 0.85 (Spearman 0.78), event type 95.7% (macro F1 0.68), relevance 98.9%;
+  news sentiment r 0.82 (Spearman 0.71), event type 77.5%, relevance 89.9%. Vs the 200 news
+  hand labels: sentiment Spearman 0.77 (Haiku 0.89), event type 65% (Haiku 64%), relevance
+  87.5% (Haiku 88.5%). Reading: as good as Haiku on type/relevance, clearly weaker on
+  sentiment (below the Sonnet–Haiku r 0.915) — a usable free scorer for exploration, not a
+  replacement. The 8-K hand-label comparison is added when that sample is labelled. Step 3
+  (walk-forward students for the recall check) is pre-registered before it runs.
