@@ -295,6 +295,11 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
 - Windows: `os.replace` onto a file another process is reading can fail; `write_table_atomic`
   retries.
 - `item_id = sha256("<source>:<native_id>")[:32]`, deterministic.
+- `text_hash` (sha256 hex of title + "\n" + body, `storage.item_text_hash`) is stored in every
+  item row since 2026-10-22; the view reads the column only while the marker
+  `lake/items/_text_hash_migrated` exists (derive drops it, and the view computes hashes
+  again, if a row without one appears). Empty schema templates are named by a schema hash
+  (`lake/_empty_<name>_<hash8>.parquet`) so a schema change never replaces a file in use.
 - Every run records `run_id`, `config_hash` (non-secret, path-independent), git SHA, versions.
 - Archive (moved off C: 2026-10-14, see `D:\sentiq-archive\README.md`): the defeatbeta pin
   860d42ac253f.parquet (transcripts backfill version), full SEC companyfacts JSON (the
@@ -870,3 +875,16 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   sentiment (below the Sonnet–Haiku r 0.915) — a usable free scorer for exploration, not a
   replacement. The 8-K hand-label comparison is added when that sample is labelled. Step 3
   (walk-forward students for the recall check) is pre-registered before it runs.
+- 2026-10-22 Scored the Nasdaq-100 extras' history (+ stragglers): 775 batch requests, all ok,
+  $0.28.
+- 2026-10-22 (user-approved) STORED TEXT HASH: the `items` view used to hash every body on
+  each query that touched `text_hash` (relink, scoring plans, baselines), which made collector
+  cycles with new items take up to 30–40 min and ~11–15 GB. Writers now store `text_hash`;
+  `newsfeed migrate-text-hash` rewrote all 15,165 existing item files once (the only
+  exception to append-only: one added column, every other value unchanged; each file's
+  hashes checked against DuckDB's sha256 before the atomic replace; backup of the pre-migration
+  lake in `D:\sentiq-archive\lake_items_backup_20261022`). After: whole-lake text_hash query
+  4.9 s; 181,897 of 181,909 ok unmasked scores match their item's current hash (the 12 others
+  are scores of pre-re-parse text, as before). First attempt crashed replacing
+  `_empty_items.parquet` while a collector query had it open → templates are now named by
+  schema hash.

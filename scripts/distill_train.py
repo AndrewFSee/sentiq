@@ -23,6 +23,7 @@ import random
 import sys
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -222,6 +223,12 @@ def main() -> None:
     ap.add_argument("--sent-weight", type=float, default=4.0, help="MSE weight vs the two CEs")
     ap.add_argument("--train-splits", default="train")
     ap.add_argument("--limit-train", type=int, default=0, help="subsample training rows (smoke)")
+    # walk-forward mode (recall check): train on every non-gold row tradable before
+    # --train-before, predict the rows tradable in [--predict-from, --predict-to); the
+    # dataset's train/val/test splits are then ignored
+    ap.add_argument("--train-before", default=None, help="YYYY-MM-DD (UTC, exclusive)")
+    ap.add_argument("--predict-from", default=None, help="YYYY-MM-DD (UTC, inclusive)")
+    ap.add_argument("--predict-to", default=None, help="YYYY-MM-DD (UTC, exclusive)")
     ap.add_argument("--grad-ckpt", action="store_true")
     ap.add_argument("--save-model", action="store_true")
     ap.add_argument("--seed", type=int, default=7)
@@ -265,11 +272,30 @@ def main() -> None:
     all_ids = tokenize(tok, df["text"].to_list(), args.max_len, cache)
     df = df.drop("text")
     print(f"tokenized {len(all_ids)} rows in {time.time() - t0:.0f}s (cache {cache.name})")
-    train_mask = pl.col("split").is_in(args.train_splits.split(","))
-    tr = df.filter(train_mask)
+    if args.train_before:
+        if not (args.predict_from and args.predict_to):
+            raise SystemExit("--train-before needs --predict-from and --predict-to")
+
+        def ts(d: str) -> datetime:
+            return datetime.fromisoformat(d).replace(tzinfo=UTC)
+
+        if ts(args.predict_from) < ts(args.train_before):
+            raise SystemExit("walk-forward: --predict-from must not precede --train-before")
+        tr = df.filter(
+            (pl.col("tradable_at") < ts(args.train_before)) & (pl.col("split") != "gold")
+        )
+        ev = df.filter(
+            (pl.col("tradable_at") >= ts(args.predict_from))
+            & (pl.col("tradable_at") < ts(args.predict_to))
+        )
+        print(f"walk-forward: train < {args.train_before}, predict "
+              f"[{args.predict_from}, {args.predict_to})")  # fmt: skip
+    else:
+        train_mask = pl.col("split").is_in(args.train_splits.split(","))
+        tr = df.filter(train_mask)
+        ev = df.filter(~train_mask)
     if args.limit_train and tr.height > args.limit_train:
         tr = tr.sample(args.limit_train, seed=args.seed)
-    ev = df.filter(~train_mask)
     tr_ids = all_ids.subset(tr["_row"].to_numpy())
     ev_ids = all_ids.subset(ev["_row"].to_numpy())
     del all_ids

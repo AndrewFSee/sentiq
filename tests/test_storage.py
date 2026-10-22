@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from newsfeed.dedupe import content_hash, normalize_url
 from newsfeed.ingest.base import RawItem
 from newsfeed.ingest.runner import build_row
-from newsfeed.storage import Store
+from newsfeed.storage import ITEMS_SCHEMA, Store, item_text_hash
 
 
 def utc(*a: int) -> datetime:
@@ -97,6 +99,47 @@ def test_items_by_id_and_source_relation_match_the_view(store: Store, calendar):
     rel = store.query(f"SELECT * FROM {store.items_relation(['test'])} ORDER BY item_id")
     assert rel.to_dicts() == view("source = 'test'")
     assert store.items_by_id([]).height == 0
+
+
+def _old_format_file(store: Store, rows_: list[dict], name: str) -> None:
+    """An item file as written before text_hash was stored (column absent)."""
+    schema = pa.schema([f for f in ITEMS_SCHEMA if f.name != "text_hash"])
+    d = store.items_dir / "src=test" / "ym=2026-07"
+    d.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.Table.from_pylist(rows_, schema=schema), d / name)
+
+
+def test_text_hash_is_stored_on_write_and_matches_duckdb(store: Store, calendar):
+    store.write_items(rows([item("1", utc(2026, 7, 30, 15))], calendar), "r1")
+    raw = store.query(
+        f"SELECT text_hash, sha256(coalesce(title, '') || chr(10) || coalesce(body_text, '')) "
+        f"AS h FROM read_parquet('{(store.items_dir / '**' / '*.parquet').as_posix()}')"
+    )
+    assert raw["text_hash"][0] == raw["h"][0]
+    assert (
+        item_text_hash("t\N{EURO SIGN}", None)
+        == hashlib.sha256("t\N{EURO SIGN}\n".encode()).hexdigest()
+    )
+
+
+def test_migration_adds_identical_hashes_and_switches_the_view(store: Store, calendar):
+    old = rows([item("1", utc(2026, 7, 30, 15)), item("2", utc(2026, 7, 30, 16))], calendar)
+    _old_format_file(store, old, "part-old.parquet")
+    store.write_items(rows([item("3", utc(2026, 7, 30, 17))], calendar), "r2")
+    store.refresh_views()
+    before = store.query("SELECT * FROM items ORDER BY item_id").to_dicts()
+    assert not store.text_hash_migrated and store.rows_without_text_hash() == 2
+    out = store.migrate_text_hash()
+    assert out["migrated"] == 1 and out["already"] == 1 and out["missing"] == 0
+    assert store.text_hash_migrated
+    after = store.query("SELECT * FROM items ORDER BY item_id").to_dicts()
+    assert after == before  # every value, incl. the hash, unchanged
+    assert store.migrate_text_hash()["migrated"] == 0  # idempotent
+    # a file without the column appearing later: the guard falls back to computing hashes
+    _old_format_file(store, rows([item("4", utc(2026, 7, 30, 18))], calendar), "late.parquet")
+    assert not store.check_text_hash() and not store.text_hash_migrated
+    h = store.query("SELECT text_hash FROM items WHERE native_id = '4'")
+    assert h["text_hash"].to_list() == [item_text_hash("t4", "body 4")]
 
 
 def test_timestamps_roundtrip_as_utc(store: Store, calendar):

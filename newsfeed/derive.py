@@ -150,6 +150,7 @@ def derive(
         quick = if_changed and not full_stories and not relink_sources
         if quick and fp_path.exists() and json.loads(fp_path.read_text())["fingerprint"] == fp:
             return {"unchanged": True}
+        store.check_text_hash()  # new files without a stored hash -> view computes it again
         linked = relink(store, linker, run_id, force_sources=relink_sources)
         stories = rebuild_stories(store, cfg.dedupe, linker.linker_id, full=full_stories)
         out = {

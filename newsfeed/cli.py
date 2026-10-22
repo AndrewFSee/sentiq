@@ -73,7 +73,7 @@ from newsfeed.scoring.client import AnthropicClient, LLMClient
 from newsfeed.scoring.mask import MaskLexicon
 from newsfeed.scoring.prompt import load_prompt
 from newsfeed.scoring.runner import ScoringJob, estimate_cost, plan_targets
-from newsfeed.storage import Store
+from newsfeed.storage import FileLock, Store
 from newsfeed.tickers import TickerLinker, TickerMap, Universe, load_ticker_map
 from newsfeed.timeutil import MarketCalendar, get_calendar, utcnow
 from newsfeed.universe_pit import PitUniverse
@@ -1060,6 +1060,34 @@ def eval_cmd(
         typer.echo(md)
 
     _run("eval", cfg, {"feature_set": feature_set, "use_holdout": use_holdout}, body)
+
+
+@app.command("migrate-text-hash")
+def migrate_text_hash_cmd(config: ConfigOpt = None, verbose: bool = False) -> None:
+    """One-time: store text_hash in item files written before the column existed (values are
+    unchanged), then switch the items view to the stored column. Idempotent."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        def progress(k: int, n: int) -> None:
+            if k % 500 == 0 or k == n:
+                typer.echo(f"  {k}/{n} files", err=True)
+
+        # the collector's derive (long scans holding files open) must not run meanwhile:
+        # Windows can't replace a file another process is reading
+        lock = FileLock(ctx.store.state_dir / "derive.lock")
+        if not lock.acquire():
+            raise typer.BadParameter("derive is running (lock held); try again when it's done")
+        try:
+            out = ctx.store.migrate_text_hash(progress)
+        finally:
+            lock.release()
+        stats["migrate"] = out
+        stats["written"] = out["migrated"]
+        typer.echo(f"{out}; stored-hash view {'ON' if ctx.store.text_hash_migrated else 'OFF'}")
+
+    _run("migrate-text-hash", cfg, {}, body)
 
 
 @app.command("distill-data")
