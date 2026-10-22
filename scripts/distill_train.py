@@ -22,6 +22,7 @@ import math
 import random
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -224,6 +225,9 @@ def main() -> None:
     ap.add_argument("--grad-ckpt", action="store_true")
     ap.add_argument("--save-model", action="store_true")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--ckpt-every", type=int, default=200, help="optimizer steps per checkpoint")
+    ap.add_argument("--resume", action="store_true", help="continue from <run>/ckpt.pt")
+    ap.add_argument("--gpu-frac", type=float, default=0.85, help="cap on this process's VRAM")
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -233,8 +237,9 @@ def main() -> None:
     if dev == "cuda":
         # Windows drivers spill to system RAM instead of raising OOM, and a near-full GPU ran
         # 6x slower (measured: 4x2048 tokens at 7.1 GiB = 1k tok/s vs 2x2048 at 6k tok/s on an
-        # 8 GB card); cap PyTorch so an oversized batch fails loudly instead
-        torch.cuda.set_per_process_memory_fraction(0.92)
+        # 8 GB card); cap PyTorch so an oversized batch fails loudly instead. 0.92 still hit a
+        # raw CUDA OOM after 25 min (the desktop and other apps share the card): 0.85 default
+        torch.cuda.set_per_process_memory_fraction(args.gpu_frac)
     out = ROOT / "data/distill/runs" / args.name
     out.mkdir(parents=True, exist_ok=True)
     (out / "config.json").write_text(json.dumps(vars(args), indent=2), encoding="utf-8")
@@ -284,41 +289,76 @@ def main() -> None:
     y_e = torch.tensor(tr["event_type_id"].to_numpy(), dtype=torch.long)
     ce = nn.CrossEntropyLoss()
 
+    # checkpoints: written right after an optimizer step (so never mid-accumulation); a resumed
+    # run regenerates the same seeded batch order and skips the batches already done (only
+    # dropout randomness differs from an uninterrupted run)
+    ckpt_path = out / "ckpt.pt"
+    step, done, rows_done, minutes_before = 0, 0, 0, 0.0
+    if args.resume and ckpt_path.exists():
+        ck = torch.load(ckpt_path, map_location=dev, weights_only=False)
+        model.load_state_dict(ck["model"])
+        opt.load_state_dict(ck["opt"])
+        sched.load_state_dict(ck["sched"])
+        step, done, minutes_before = ck["step"], ck["done"], ck["minutes"]
+        print(f"resumed at batch {done} (optimizer step {step})", flush=True)
+    start_done, t0, run_loss = done, time.time(), 0.0
+
+    def save_ckpt() -> None:
+        tmp = ckpt_path.with_suffix(".tmp")
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "opt": opt.state_dict(),
+                "sched": sched.state_dict(),
+                "step": step,
+                "done": done,
+                "minutes": minutes_before + (time.time() - t0) / 60,
+            },
+            tmp,
+        )
+        tmp.replace(ckpt_path)
+
+    def stream() -> Iterator[list[int]]:
+        while True:
+            yield from batches(lengths, args.batch_size, True, rng, max_tokens)
+
     model.train()
-    step, done, rows_done, t0, run_loss = 0, 0, 0, time.time(), 0.0
     budget = int(steps_per_epoch * args.epochs)
-    while done < budget:
-        for rows in batches(lengths, args.batch_size, True, rng, max_tokens):
-            if done >= budget:
-                break
-            x, m = collate(tr_ids, rows, pad, dev)
-            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=dev == "cuda"):
-                s, r, e = model(x, m)
-                loss = (
-                    args.sent_weight * nn.functional.mse_loss(s.float(), y_s[rows].to(dev))
-                    + ce(r.float(), y_r[rows].to(dev))
-                    + ce(e.float(), y_e[rows].to(dev))
-                )
-            (loss / args.grad_accum).backward()
-            run_loss += loss.item()
-            done += 1
-            rows_done += len(rows)
-            if done % args.grad_accum == 0 or done == budget:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                opt.step()
-                sched.step()
-                opt.zero_grad(set_to_none=True)
-                step += 1
-            if done % 200 == 0 or done == budget:
-                el = time.time() - t0
-                print(
-                    f"batch {done}/{budget}  loss {run_loss / 200:.3f}  "
-                    f"{rows_done / el:.1f} rows/s  "
-                    f"eta {(budget - done) * el / done / 60:.0f} min",
-                    flush=True,
-                )
-                run_loss = 0.0
-    train_minutes = (time.time() - t0) / 60
+    for k, rows in enumerate(stream()):
+        if k >= budget:
+            break
+        if k < done:
+            continue
+        x, m = collate(tr_ids, rows, pad, dev)
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=dev == "cuda"):
+            s, r, e = model(x, m)
+            loss = (
+                args.sent_weight * nn.functional.mse_loss(s.float(), y_s[rows].to(dev))
+                + ce(r.float(), y_r[rows].to(dev))
+                + ce(e.float(), y_e[rows].to(dev))
+            )
+        (loss / args.grad_accum).backward()
+        run_loss += loss.item()
+        done = k + 1
+        rows_done += len(rows)
+        if done % args.grad_accum == 0 or done == budget:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            opt.step()
+            sched.step()
+            opt.zero_grad(set_to_none=True)
+            step += 1
+            if step % args.ckpt_every == 0:
+                save_ckpt()
+        if done % 200 == 0 or done == budget:
+            el = time.time() - t0
+            print(
+                f"batch {done}/{budget}  loss {run_loss / 200:.3f}  "
+                f"{rows_done / el:.1f} rows/s  "
+                f"eta {(budget - done) * el / max(1, done - start_done) / 60:.0f} min",
+                flush=True,
+            )
+            run_loss = 0.0
+    train_minutes = minutes_before + (time.time() - t0) / 60
 
     p = predict(model, ev_ids, pad, dev, args.batch_size * 2, max_tokens and 2 * max_tokens)
     ev = ev.with_columns(
