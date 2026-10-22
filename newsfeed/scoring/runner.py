@@ -94,6 +94,9 @@ class ScoringJob:
         self.prompt_hash = self.prompt.hash(self.settings)
         self.stats = JobStats()
         self._items: dict[str, dict[str, Any]] = {}
+        # sources the targets can come from (None = any): lets item lookups skip the rest of
+        # the lake (the live hook sets collect.sources)
+        self.item_sources: list[str] | None = None
 
     # ---------------------------------------------------------------- targets
     def target(
@@ -143,10 +146,10 @@ class ScoringJob:
         need = sorted(set(item_ids) - set(self._items))
         if not need:
             return
-        df = self.store.query(
-            "SELECT item_id, source, publisher, title, body_text, body_truncated, meta, text_hash "
-            "FROM items WHERE item_id IN (SELECT unnest($ids))",
-            {"ids": need},
+        df = self.store.items_by_id(
+            need,
+            sources=self.item_sources,
+            columns="item_id, source, publisher, title, body_text, body_truncated, meta, text_hash",
         )
         for r in df.to_dicts():
             r["meta"] = json.loads(r["meta"] or "{}")

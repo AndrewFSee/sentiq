@@ -157,6 +157,8 @@ class TranscriptsConfig(_Strict):
     hf_repo: str = "defeatbeta/yahoo-finance-data"
     hf_file: str = "data/US/stock_earning_call_transcripts.parquet"
     auto_refresh: bool = True  # catch-up polls download a newer dataset version if any
+    # per poll; an unfinished download resumes on every poll (not just catch-ups) until done
+    download_minutes_per_poll: float = Field(5, gt=0)
     catch_up_every_minutes: float = Field(360, gt=0)  # = refresh check cadence
     silence_alert_minutes: float = Field(20000, gt=0)  # market minutes; calls are seasonal
     max_tokens: int = Field(16000, gt=0)  # median call ~10k tokens

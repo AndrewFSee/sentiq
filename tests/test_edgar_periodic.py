@@ -209,9 +209,11 @@ def test_live_scoring_hook_only_plans_collected_sources(cfg, store, monkeypatch)
 
     monkeypatch.setattr(cli, "plan_targets", fake_plan)
     ctx = cli.Context(cfg, store, ExitStack(), None)
-    monkeypatch.setattr(ctx, "scoring_job", lambda *a: None)
+    job = SimpleNamespace(item_sources=None)
+    monkeypatch.setattr(ctx, "scoring_job", lambda *a: job)
     monkeypatch.setattr(ctx, "llm_client", lambda *a: None)
     monkeypatch.setattr(ctx, "universe", lambda full=False: SimpleNamespace(cik_to_tickers={}))
     assert ctx.score_recent("r") == {"calls": 0}
     assert seen["sources"] == list(cfg.collect.sources)
     assert "edgar_periodic" not in seen["sources"]
+    assert job.item_sources == list(cfg.collect.sources)  # item lookups skip the rest of the lake

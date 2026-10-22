@@ -796,3 +796,34 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   are outlook-only (has_outlook yes, has_results no), H2 is reported as "8-Ks the model labels
   guidance (mostly results + outlook)", not as guidance-only releases. Sample covers guidance
   founders in general, not only H2's pure-guidance days (a superset). No BH family.
+- 2026-10-20 RESULT transcripts-latency, first look (29 live calls, 10-13 → 10-20, early
+  reporters, mostly banks): 28 of 29 were first seen before the next 09:30 open after the call
+  date (2–8 h after the call day ends, i.e. overnight; defeatbeta's daily compaction runs ~05:30
+  UTC), so live tradable_at equals the backfill rule's (next open after the call date) and test
+  5's timing assumption holds on this sample. Exception: LW (call 10-06, first seen 10-13).
+  Versus the earnings 8-K: median 19.7 h after the release, 18% in hand by the first 15:50
+  decision after it (the call is ~1 session behind the release, as delay sensitivity assumed).
+  Re-run later in the season (small n, one sector).
+- 2026-10-21 New laptop (C:\Users\andre; Seagate back on D:). Preinstalled McAfee throttled
+  downloads to ~0.45 MB/s and HF closed the 2.3 GB transcripts response after ~110 MB, so every
+  hourly refresh restarted from zero and failed (10-20 calls stuck); removed → ~16 MB/s. Fixes
+  kept regardless: `hf_refresh` resumes a dropped download with HTTP Range from
+  `<sha12>.parquet.part`, caps each poll at `sources.transcripts.download_minutes_per_poll` (5)
+  and resumes on every poll while a part file exists, and checks the LFS sha256 before use.
+  Collector cycles with new 8-Ks had grown to 30–40 min: every live-scoring item lookup went
+  through the `items` view, which dedupes and hashes the whole 3.3 GB lake (2.1 GB of it 10-K /
+  10-Q text) before the id filter. `Store.items_by_id` / `items_relation` filter ids before the
+  dedupe window (same rows: the window partitions by item_id) and read only the needed `src=`
+  partitions: 5 ids 204 s → 4.2 s. Torch for the finbert extra now comes from the PyTorch cu128
+  index (RTX 5060, CUDA 12.8; `uv sync --extra finbert`, plain `uv sync` removes it).
+- 2026-10-21 Distillation step 1 (user-approved plan: local student model for (1) free
+  rescoring and (2) a recall check — student IC vs teacher IC on the same rows, with each
+  period scored only by a model trained on earlier periods, pre-registered before it runs):
+  `newsfeed distill-data` → `data/distill/v1/dataset.parquet`, 147,716 pre-holdout unmasked
+  Haiku 5.5 pairs (8-K 54k, news 93.6k; text = the exact user turn, 99.86% match the stored
+  `user_text_hash`, the rest are the M5 12-ticker names), per-source chronological 70/10/20
+  train/val/test, 300 hand-labelled pairs held out as gold. Found while building: 54 8-K pairs
+  had a second, Sonnet validation score (now filtered to `scoring.model`). Smoke run
+  (ModernBERT-base, 8k news rows, 256 tokens, 1.4 min): vs Haiku on news test sentiment r 0.72,
+  relevance 87%, event type 72%; vs hand labels sentiment Spearman 0.71 (Haiku 0.89), event
+  type 62.5% (Haiku 64%).

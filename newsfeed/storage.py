@@ -463,11 +463,12 @@ class Store:
             files.append((directory / "**" / "*.parquet").as_posix())
         return f"read_parquet({files!r}, union_by_name = true)"
 
-    def refresh_views(self) -> None:
-        items_src = self._source_sql("items", self.items_dir, ITEMS_SCHEMA)
-        self.q.execute(
-            f"""
-            CREATE OR REPLACE VIEW items AS
+    @staticmethod
+    def _items_sql(src: str, where: str = "") -> str:
+        """The ``items`` view body: one canonical row per item_id. ``where`` may only filter on
+        item_id (the window's partition key), so filtering before the window is identical to
+        filtering the view, and the text hash is computed only for the rows kept."""
+        return f"""
             SELECT * EXCLUDE (_rn) REPLACE (coalesce(publisher, source) AS publisher),
                    sha256(coalesce(title, '') || chr(10) || coalesce(body_text, '')) AS text_hash
             FROM (
@@ -478,10 +479,13 @@ class Store:
                     ORDER BY (ingest_mode = 'live') DESC, first_seen_at, parser_version DESC,
                              ingested_at, run_id
                 ) AS _rn
-                FROM {items_src}
+                FROM {src} {where}
             ) WHERE _rn = 1
             """
-        )
+
+    def refresh_views(self) -> None:
+        items_src = self._source_sql("items", self.items_dir, ITEMS_SCHEMA)
+        self.q.execute(f"CREATE OR REPLACE VIEW items AS {self._items_sql(items_src)}")
         tick_src = self._source_sql("item_tickers", self.tickers_dir, ITEM_TICKERS_SCHEMA)
         self.q.execute(
             f"""
@@ -648,6 +652,37 @@ class Store:
             path = self.story_dir / f"ym={ym}" / "stories.parquet"
             write_table_atomic(pa.Table.from_pylist(list(rows), schema=ITEM_STORY_SCHEMA), path)
         self.refresh_views()
+
+    def items_by_id(
+        self, item_ids: Iterable[str], *, sources: Iterable[str] | None = None, columns: str = "*"
+    ) -> pl.DataFrame:
+        """Rows of the ``items`` view for these ids, without scanning the whole lake: ids are
+        filtered before the dedupe window (same result, see ``_items_sql``) and, with
+        ``sources``, only those ``src=`` partitions are read (the 10-K / 10-Q full texts are
+        most of the lake). Measured 2026-10-21: 5 ids 204 s via the view, 4.2 s here. A lookup
+        by id, not an as-of read: callers that need point-in-time selection still go through
+        ``items_as_of``."""
+        ids = list(item_ids)
+        if not ids:
+            return self.query(f"SELECT {columns} FROM items LIMIT 0")
+        rel = self.items_relation(sources, where="WHERE item_id IN (SELECT unnest($ids))")
+        return self.query(f"SELECT {columns} FROM {rel}", {"ids": ids})
+
+    def items_relation(self, sources: Iterable[str] | None = None, *, where: str = "") -> str:
+        """SQL relation equal to ``items`` restricted to ``sources`` (None = all), reading only
+        their ``src=<source>`` partitions: every item is stored under its own source, so this is
+        the same as filtering the view on ``source`` but without scanning (and hashing) the
+        rest of the lake. ``where`` may only filter on item_id (see ``_items_sql``)."""
+        if sources is None:
+            src = self._source_sql("items", self.items_dir, ITEMS_SCHEMA)
+        else:
+            files = [(self.lake / "_empty_items.parquet").as_posix()]
+            for s in sources:
+                d = self.items_dir / f"src={s}"
+                if any(d.rglob("*.parquet")):
+                    files.append((d / "**" / "*.parquet").as_posix())
+            src = f"read_parquet({files!r}, union_by_name = true)"
+        return f"({self._items_sql(src, where)})"
 
     def items_as_of(
         self,

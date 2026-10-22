@@ -20,6 +20,7 @@ from newsfeed import coverage
 from newsfeed.collect import Collector, check_states
 from newsfeed.config import AppConfig, load_config, load_secrets
 from newsfeed.derive import derive as run_derive
+from newsfeed.distill import dataset as distill_ds
 from newsfeed.eval.caps import load_shares, market_caps
 from newsfeed.eval.prices import (
     CachedPrices,
@@ -70,6 +71,7 @@ from newsfeed.scoring import agreement as agr
 from newsfeed.scoring import batch as batch_mod
 from newsfeed.scoring.client import AnthropicClient, LLMClient
 from newsfeed.scoring.mask import MaskLexicon
+from newsfeed.scoring.prompt import load_prompt
 from newsfeed.scoring.runner import ScoringJob, estimate_cost, plan_targets
 from newsfeed.storage import Store
 from newsfeed.tickers import TickerLinker, TickerMap, Universe, load_ticker_map
@@ -309,11 +311,12 @@ class Context:
         since = utcnow() - timedelta(hours=self.cfg.scoring.live_lookback_hours)
         # only what the loop collects: a backfill running alongside (e.g. 10-K full text, ~100k
         # tokens each) must never be scored by the live hook
+        job.item_sources = list(self.cfg.collect.sources)
         targets = plan_targets(
             job,
             self.universe(full=True).cik_to_tickers,
             since_tradable=since,
-            sources=list(self.cfg.collect.sources),
+            sources=job.item_sources,
         )
         return job.run_live(targets).as_dict() if targets else {"calls": 0}
 
@@ -1052,6 +1055,74 @@ def eval_cmd(
         typer.echo(md)
 
     _run("eval", cfg, {"feature_set": feature_set, "use_holdout": use_holdout}, body)
+
+
+@app.command("distill-data")
+def distill_data_cmd(
+    sources: Annotated[str, typer.Option(help="Comma-separated item sources")] = "edgar,news_api",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Build the distillation dataset: pre-holdout unmasked LLM labels + the exact text the
+    LLM saw, split train/val/test per source by time; hand-labelled pairs held out as gold."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    src = _split(sources)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        pairs = distill_ds.load_pairs(ctx.store, src, cfg.scoring.model)
+        dup = pairs.group_by("item_id", "ticker").len().filter(pl.col("len") > 1)
+        if dup.height:
+            raise typer.BadParameter(f"{dup.height} (item, ticker) pairs have several scores")
+        pre = distill_ds.pre_holdout(pairs, cfg.eval.holdout_start)
+        hashes = pre["prompt_hash"].unique().to_list()
+        if len(hashes) != 1:
+            raise typer.BadParameter(f"expected one prompt version, found {hashes}")
+        prompt = load_prompt(cfg.scoring.prompt_version)
+        names = ctx.titles(ctx.universe(full=True))
+        df = distill_ds.render_texts(pre, prompt, names)
+        gold = distill_ds.gold_pairs(cfg.paths.data_dir / "labeling")
+        df = distill_ds.finalize(distill_ds.assign_splits(df, gold))
+        out = cfg.paths.data_dir / "distill" / f"v{distill_ds.DISTILL_VERSION}"
+        out.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(out / "dataset.parquet", compression="zstd")
+        summary = (
+            df.group_by("source", "split")
+            .agg(
+                pl.len().alias("n"),
+                pl.col("text_ok").mean().round(4).alias("text_ok"),
+                pl.col("tradable_at").min().dt.date().alias("from"),
+                pl.col("tradable_at").max().dt.date().alias("to"),
+            )
+            .sort("source", "from")
+        )
+        meta = {
+            "run_id": run_id,
+            "version": distill_ds.DISTILL_VERSION,
+            "sources": src,
+            "model": cfg.scoring.model,
+            "prompt_hash": hashes[0],
+            "holdout_start": str(cfg.eval.holdout_start),
+            "dropped_holdout_rows": pairs.height - pre.height,
+            "gold_pairs_found": int((df["split"] == "gold").sum()),
+            "splits": summary.with_columns(pl.col("from", "to").cast(pl.String)).to_dicts(),
+        }
+        (out / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        stats["written"] = df.height
+        with pl.Config(
+            tbl_rows=20,
+            tbl_hide_dataframe_shape=True,
+            tbl_hide_column_data_types=True,
+            tbl_formatting="ASCII_MARKDOWN",  # Windows consoles can't print box drawing
+        ):
+            typer.echo(summary)
+        typer.echo(
+            f"{df.height} rows -> {out}; dropped {pairs.height - pre.height} holdout rows; "
+            f"gold {meta['gold_pairs_found']}; text matches stored hash: "
+            f"{df['text_ok'].mean():.2%}"
+        )
+
+    _run("distill-data", cfg, {"sources": src}, body)
 
 
 @app.command("leakage")

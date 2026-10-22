@@ -75,6 +75,30 @@ def test_view_keeps_earliest_sighting_even_if_duplicate_files_exist(store: Store
     assert df["first_seen_at"][0] == utc(2026, 7, 30, 15, 1)
 
 
+def test_items_by_id_and_source_relation_match_the_view(store: Store, calendar):
+    # duplicate sightings of item 1 (the view must keep the earliest), plus another source
+    early = rows([item("1", utc(2026, 7, 30, 15), seen=utc(2026, 7, 30, 15, 1))], calendar)
+    late = rows([item("1", utc(2026, 7, 30, 15), seen=utc(2026, 7, 30, 15, 9))], calendar)
+    other = item("3", utc(2026, 7, 30, 17)).model_copy(update={"source": "other"})
+    store.write_items(late + rows([item("2", utc(2026, 7, 30, 16)), other], calendar), "r1")
+    store._known_ids = set()
+    store.write_items(early, "r2")
+    ids = store.query("SELECT item_id FROM items ORDER BY item_id")["item_id"].to_list()
+    assert len(ids) == 3
+
+    def view(where: str) -> list[dict]:
+        return store.query(f"SELECT * FROM items WHERE {where} ORDER BY item_id").to_dicts()
+
+    by_id = store.items_by_id(ids).sort("item_id").to_dicts()
+    assert by_id == view("true")
+    assert by_id[0]["first_seen_at"] == utc(2026, 7, 30, 15, 1)  # dedupe rule still applied
+    only_test = store.items_by_id(ids, sources=["test"]).sort("item_id").to_dicts()
+    assert only_test == view("source = 'test'") and len(only_test) == 2
+    rel = store.query(f"SELECT * FROM {store.items_relation(['test'])} ORDER BY item_id")
+    assert rel.to_dicts() == view("source = 'test'")
+    assert store.items_by_id([]).height == 0
+
+
 def test_timestamps_roundtrip_as_utc(store: Store, calendar):
     store.write_items(rows([item("1", utc(2026, 7, 30, 20, 30, 28))], calendar), "r")
     f = next(store.items_dir.rglob("*.parquet"))

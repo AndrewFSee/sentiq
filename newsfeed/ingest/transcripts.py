@@ -29,7 +29,7 @@ import duckdb
 
 from newsfeed.config import TranscriptsConfig
 from newsfeed.ingest.base import ErrorFn, RawItem, SkipFn, make_item_id
-from newsfeed.ingest.hf_refresh import current_file, refresh
+from newsfeed.ingest.hf_refresh import current_file, pending_download, refresh
 from newsfeed.textutil import estimate_tokens, truncate_tokens
 from newsfeed.tickers import TickerMap, Universe, normalize_ticker
 from newsfeed.timeutil import IngestMode, ensure_utc, utcnow
@@ -147,6 +147,7 @@ class TranscriptsAdapter:
             fallback_commit=self.cfg.dataset_commit,
             keep_files=[f"{self.cfg.dataset_commit[:12]}.parquet"],
             client=self._http,
+            max_seconds=60 * self.cfg.download_minutes_per_poll,
         )
         self.stats["refresh"] = out
         return out
@@ -306,8 +307,10 @@ class TranscriptsAdapter:
     ) -> Iterator[RawItem]:
         """Calls in the last ``poll_lookback_days`` not stored yet (refresh the Parquet first).
         Live items get first_seen_at = now, so tradable_at is honest even when the dataset
-        added a call late."""
-        if catch_up:
+        added a call late. Refreshes on catch-up polls, and on every poll while a capped
+        download is still incomplete."""
+        p = Path(self.cfg.path)
+        if catch_up or (self.cfg.auto_refresh and pending_download(p)):
             try:
                 self.refresh()
             except Exception as exc:  # a failed refresh must not stop polling the local copy
