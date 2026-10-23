@@ -888,3 +888,11 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   are scores of pre-re-parse text, as before). First attempt crashed replacing
   `_empty_items.parquet` while a collector query had it open → templates are now named by
   schema hash.
+- 2026-10-23 LIVE COVERAGE GAP 04:24 → 07:53 ET (~3.5 h, > the 60-min rule, so it stays a gap;
+  pre-market; items from it are timed by when we first saw them). Cause: a collector cycle
+  spent 3.5 h / 15 GB in the LM-baseline step — `compute_baselines` (and `relink`) selected
+  title/body from the `items` view with an id filter DuckDB can't push below the dedupe
+  window, so every body in the lake was read and ordered. Both now take two steps: ids via a
+  text-free query (stored text_hash), then `items_by_id` for just those. The cycle also
+  starved the walk-forward training (0.9 rows/s vs 8): wf1 took 6.2 h, wf2 ~8 h incl. a
+  cuBLAS internal error and a checkpoint resume.

@@ -15,8 +15,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import polars as pl
-
 from newsfeed.config import AppConfig
 from newsfeed.dedupe import rebuild_stories
 from newsfeed.features.baselines import compute_baselines, load_lm_dictionary, make_finbert
@@ -38,13 +36,12 @@ def relink(
     """Link every item without links from the current ``linker_id`` for its current text and
     newer than its stored row (a re-parsed item gets relinked even when only its source tags
     changed). Returns items linked."""
-    # streamed in batches: all bodies at once (8-Ks + news + ~40k-char transcripts) exceed a
-    # single 2 GB Arrow buffer
-    cur = store.q.cursor()  # own connection: writes below must not end this stream
-    reader = cur.execute(
+    # two steps: the ids to link first (no text columns, so the view never materialises the
+    # bodies of the whole lake -- ~15 GB on 2026-10-23), then their text in batches (all bodies
+    # at once -- 8-Ks + news + ~40k-char transcripts -- would exceed a 2 GB Arrow buffer)
+    ids = store.query(
         """
-        SELECT i.item_id, i.source, i.title, i.body_text, i.tickers, i.text_hash, i.meta
-        FROM items i
+        SELECT i.item_id FROM items i
         WHERE list_contains($force, i.source) OR NOT EXISTS (
             SELECT 1 FROM item_tickers_all t
             WHERE t.item_id = i.item_id AND t.linker_id = $lid AND t.text_hash = i.text_hash
@@ -52,16 +49,17 @@ def relink(
               -- its source tags without changing its text
               AND t.linked_at >= i.ingested_at
         )
+        ORDER BY i.item_id
         """,
         {"lid": linker.linker_id, "force": list(force_sources or [])},
-    ).to_arrow_reader(batch_size)
+    )["item_id"].to_list()
     total = 0
-    for batch in reader:
-        pending = pl.from_arrow(batch).to_dicts()
+    cols = "item_id, source, title, body_text, tickers, text_hash, meta"
+    for s in range(0, len(ids), batch_size):
+        pending = store.items_by_id(ids[s : s + batch_size], columns=cols).to_dicts()
         if pending:
             _link_batch(store, linker, pending, run_id)
             total += len(pending)
-    cur.close()
     return total
 
 
