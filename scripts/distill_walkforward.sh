@@ -10,6 +10,10 @@ mkdir -p data/distill/runs
 cuts=(2021-01-01 2022-07-01 2024-01-01 2025-07-01 2026-07-01)
 for k in 0 1 2 3; do
     name="wf$((k + 1))"
+    if [ -f "data/distill/runs/$name/metrics.json" ]; then  # finished earlier: skip
+        echo "=== $name already done, skipped $(date +%F\ %T)" >> "$LOG"
+        continue
+    fi
     for attempt in 1 2 3 4 5; do
         echo "=== $name attempt $attempt $(date +%F\ %T)" >> "$LOG"
         HF_HUB_OFFLINE=1 HF_HUB_DISABLE_SYMLINKS_WARNING=1 uv run python -u scripts/distill_train.py \
