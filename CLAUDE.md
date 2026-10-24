@@ -896,3 +896,12 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   text-free query (stored text_hash), then `items_by_id` for just those. The cycle also
   starved the walk-forward training (0.9 rows/s vs 8): wf1 took 6.2 h, wf2 ~8 h incl. a
   cuBLAS internal error and a checkpoint resume.
+- 2026-10-24 Walk-forward students done (`scripts/distill_walkforward.sh`, settings as
+  full_v1; student k trained on non-gold rows tradable before cut k, scores [cut k, cut k+1)):
+  wf1 < 2021-01 (15,861 rows) → 2021-01..2022-06, wf2 < 2022-07 (26,965) → ..2023-12, wf3
+  < 2024-01 (36,807) → ..2025-06, wf4 < 2025-07 (77,064) → ..2026-06; predictions in
+  `data/distill/runs/wf*/predictions.parquet`. Out-of-period 8-K sentiment vs Haiku r 0.807 /
+  0.797 / 0.835 / 0.867. No returns looked at. Infra lessons: the laptop thermally throttles
+  (GPU 85–90 °C, P4) and a CUDA OOM left the driver slow until a reboot; the vendor fan mode
+  "Performance" helped; the trainer now saves a final checkpoint before predicting. The
+  comparison with returns waits for the pre-registration to be approved.
