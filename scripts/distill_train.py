@@ -234,7 +234,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--ckpt-every", type=int, default=200, help="optimizer steps per checkpoint")
     ap.add_argument("--resume", action="store_true", help="continue from <run>/ckpt.pt")
-    ap.add_argument("--gpu-frac", type=float, default=0.85, help="cap on this process's VRAM")
+    ap.add_argument("--gpu-frac", type=float, default=0.80, help="cap on this process's VRAM")
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -385,6 +385,14 @@ def main() -> None:
             )
             run_loss = 0.0
     train_minutes = minutes_before + (time.time() - t0) / 60
+    # final checkpoint before scoring: a crash while predicting (wf3, 2026-10-24) then costs
+    # no training; a resumed run skips straight to prediction
+    if done > start_done:
+        save_ckpt()
+    opt.zero_grad(set_to_none=True)
+    opt.state.clear()  # Adam moments (2x the model) are not needed for prediction
+    if dev == "cuda":
+        torch.cuda.empty_cache()  # optimizer state and training activations are not needed now
 
     p = predict(model, ev_ids, pad, dev, args.batch_size * 2, max_tokens and 2 * max_tokens)
     ev = ev.with_columns(
