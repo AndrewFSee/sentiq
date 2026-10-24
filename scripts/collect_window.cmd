@@ -11,14 +11,14 @@ cd /d "%~dp0.."
 
 :loop
 echo [%date% %time:~0,8%] cycle...
-uv run newsfeed collect --once >> data\collect.log 2>&1
+uv run python -m newsfeed collect --once >> data\collect.log 2>&1
 if errorlevel 1 (
     echo     FAILED - see data\collect.log
     title %LABEL% [last cycle FAILED]
 ) else (
-    uv run newsfeed collect --check > nul 2>&1
+    uv run python -m newsfeed collect --check > nul 2>&1
     if errorlevel 1 (
-        echo     ok, but health check reports a problem - run: uv run newsfeed collect --check
+        echo     ok, but health check reports a problem - run: uv run python -m newsfeed collect --check
         title %LABEL% [UNHEALTHY]
     ) else (
         echo     ok

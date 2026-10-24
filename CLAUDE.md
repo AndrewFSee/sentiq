@@ -905,3 +905,42 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   (GPU 85–90 °C, P4) and a CUDA OOM left the driver slow until a reboot; the vendor fan mode
   "Performance" helped; the trainer now saves a final checkpoint before predicting. The
   comparison with returns waits for the pre-registration to be approved.
+- 2026-10-24 PRE-REGISTERED (user-approved, written before any student score met a return)
+  RECALL CHECK, distillation step 3 (`newsfeed recall-check`, config
+  `config/variants/sp500_noemb.yaml` = the S&P 500 universe of test 1, no Nasdaq extras).
+  Events: test-1 earnings 8-Ks at event level as in test 6 — 8-K story founders, unmasked
+  Haiku 5.5 prompt 6108c555090fa4b3 event_type earnings, relevance ≥ secondary, dated to the
+  first 15:50 decision ≥ tradable_at, fanned out to member tickers — restricted to t_use in
+  2021-01-01 → 2026-07-01 (the walk-forward students' period). Values on identical events:
+  Haiku sentiment vs the walk-forward student's sentiment (wf1–wf4, each scoring only
+  documents after its training cutoff); the sample stays defined by Haiku's labels. Primary:
+  the paired difference IC(student) − IC(Haiku) at close/2/market (the H1 cell) and each IC,
+  circular block bootstrap over sessions, 10,000 reps. Secondary (reported, not tested):
+  close/1/market, close/{1,2}/sector, and the same cells for 8-K guidance events. Reading:
+  student IC ≥ half of Haiku's and the difference CI covering 0 → the signal is learnable from
+  the text by a model that saw no outcomes after its cutoff → no evidence that recall drives
+  test 1. Student IC ≈ 0 with the difference CI excluding 0 → ambiguous (recall, or the
+  student's weaker reading: out-of-period r 0.80–0.87 with Haiku); not evidence of recall on
+  its own. Pre-holdout only; one run.
+- 2026-10-24 SMART APP CONTROL (Windows, enforcing since ~14:44 ET) blocks the unsigned
+  `.venv\Scripts\newsfeed.exe` launcher uv generates ("An Application Control policy has
+  blocked this file", os error 4551; Code Integrity events 3033/3077). The collector failed
+  every cycle from 18:44 to 23:17 UTC (~4.5 h, Saturday, EDGAR closed; a recorded live gap).
+  Fix without weakening Windows security: `newsfeed/__main__.py`, and everything runs as
+  `uv run python -m newsfeed …` (signed python.exe is allowed); `scripts\collect_window.cmd`
+  updated. Read every `uv run newsfeed …` in this file as `uv run python -m newsfeed …`.
+- 2026-10-24 RESULT recall check (run c4fc80, 10,000 reps; report
+  `data/reports/recall-check-20261024T231936Z-c4fc80.md`). Earnings: 11,811 Haiku events in
+  2021-01 → 2026-07, 11,706 with a student score. Primary close/2/market (n 11,622): IC Haiku
+  +0.025 (p 0.043), student +0.009 (p 0.43), diff −0.016 [−0.030, −0.001], p 0.033;
+  corr(Haiku, student) 0.777. By the pre-registered reading: the student keeps < half and the
+  difference CI excludes 0 → AMBIGUOUS (recall, or Haiku reads these releases better than the
+  student); not evidence of recall on its own. Other earnings cells the same pattern (close/1
+  market +0.016 vs +0.003; sector close/1 +0.021 vs +0.011, close/2 +0.029 vs +0.013, diff
+  p 0.019). Guidance (n 948): +0.080 vs +0.050, diff −0.030 [−0.079, +0.020] — student keeps
+  ~60%, CI covers 0. Not pre-registered, noted only: pure measurement noise at r 0.78 would
+  leave ~0.019 of the IC; the student keeps 0.009, so the predictive part sits
+  disproportionately in what it doesn't reproduce — consistent with both readings. Together
+  with leakage check A (masking didn't lower the IC): pre-holdout ICs remain upper bounds; the
+  holdout look (after Haiku's training cutoff, mostly live) stays the clean test; H1/H2
+  unchanged.

@@ -74,6 +74,62 @@ def decision_times(
     return out
 
 
+def paired_event_ic(
+    events: pl.DataFrame,
+    targets: pl.DataFrame,
+    sessions: list,
+    cfg: AppConfig,
+    cells: list[tuple[str, int, str]],
+    col_a: str,
+    col_b: str,
+    *,
+    min_n: int = 30,
+) -> list[dict[str, Any]]:
+    """events: ticker, date, ``col_a``, ``col_b`` (one row per event, as in ``cluster_ic``).
+    Per cell, on events where both values exist: rank IC of each and IC(b) - IC(a), pre-holdout
+    only, circular block bootstrap over calendar sessions (the difference is paired: both ICs
+    are recomputed on the same resampled sessions)."""
+    ec = cfg.eval
+    rng = np.random.default_rng(ec.seed)
+    session_idx = {d: i for i, d in enumerate(sessions)}
+    out = []
+    for entry, h, adj in cells:
+        t = targets.filter((pl.col("entry") == entry) & (pl.col("horizon") == h))
+        df = events.join(t, on=["ticker", "date"], how="inner")
+        if df.height:
+            dec = df["date"].to_numpy().astype("datetime64[D]")
+            end = df["label_end"].to_numpy().astype("datetime64[D]")
+            df = df.filter(pl.Series(pre_holdout_mask(dec, end, ec.holdout_start)))
+            df = df.filter(pl.col(col_a).is_not_null() & pl.col(col_b).is_not_null())
+        row: dict[str, Any] = {"entry": entry, "horizon": h, "adjustment": adj, "n": df.height}
+        if df.height < min_n:
+            nan = float("nan")
+            out.append({**row, "ic_a": nan, "ic_b": nan, "diff": nan})
+            continue
+        s = np.array([session_idx.get(d, -1) for d in df["date"].to_list()])
+        a = df[col_a].to_numpy().astype(float)
+        b = df[col_b].to_numpy().astype(float)
+        y = df[f"ret_{adj}"].to_numpy().astype(float)
+        block = h + 1 if entry == "close" else h + 2
+        res = {**row, "corr_ab": spearman(a, b)}
+        for name, stat in (
+            ("a", lambda idx, a=a, y=y: spearman(a[idx], y[idx])),
+            ("b", lambda idx, b=b, y=y: spearman(b[idx], y[idx])),
+            (
+                "diff",
+                lambda idx, a=a, b=b, y=y: spearman(b[idx], y[idx]) - spearman(a[idx], y[idx]),
+            ),
+        ):
+            est = stat(np.arange(len(a)))
+            boots = block_bootstrap(s, stat, block=block, reps=ec.bootstrap_reps, rng=rng)
+            summ = boot_summary(est, boots)
+            key = "diff" if name == "diff" else f"ic_{name}"
+            res[key] = est
+            res |= {f"{k}_{name}": v for k, v in summ.items()}
+        out.append(res)
+    return out
+
+
 def cluster_ic(
     events: pl.DataFrame,
     targets: pl.DataFrame,

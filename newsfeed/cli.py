@@ -1868,6 +1868,114 @@ def event_ic_cmd(
     _run("event-ic", cfg, params, body)
 
 
+@app.command("recall-check")
+def recall_check_cmd(
+    predictions: Annotated[
+        str, typer.Option(help="Comma-separated walk-forward student runs under data/distill/runs")
+    ] = "wf1,wf2,wf3,wf4",
+    start: Annotated[str, typer.Option(help="Events with t_use >= this UTC date")] = "2021-01-01",
+    end: Annotated[str, typer.Option(help="Events with t_use < this UTC date")] = "2026-07-01",
+    cells: Annotated[str, typer.Option(help="entry/horizon/adjustment cells")] = (
+        "close/2/market,close/1/market,close/1/sector,close/2/sector"
+    ),
+    reps: Annotated[int, typer.Option(help="Bootstrap repetitions")] = 10_000,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Distillation step 3 (pre-registered 2026-10-24): on identical 8-K events, rank IC of
+    Haiku's sentiment vs a walk-forward student's (each document scored by a student trained
+    only on documents tradable before its period). Earnings (primary) and guidance events."""
+    from newsfeed.eval.clusters import paired_event_ic
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cfg = cfg.model_copy(update={"eval": cfg.eval.model_copy(update={"bootstrap_reps": reps})})
+    cell_list = _cells(cells)
+    runs = _split(predictions)
+    t0, t1 = _parse_day(start), _parse_day(end)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        if cfg.universe.extra_members:
+            raise typer.BadParameter("use an S&P 500-only config (the pre-registered universe)")
+        d = cfg.paths.data_dir / "distill" / "runs"
+        preds = pl.concat(
+            [
+                pl.read_parquet(d / r / "predictions.parquet")
+                .filter(pl.col("source") == "edgar")
+                .select("item_id", pl.col("ticker").alias("canon"), "pred_sent")
+                for r in runs
+            ]
+        )
+        dup = preds.group_by("item_id", "canon").len().filter(pl.col("len") > 1)
+        if dup.height:
+            raise typer.BadParameter(f"{dup.height} documents scored by several students")
+        lines = [
+            f"# Recall check {run_id}",
+            "",
+            f"- events: 8-K founders, unmasked Haiku labels, relevance >= "
+            f"{cfg.features.min_relevance}, t_use in [{start}, {end}), dated to the first "
+            "decision; student = walk-forward runs " + ", ".join(runs),
+            f"- a = Haiku sentiment, b = student sentiment; diff = IC(b) - IC(a), paired block "
+            f"bootstrap over sessions, {reps} reps",
+            "",
+            "| events | cell | n | corr(a,b) | IC Haiku | IC student | diff | 95% CI diff | "
+            "p diff | p Haiku | p student |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        frames = []
+        for etype in ("earnings", "guidance"):
+            ev, grid, fan = _llm_events(ctx, cfg, "edgar", [etype], masked=False)
+            ev = ev.filter((pl.col("t_use") >= t0) & (pl.col("t_use") < t1))
+            n_ev = ev.height
+            ev = ev.join(preds, on=["item_id", "canon"], how="inner")
+            stats[f"{etype}_events"] = n_ev
+            stats[f"{etype}_with_student"] = ev.height
+            e = _dated_events(ctx, cfg, ev, grid, fan)
+            inp, _ = _eval_inputs(ctx, cfg, e.select("ticker", "as_of").unique())
+            res = pl.DataFrame(
+                paired_event_ic(
+                    e.select("ticker", "date", "sentiment", "pred_sent"),
+                    inp.targets,
+                    inp.sessions,
+                    cfg,
+                    cell_list,
+                    "sentiment",
+                    "pred_sent",
+                )
+            ).with_columns(pl.lit(etype).alias("events"))
+            frames.append(res)
+            for r in res.iter_rows(named=True):
+                lines.append(
+                    f"| {etype} | {r['entry']}/{r['horizon']}/{r['adjustment']} | {r['n']} | "
+                    f"{_num(r.get('corr_ab'), '.3f')} | {_num(r['ic_a'])} | {_num(r['ic_b'])} | "
+                    f"{_num(r['diff'])} | [{_num(r.get('ci_lo_diff'))}, "
+                    f"{_num(r.get('ci_hi_diff'))}] | {_num(r.get('p_diff'), '.3f')} | "
+                    f"{_num(r.get('p_a'), '.3f')} | {_num(r.get('p_b'), '.3f')} |"
+                )
+            lines.append(
+                f"\n_{etype}: {n_ev} Haiku events in the window, {ev.height} with a student "
+                "score_\n"
+            )
+        out = pl.concat(frames, how="diagonal_relaxed")
+        path = _write_report(cfg, f"recall-check-{run_id}", "\n".join(lines) + "\n", out)
+        stats["report"] = str(path)
+        with ctx.store.ops() as con:
+            con.execute(
+                "INSERT INTO experiments VALUES ('recall_check', ?, ?, ?, ?)",
+                [
+                    f"recall:{','.join(runs)}:{run_id}",
+                    utcnow(),
+                    run_id,
+                    json.dumps(
+                        {"runs": runs, "start": start, "end": end, "cells": cells, "reps": reps}
+                    ),
+                ],
+            )
+
+    params = {"predictions": predictions, "start": start, "end": end, "cells": cells, "reps": reps}
+    _run("recall-check", cfg, params, body)
+
+
 # test 7 controls: trailing volatility, |overnight gap|, |yesterday's return|, liquidity, volume
 VOL_CONTROLS = ["ctl_vol_20d", "abs_gap", "abs_ret_1d", "ctl_log_dvol_20d", "ctl_volume_ratio"]
 
