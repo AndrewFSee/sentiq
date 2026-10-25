@@ -39,6 +39,20 @@ class PathsConfig(_Strict):
         return PathsConfig(**{k: fix(v) for k, v in self.model_dump().items()})
 
 
+class ExtraMember(_Strict):
+    """A company added on top of the PIT S&P 500 (e.g. a Nasdaq-100 member that isn't in the
+    S&P 500). NOT point-in-time: chosen by *today's* index membership and treated as a member
+    from ``start`` on (survivorship bias; keep out of pre-registered S&P 500 tests)."""
+
+    ticker: str
+    cik: int
+    name: str
+    start: date  # later of the study start and the listing date
+    sector: str  # GICS sector name as in the S&P sector table (sector-adjusted returns)
+    index: str = "nasdaq100"
+    note: str = ""
+
+
 class UniverseConfig(_Strict):
     # static: the `tickers` list below. sp500_pit: point-in-time S&P 500 membership built by
     # `newsfeed universe build` (universe_pit.py); `tickers` is then only an optional subset.
@@ -53,7 +67,9 @@ class UniverseConfig(_Strict):
     # 500-name universe where names like "Target" or "Ball" collide with ordinary words)
     name_linking: Literal["sec_names", "aliases_only"] = "sec_names"
     # sources whose items link only through their source tags (no name/cashtag matching)
-    source_only_linking: list[str] = Field(default_factory=lambda: ["transcripts"])
+    source_only_linking: list[str] = Field(
+        default_factory=lambda: ["transcripts", "transcripts_qa", "transcripts_prep"]
+    )
     # Company-name aliases for text linking, matched case-sensitively on word boundaries.
     # A cleaned SEC company name is added automatically.
     aliases: dict[str, list[str]] = Field(default_factory=dict)
@@ -62,6 +78,15 @@ class UniverseConfig(_Strict):
     products: dict[str, list[str]] = Field(default_factory=dict)
     people: dict[str, list[str]] = Field(default_factory=dict)
     places: dict[str, list[str]] = Field(default_factory=dict)
+    # sp500_pit only: companies added on top of the S&P 500 membership (not PIT, see
+    # ExtraMember). Empty = the S&P 500 alone; ids/hashes then match configs without the field.
+    extra_members: list[ExtraMember] = Field(default_factory=list)
+
+    def hashable(self) -> dict:
+        """model_dump for content hashes: drops pit_dir (a path) and an empty extra_members,
+        so configs written before the field existed keep their feature-set ids."""
+        exclude = {"pit_dir"} | (set() if self.extra_members else {"extra_members"})
+        return self.model_dump(mode="json", exclude=exclude)
 
     @field_validator("tickers")
     @classmethod
@@ -108,6 +133,26 @@ class EdgarConfig(_Strict):
     poll_lookback_hours: float = Field(48, gt=0)  # entries older than this are ignored by poll
     catch_up_every_minutes: float = Field(60, gt=0)  # per-CIK submissions sweep (missed entries)
     silence_alert_minutes: float = Field(45, gt=0)  # market-open minutes w/o feed activity
+    # raw-document store root for this source (None = paths.raw_dir); big 10-K HTML lives on D:
+    raw_dir: Path | None = None
+    # overrides universe.ingest_margin_before_days for this source (10-K similarity needs the
+    # filing one year before the first in-window one)
+    ingest_margin_before_days: int | None = Field(None, ge=0)
+
+
+def _periodic_default() -> EdgarConfig:
+    return EdgarConfig(
+        forms=["10-K", "10-Q"],
+        exhibit_type_prefixes=[],
+        max_tokens=400_000,
+        ingest_margin_before_days=400,
+        current_feed_url=(
+            "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=10-"
+            "&company=&dateb=&owner=include&output=atom"
+        ),
+        catch_up_every_minutes=1440,
+        silence_alert_minutes=20000,
+    )
 
 
 class NewsApiConfig(_Strict):
@@ -135,6 +180,8 @@ class TranscriptsConfig(_Strict):
     hf_repo: str = "defeatbeta/yahoo-finance-data"
     hf_file: str = "data/US/stock_earning_call_transcripts.parquet"
     auto_refresh: bool = True  # catch-up polls download a newer dataset version if any
+    # per poll; an unfinished download resumes on every poll (not just catch-ups) until done
+    download_minutes_per_poll: float = Field(5, gt=0)
     catch_up_every_minutes: float = Field(360, gt=0)  # = refresh check cadence
     silence_alert_minutes: float = Field(20000, gt=0)  # market minutes; calls are seasonal
     max_tokens: int = Field(16000, gt=0)  # median call ~10k tokens
@@ -146,8 +193,17 @@ class TranscriptsConfig(_Strict):
 
 class SourcesConfig(_Strict):
     edgar: EdgarConfig = Field(default_factory=EdgarConfig)
+    # 10-K / 10-Q annual and quarterly reports: full text, separate from 8-K features/scoring
+    edgar_periodic: EdgarConfig = Field(default_factory=_periodic_default)
     news_api: NewsApiConfig = Field(default_factory=NewsApiConfig)
     transcripts: TranscriptsConfig = Field(default_factory=TranscriptsConfig)
+    # backfill-only section views of the same calls (test 5 robustness)
+    transcripts_qa: TranscriptsConfig = Field(
+        default_factory=lambda: TranscriptsConfig(auto_refresh=False)
+    )
+    transcripts_prep: TranscriptsConfig = Field(
+        default_factory=lambda: TranscriptsConfig(auto_refresh=False)
+    )
 
 
 class CollectConfig(_Strict):
@@ -155,6 +211,9 @@ class CollectConfig(_Strict):
     sources: list[str] = Field(default_factory=lambda: ["edgar"])
     max_consecutive_failures: int = Field(3, gt=0)  # alert threshold
     stalled_after_intervals: float = Field(3, gt=1)  # heartbeat older than N intervals = stalled
+    # live coverage: a successful poll covers the time since the previous successful poll if
+    # that is at most this long AND the poll reached back to it (user decision 2026-10-16)
+    coverage_max_gap_minutes: float = Field(60, gt=0)
     realert_minutes: float = Field(60, gt=0)  # repeat an ongoing alert at most this often
 
 
@@ -166,6 +225,13 @@ class DedupeConfig(_Strict):
     window_hours: float = Field(72, gt=0)  # exact/near matches only within this window
     require_ticker_overlap: bool = True  # when both items have tickers
     seed: int = 1
+    # items of these sources only match items of the same source (derived views of documents
+    # stored under another source, e.g. transcript sections, must not join that story)
+    isolated_sources: list[str] = Field(default_factory=list)
+    # sources left out of stories entirely (no item_story rows -> never founders, never scored
+    # by the founders-only planner): standalone documents such as 10-K / 10-Q full text, whose
+    # out-of-order backfill would otherwise force a full story recompute every collect cycle
+    excluded_sources: list[str] = Field(default_factory=list)
 
 
 class LinkPolicy(_Strict):
@@ -403,7 +469,12 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
     trans = cfg.sources.transcripts
     if not trans.path.is_absolute():  # reference data lives with the project
         trans = trans.model_copy(update={"path": PROJECT_ROOT / trans.path})
-    sources = cfg.sources.model_copy(update={"news_api": news, "transcripts": trans})
+    per = cfg.sources.edgar_periodic
+    if per.raw_dir is not None and not per.raw_dir.is_absolute():
+        per = per.model_copy(update={"raw_dir": (root or PROJECT_ROOT) / per.raw_dir})
+    sources = cfg.sources.model_copy(
+        update={"news_api": news, "transcripts": trans, "edgar_periodic": per}
+    )
     feats = cfg.features
     uni = cfg.universe
     if not uni.pit_dir.is_absolute():

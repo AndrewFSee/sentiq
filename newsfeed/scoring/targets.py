@@ -106,13 +106,15 @@ def candidate_pairs(
     if since_tradable is not None:
         where.append("i.tradable_at >= $since")
         params["since"] = ensure_utc(since_tradable)
+    items = "items"
     if sources:
         where.append("i.source IN (SELECT unnest($sources))")
         params["sources"] = sources
+        items = store.items_relation(sources)  # only those partitions (the filter stays as is)
     df = store.query(
         f"""
         SELECT DISTINCT i.item_id, t.cik, i.tradable_at, i.text_hash
-        FROM item_tickers t JOIN items i USING (item_id)
+        FROM item_tickers t JOIN {items} i USING (item_id)
         WHERE {" AND ".join(where)}
         ORDER BY i.tradable_at, i.item_id, t.cik
         """,

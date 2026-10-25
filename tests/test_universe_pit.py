@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import polars as pl
+import pytest
 
+from newsfeed.config import ExtraMember, UniverseConfig
 from newsfeed.ingest.edgar import EdgarAdapter
 from newsfeed.tickers import Universe
 from newsfeed.universe_pit import (
@@ -126,6 +128,37 @@ def test_pit_universe_views():
     assert w[1] == w[11] == (date(2019, 1, 1), date(2026, 1, 1))
     # NEW joined 2022-08-01 -> 90 days of history before
     assert w[5][0] == date(2022, 5, 3)
+
+
+def test_extra_members_join_from_their_start_and_never_overlap_the_index():
+    members, sectors, _ = build_tables(FJA, WIKI, date(2019, 1, 1))
+    base = PitUniverse(members, sectors)
+    assert base.with_extras([]) is base
+    x = ExtraMember(ticker="XTRA", cik=99, name="Extra Inc", start=date(2024, 3, 20),
+                    sector="Information Technology")  # fmt: skip
+    u = base.with_extras([x])
+    assert base.members.height == members.height  # the stored tables are untouched
+    assert u.as_universe().cik_to_tickers[99] == ["XTRA"]
+    assert u.titles()[99] == "Extra Inc"
+    df = pl.DataFrame({"ticker": ["XTRA", "XTRA"], "date": [date(2024, 3, 19), date(2024, 3, 20)]})
+    assert u.is_member(df).to_list() == [False, True]
+    w = u.ingest_windows(date(2019, 1, 1), date(2026, 1, 1), before_days=90, after_days=30)
+    assert w[99] == (date(2023, 12, 21), date(2026, 1, 1))
+    etf = u.sector_etf_frame({"Information Technology": "XLK"}).filter(pl.col("ticker") == "XTRA")
+    assert etf["etf"].to_list() == ["XLK"]
+    with pytest.raises(ValueError, match="already in the S&P 500"):
+        base.with_extras([x.model_copy(update={"ticker": "META"})])
+    with pytest.raises(ValueError, match="already in the S&P 500"):
+        base.with_extras([x.model_copy(update={"cik": 2})])
+
+
+def test_empty_extras_leave_universe_hashes_unchanged():
+    u = UniverseConfig(mode="sp500_pit")
+    assert "extra_members" not in u.hashable() and "pit_dir" not in u.hashable()
+    with_x = u.model_copy(update={"extra_members": [ExtraMember(
+        ticker="XTRA", cik=99, name="Extra Inc", start=date(2024, 3, 20), sector="Industrials"
+    )]})  # fmt: skip
+    assert with_x.hashable()["extra_members"][0]["ticker"] == "XTRA"
 
 
 def test_parse_wiki_table_both_header_styles():

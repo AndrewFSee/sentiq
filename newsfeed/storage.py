@@ -26,15 +26,17 @@ from __future__ import annotations
 
 import contextlib
 import gzip
+import hashlib
 import json
 import logging
 import os
 import platform
 import subprocess
+import threading
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from datetime import datetime
 from importlib import metadata
 from pathlib import Path
@@ -76,8 +78,27 @@ ITEMS_SCHEMA = pa.schema(
         ("parser_version", pa.string()),
         ("run_id", pa.string()),
         ("ingested_at", TS),
+        # sha256 hex of title + "\n" + body (item_text_hash); stored since 2026-10-22 so that
+        # lookups by text never read or hash the bodies of the whole lake (older files gained it
+        # via `newsfeed migrate-text-hash`; same value the view used to compute)
+        pa.field("text_hash", pa.string(), nullable=False),
     ]
 )
+
+
+TEXT_HASH_MARKER = "_text_hash_migrated"  # in lake/items/: every file stores text_hash
+
+
+def item_text_hash(title: str | None, body: str | None) -> str:
+    """The items' text hash, identical to DuckDB's
+    sha256(coalesce(title, '') || chr(10) || coalesce(body_text, '')) (verified on stored rows,
+    incl. non-ASCII text)."""
+    return hashlib.sha256(((title or "") + "\n" + (body or "")).encode("utf-8")).hexdigest()
+
+
+def _with_text_hash(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{**r, "text_hash": item_text_hash(r.get("title"), r.get("body_text"))} for r in rows]
+
 
 ITEM_TICKERS_SCHEMA = pa.schema(
     [
@@ -316,13 +337,25 @@ def write_table_atomic(table: pa.Table, path: Path) -> None:
 
 
 class FileLock:
-    """Cross-process exclusive lock via O_EXCL lock file. Stale locks (older than ``stale_after``
-    seconds, e.g. from a killed process) are broken."""
+    """Cross-process exclusive lock via O_EXCL lock file. Stale locks (not touched for
+    ``stale_after`` seconds, e.g. from a killed process) are broken. The holder touches the file
+    every ``stale_after / 4`` seconds (at most every 60 s) from a daemon thread, so a long job
+    is never taken for dead: on 2026-10-21 a 35-min relink lost its lock to the collector,
+    which started a second full relink next to it (two ~15 GB processes on a 16 GB laptop).
+    PID liveness isn't used: on Windows ``os.kill(pid, 0)`` terminates the process."""
 
     def __init__(self, path: Path, stale_after: float = 1800.0) -> None:
         self.path = path
         self.stale_after = stale_after
         self._held = False
+        self._stop: threading.Event | None = None
+        self._beat: threading.Thread | None = None
+
+    def _heartbeat(self, stop: threading.Event) -> None:
+        every = min(60.0, self.stale_after / 4)
+        while not stop.wait(every):
+            with contextlib.suppress(OSError):
+                os.utime(self.path, None)
 
     def acquire(self) -> bool:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -343,11 +376,19 @@ class FileLock:
             with os.fdopen(fd, "w") as f:
                 f.write(json.dumps({"pid": os.getpid(), "at": utcnow().isoformat()}))
             self._held = True
+            self._stop = threading.Event()
+            self._beat = threading.Thread(
+                target=self._heartbeat, args=(self._stop,), daemon=True, name="lock-heartbeat"
+            )
+            self._beat.start()
             return True
         return False
 
     def release(self) -> None:
         if self._held:
+            if self._stop is not None and self._beat is not None:
+                self._stop.set()
+                self._beat.join(timeout=5)
             with contextlib.suppress(FileNotFoundError):
                 self.path.unlink()
             self._held = False
@@ -448,28 +489,45 @@ class Store:
             return con.execute(sql, params or []).pl()
 
     # ----------------------------------------------------------------- views
+    def _empty_path(self, name: str, schema: pa.Schema) -> Path:
+        """An empty, correctly-typed Parquet file for ``schema``, named by a hash of the schema:
+        a schema change writes a *new* file instead of replacing one that another process may
+        be reading (on Windows that replace fails; it crashed a migration on 2026-10-22)."""
+        tag = hashlib.sha256(schema.to_string().encode()).hexdigest()[:8]
+        empty = self.lake / f"_empty_{name}_{tag}.parquet"
+        if not empty.exists():
+            write_table_atomic(schema.empty_table(), empty)
+        return empty
+
     def _source_sql(self, name: str, directory: Path, schema: pa.Schema) -> str:
         """read_parquet over ``directory`` unioned with an empty, correctly-typed file, so the
         view exists before the first write and always exposes every current column."""
-        empty = self.lake / f"_empty_{name}.parquet"
-        try:
-            current = pq.read_schema(empty) if empty.exists() else None
-        except Exception:
-            current = None
-        if current is None or not current.equals(schema):
-            write_table_atomic(schema.empty_table(), empty)
-        files = [empty.as_posix()]
+        files = [self._empty_path(name, schema).as_posix()]
         if any(directory.rglob("*.parquet")):
             files.append((directory / "**" / "*.parquet").as_posix())
         return f"read_parquet({files!r}, union_by_name = true)"
 
-    def refresh_views(self) -> None:
-        items_src = self._source_sql("items", self.items_dir, ITEMS_SCHEMA)
-        self.q.execute(
-            f"""
-            CREATE OR REPLACE VIEW items AS
-            SELECT * EXCLUDE (_rn) REPLACE (coalesce(publisher, source) AS publisher),
-                   sha256(coalesce(title, '') || chr(10) || coalesce(body_text, '')) AS text_hash
+    @property
+    def text_hash_migrated(self) -> bool:
+        """True once `newsfeed migrate-text-hash` has verified every item file stores
+        text_hash (marker file); writers always store it, so the view can then use the column
+        without reading any body text."""
+        return (self.items_dir / TEXT_HASH_MARKER).exists()
+
+    def _items_sql(self, src: str, where: str = "") -> str:
+        """The ``items`` view body: one canonical row per item_id. ``where`` may only filter on
+        item_id (the window's partition key), so filtering before the window is identical to
+        filtering the view. text_hash: the stored column after the migration; before it,
+        computed where a file predates the column (same value)."""
+        th = (
+            "text_hash"
+            if self.text_hash_migrated
+            else "coalesce(text_hash, "
+            "sha256(coalesce(title, '') || chr(10) || coalesce(body_text, '')))"
+        )
+        return f"""
+            SELECT * EXCLUDE (_rn) REPLACE (coalesce(publisher, source) AS publisher,
+                                            {th} AS text_hash)
             FROM (
                 SELECT *, row_number() OVER (
                     PARTITION BY item_id
@@ -478,10 +536,90 @@ class Store:
                     ORDER BY (ingest_mode = 'live') DESC, first_seen_at, parser_version DESC,
                              ingested_at, run_id
                 ) AS _rn
-                FROM {items_src}
+                FROM {src} {where}
             ) WHERE _rn = 1
             """
+
+    def migrate_text_hash(self, progress: Callable[[int, int], None] | None = None) -> dict:
+        """Add the stored ``text_hash`` column to item files written before it existed. Each
+        file: read without partition columns, hash = ``item_text_hash`` (checked against
+        DuckDB's sha256 on the same table), atomic replace; nothing else changes. Idempotent.
+        Writes the marker only when no item row anywhere lacks a hash."""
+        files = sorted(self.items_dir.rglob("*.parquet"))
+        done = skipped = 0
+        con = duckdb.connect()
+        for k, f in enumerate(files, 1):
+            with pq.ParquetFile(f) as pf:  # closed before the replace (Windows locks open files)
+                nulls = None
+                if "text_hash" in pf.schema_arrow.names:
+                    col = pf.schema_arrow.names.index("text_hash")
+                    md = pf.metadata
+                    nulls = sum(
+                        md.row_group(g).column(col).statistics.null_count
+                        if md.row_group(g).column(col).statistics is not None
+                        else 1
+                        for g in range(md.num_row_groups)
+                    )
+                tbl = None if nulls == 0 else pf.read()
+            if tbl is None:
+                skipped += 1
+                continue
+            if "text_hash" in tbl.column_names:
+                tbl = tbl.drop_columns(["text_hash"])
+            titles, bodies = tbl.column("title").to_pylist(), tbl.column("body_text").to_pylist()
+            hashes = pa.array(
+                [item_text_hash(t, b) for t, b in zip(titles, bodies, strict=True)], pa.string()
+            )
+            tbl = tbl.append_column(pa.field("text_hash", pa.string(), nullable=False), hashes)
+            con.register("t", tbl)
+            bad = con.execute(
+                "SELECT count(*) FROM t WHERE text_hash IS DISTINCT FROM "
+                "sha256(coalesce(title, '') || chr(10) || coalesce(body_text, ''))"
+            ).fetchone()[0]
+            con.unregister("t")
+            if bad:
+                raise RuntimeError(f"{f}: {bad} hashes differ from DuckDB's sha256; not written")
+            write_table_atomic(tbl, f)
+            done += 1
+            if progress is not None:
+                progress(k, len(files))
+        missing = self.rows_without_text_hash()
+        if missing == 0:
+            (self.items_dir / TEXT_HASH_MARKER).write_text(utcnow().isoformat(), encoding="utf-8")
+            self.refresh_views()
+        return {"files": len(files), "migrated": done, "already": skipped, "missing": missing}
+
+    def rows_without_text_hash(self) -> int:
+        """Item rows (raw files, not the view) with no stored hash; reads only that column."""
+        if not any(self.items_dir.rglob("*.parquet")):
+            return 0
+        glob = (self.items_dir / "**" / "*.parquet").as_posix()
+        empty = self._empty_path("items", ITEMS_SCHEMA).as_posix()
+        return int(
+            self.q.execute(
+                f"SELECT count(*) FROM read_parquet([{empty!r}, {glob!r}], union_by_name = true) "
+                "WHERE text_hash IS NULL"
+            ).fetchone()[0]
         )
+
+    def check_text_hash(self) -> bool:
+        """Guard for the stored-hash view: if any row lacks a hash (a file written by code from
+        before the column), drop the marker so the view computes hashes again. True if OK."""
+        if not self.text_hash_migrated:
+            return False
+        n = self.rows_without_text_hash()
+        if n:
+            log.error("%d item rows lack text_hash; view falls back to computing it -- run "
+                      "`newsfeed migrate-text-hash`", n)  # fmt: skip
+            with contextlib.suppress(FileNotFoundError):
+                (self.items_dir / TEXT_HASH_MARKER).unlink()
+            self.refresh_views()
+            return False
+        return True
+
+    def refresh_views(self) -> None:
+        items_src = self._source_sql("items", self.items_dir, ITEMS_SCHEMA)
+        self.q.execute(f"CREATE OR REPLACE VIEW items AS {self._items_sql(items_src)}")
         tick_src = self._source_sql("item_tickers", self.tickers_dir, ITEM_TICKERS_SCHEMA)
         self.q.execute(
             f"""
@@ -561,7 +699,8 @@ class Store:
         for (source, ym), grp in groups.items():
             d = self.items_dir / f"src={source}" / f"ym={ym}"
             write_table_atomic(
-                pa.Table.from_pylist(grp, schema=ITEMS_SCHEMA), self._part_path(d, run_id)
+                pa.Table.from_pylist(_with_text_hash(grp), schema=ITEMS_SCHEMA),
+                self._part_path(d, run_id),
             )
         known.update(fresh)
         self.refresh_views()
@@ -578,7 +717,8 @@ class Store:
         for (source, ym), grp in groups.items():
             d = self.items_dir / f"src={source}" / f"ym={ym}"
             write_table_atomic(
-                pa.Table.from_pylist(grp, schema=ITEMS_SCHEMA), self._part_path(d, run_id)
+                pa.Table.from_pylist(_with_text_hash(grp), schema=ITEMS_SCHEMA),
+                self._part_path(d, run_id),
             )
         self.refresh_views()
         return len(rows)
@@ -649,6 +789,37 @@ class Store:
             write_table_atomic(pa.Table.from_pylist(list(rows), schema=ITEM_STORY_SCHEMA), path)
         self.refresh_views()
 
+    def items_by_id(
+        self, item_ids: Iterable[str], *, sources: Iterable[str] | None = None, columns: str = "*"
+    ) -> pl.DataFrame:
+        """Rows of the ``items`` view for these ids, without scanning the whole lake: ids are
+        filtered before the dedupe window (same result, see ``_items_sql``) and, with
+        ``sources``, only those ``src=`` partitions are read (the 10-K / 10-Q full texts are
+        most of the lake). Measured 2026-10-21: 5 ids 204 s via the view, 4.2 s here. A lookup
+        by id, not an as-of read: callers that need point-in-time selection still go through
+        ``items_as_of``."""
+        ids = list(item_ids)
+        if not ids:
+            return self.query(f"SELECT {columns} FROM items LIMIT 0")
+        rel = self.items_relation(sources, where="WHERE item_id IN (SELECT unnest($ids))")
+        return self.query(f"SELECT {columns} FROM {rel}", {"ids": ids})
+
+    def items_relation(self, sources: Iterable[str] | None = None, *, where: str = "") -> str:
+        """SQL relation equal to ``items`` restricted to ``sources`` (None = all), reading only
+        their ``src=<source>`` partitions: every item is stored under its own source, so this is
+        the same as filtering the view on ``source`` but without scanning (and hashing) the
+        rest of the lake. ``where`` may only filter on item_id (see ``_items_sql``)."""
+        if sources is None:
+            src = self._source_sql("items", self.items_dir, ITEMS_SCHEMA)
+        else:
+            files = [self._empty_path("items", ITEMS_SCHEMA).as_posix()]
+            for s in sources:
+                d = self.items_dir / f"src={s}"
+                if any(d.rglob("*.parquet")):
+                    files.append((d / "**" / "*.parquet").as_posix())
+            src = f"read_parquet({files!r}, union_by_name = true)"
+        return f"({self._items_sql(src, where)})"
+
     def items_as_of(
         self,
         as_of: datetime,
@@ -656,6 +827,7 @@ class Store:
         tickers: Iterable[str] | None = None,
         source: str | None = None,
         columns: str = "*",
+        item_ids: Iterable[str] | None = None,
     ) -> pl.DataFrame:
         """THE point-in-time accessor: only items with ``tradable_at <= as_of``.
 
@@ -672,6 +844,9 @@ class Store:
         if source is not None:
             where.append("source = $source")
             params["source"] = source
+        if item_ids is not None:
+            where.append("item_id IN (SELECT unnest($item_ids))")
+            params["item_ids"] = list(item_ids)
         sql = f"SELECT {columns} FROM items WHERE {' AND '.join(where)} ORDER BY tradable_at"
         return self.q.execute(sql, params).pl()
 

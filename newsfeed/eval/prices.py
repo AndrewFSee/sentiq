@@ -15,8 +15,10 @@ ticker list has survivorship bias.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote
 
+import httpx
 import polars as pl
 
 from newsfeed.ingest.http import HttpClient
@@ -138,6 +141,16 @@ class TradierPrices:
         )
 
 
+ENDED_GAP_DAYS = 30
+
+
+def horizon_days(max_horizon: int) -> tuple[int, int]:
+    """(calendar days of prices needed after a membership window / the last decision,
+    cash-padding sessions after a delisting) for labels of up to ``max_horizon`` sessions.
+    Horizons up to 20 sessions give (45, 25), the values used through test 9."""
+    return max(45, math.ceil(max_horizon * 1.5) + 15), max(25, max_horizon + 5)
+
+
 class CachedPrices:
     """Disk cache in front of a PriceSource: data/ref/prices/<SYMBOL>.parquet (+ dividends)."""
 
@@ -156,8 +169,17 @@ class CachedPrices:
         meta_p = self._meta(symbol)
         if bars_p.exists() and meta_p.exists() and not refresh:
             m = json.loads(meta_p.read_text())
-            if date.fromisoformat(m["start"]) <= start and date.fromisoformat(m["end"]) >= end:
+            if m.get("not_found"):  # the vendor does not know the symbol at all (404)
+                return pl.read_parquet(bars_p)
+            m_start, m_end = date.fromisoformat(m["start"]), date.fromisoformat(m["end"])
+            if m_start <= start and m_end >= end:
                 return pl.read_parquet(bars_p).filter(pl.col("date").is_between(start, end))
+            if m_start <= start:
+                # a series that stopped well before the end of the window it was fetched for has
+                # ended (delisted / renamed): asking for a later end returns nothing new
+                bars = pl.read_parquet(bars_p)
+                if bars.height and bars["date"].max() < m_end - timedelta(days=ENDED_GAP_DAYS):
+                    return bars.filter(pl.col("date").is_between(start, end))
         if self.source is None:
             raise RuntimeError(f"no cached prices for {symbol} {start}..{end} and no source")
         lo = start - timedelta(days=45)  # room for trailing controls
@@ -169,10 +191,28 @@ class CachedPrices:
                     "start": lo.isoformat(),
                     "end": end.isoformat(),
                     "fetched_at": utcnow().isoformat(),
+                    "not_found": symbol in getattr(self.source, "not_found", ()),
                 }
             )
         )
         return bars.filter(pl.col("date").is_between(start, end))
+
+    def search(self, query: str, *, refresh: bool = False) -> list[dict]:
+        """Vendor ticker search, cached on disk (``search/<sha1>.json``): every eval asks the
+        same questions about the same unpriced names, and on a rate-limited free tier each
+        uncached search costs a throttled request."""
+        p = self.dir / "search" / f"{hashlib.sha1(query.encode()).hexdigest()[:16]}.json"
+        if p.exists() and not refresh:
+            return json.loads(p.read_text())["hits"]
+        search = getattr(self.source, "search", None)
+        if search is None:
+            return []
+        hits = search(query)
+        if hits or getattr(self.source, "last_search_ok", True):  # don't cache a failure
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({"query": query, "fetched_at": utcnow().isoformat(),
+                                     "hits": hits}))  # fmt: skip
+        return hits
 
     def dividends(self, symbol: str, *, refresh: bool = False) -> pl.DataFrame:
         p = self.dir / f"{symbol}.dividends.parquet"
@@ -230,6 +270,8 @@ class TiingoPrices:
         )
         self._divs: dict[str, pl.DataFrame] = {}
         self._splits: dict[str, pl.DataFrame] = {}
+        self.not_found: set[str] = set()  # symbols Tiingo answered 404 for (unknown ticker)
+        self.last_search_ok = True
 
     def daily_bars(self, symbol: str, start: date, end: date) -> pl.DataFrame:
         url = (
@@ -240,6 +282,8 @@ class TiingoPrices:
             rows = self.http.get(url).json() or []
         except Exception as exc:  # unknown ticker -> 404
             log.info("tiingo: no data for %s (%r)", symbol, exc)
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+                self.not_found.add(symbol)
             rows = []
         if not rows:
             self._divs[symbol] = pl.DataFrame(schema=DIV_SCHEMA)
@@ -275,10 +319,13 @@ class TiingoPrices:
         """Tiingo ticker search (finds securities filed under a later ticker)."""
         url = f"https://api.tiingo.com/tiingo/utilities/search?query={quote(query)}"
         try:
-            return [r for r in self.http.get(url).json() or [] if isinstance(r, dict)]
+            hits = [r for r in self.http.get(url).json() or [] if isinstance(r, dict)]
         except Exception as exc:
             log.info("tiingo: search %r failed (%r)", query, exc)
+            self.last_search_ok = False
             return []
+        self.last_search_ok = True
+        return hits
 
     def dividends(self, symbol: str) -> pl.DataFrame:
         if symbol not in self._divs:
@@ -378,6 +425,7 @@ def build_panel(
     sessions: list[date],
     *,
     refresh: bool = False,
+    max_pad: int = 25,
 ) -> tuple[pl.DataFrame, list[dict], dict[str, pl.DataFrame]]:
     """Fetch every route (Tiingo when the Tradier series starts late or has gaps and Tiingo's
     is better; then same-CIK / name-search candidates on Tiingo), pad series that stop trading
@@ -410,7 +458,7 @@ def build_panel(
             last = p["date"].max()
             if any(last < d <= rt.end for d in sessions):  # stopped trading inside window
                 before = p.height
-                p = pad_delisted(p.drop("synthetic"), sessions, {rt.ticker}).filter(
+                p = pad_delisted(p.drop("synthetic"), sessions, {rt.ticker}, max_pad).filter(
                     pl.col("date") <= rt.end
                 )
                 padded = p.height - before
@@ -491,7 +539,7 @@ def _tiingo_candidates(rt: PriceRoute, cache: CachedPrices, exclude: set[str]) -
     if isinstance(src, TiingoPrices) and rt.name:
         words = [w for w in re.findall(r"[a-z0-9&]+", rt.name.lower()) if w not in _NAME_STOP]
         if words:
-            hits = src.search(" ".join(words[:3]))
+            hits = cache.search(" ".join(words[:3]))
             ok = {
                 str(h["ticker"]).upper()
                 for h in hits

@@ -76,7 +76,12 @@ def cfg(tmp_path: Path) -> AppConfig:
     )
     # hermetic: tests use the original static dev universe regardless of default.yaml's mode
     uni = c.universe.model_copy(
-        update={"mode": "static", "tickers": DEV_TICKERS, "name_linking": "sec_names"}
+        update={
+            "mode": "static",
+            "tickers": DEV_TICKERS,
+            "name_linking": "sec_names",
+            "extra_members": [],  # default.yaml's Nasdaq-100 extras stay out of tests
+        }
     )
     return c.model_copy(update={"features": feats, "universe": uni})
 

@@ -193,11 +193,14 @@ class Collector:
         else:
             done = self.clock()
             prev_ok = _dt(st.last_poll_ok_at)
-            max_gap = timedelta(
-                seconds=self.cfg.collect.stalled_after_intervals * self.cfg.collect.interval_seconds
-            )
+            max_gap = timedelta(minutes=self.cfg.collect.coverage_max_gap_minutes)
             universe = getattr(adapter, "universe", None)
-            if prev_ok is not None and done - prev_ok <= max_gap and universe is not None:
+            # did this poll see everything since the previous one? A feed adapter reports the
+            # oldest entry it paged back to (``last_poll_reach``); a catch-up sweep re-lists
+            # every company. Adapters without a feed (full re-reads) always reach back.
+            reach = getattr(adapter, "last_poll_reach", None)
+            reached = catch_up or reach is None or (prev_ok is not None and reach <= prev_ok)
+            if prev_ok is not None and done - prev_ok <= max_gap and reached and universe:
                 # watched continuously since the previous successful poll
                 tickers = [t for ts in universe.cik_to_tickers.values() for t in ts]
                 coverage.record_live(self.store, source, tickers, prev_ok, done, self.run_id)

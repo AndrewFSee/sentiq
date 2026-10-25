@@ -122,6 +122,120 @@ def benjamini_hochberg(p: np.ndarray, q: float) -> np.ndarray:
     return out
 
 
+def daily_cross_section(
+    day: np.ndarray, x: np.ndarray, y: np.ndarray, *, min_names: int = 10, n_q: int = 5
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per decision session with >= ``min_names`` rows (x and y present): the cross-sectional
+    rank IC and the top-minus-bottom quantile mean of y (quantiles of the within-day rank of x;
+    ties share a quantile, so a day whose top or bottom quantile is empty has a NaN spread).
+    Returns (session index, IC, spread) per usable day."""
+    ok = ~(np.isnan(x) | np.isnan(y))
+    order = np.argsort(day[ok], kind="stable")
+    d, xs, ys = day[ok][order], x[ok][order], y[ok][order]
+    cut = np.flatnonzero(np.diff(d)) + 1
+    days, ics, spreads = [], [], []
+    for a, b in zip(np.r_[0, cut], np.r_[cut, len(d)], strict=True):
+        n = b - a
+        if n < min_names:
+            continue
+        ic = spearman(xs[a:b], ys[a:b])
+        if np.isnan(ic):
+            continue
+        q = np.minimum((_rank(xs[a:b]) * n_q / n).astype(int), n_q - 1)
+        top, bot = ys[a:b][q == n_q - 1], ys[a:b][q == 0]
+        days.append(d[a])
+        ics.append(ic)
+        spreads.append(float(top.mean() - bot.mean()) if len(top) and len(bot) else np.nan)
+    return np.array(days, dtype=np.int64), np.array(ics), np.array(spreads)
+
+
+def ic_detail(
+    day: np.ndarray,
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    block: int,
+    reps: int,
+    rng: np.random.Generator,
+    min_names: int = 10,
+) -> dict[str, float]:
+    """Descriptive daily view of a signal (test 9): mean / sd of the daily cross-sectional IC,
+    ICIR = mean / sd (per day, not annualised), and the mean daily Q5 - Q1 return spread, with
+    circular block-bootstrap CIs over sessions. Not part of any BH family."""
+    d, ic, sp = daily_cross_section(day, x, y, min_names=min_names)
+    nan = float("nan")
+    keys = ("ic_daily", "ic_daily_sd", "icir", "ic_daily_ci_lo", "ic_daily_ci_hi", "ic_daily_p",
+            "q_spread", "q_spread_ci_lo", "q_spread_ci_hi", "q_spread_p")  # fmt: skip
+    out: dict[str, float] = {"days": len(d), **dict.fromkeys(keys, nan)}
+    if len(d) < 20:
+        return out
+    m, sd = float(ic.mean()), float(ic.std(ddof=1))
+    b = boot_summary(m, block_bootstrap(d, lambda i: ic[i].mean(), block=block, reps=reps, rng=rng))
+    out.update(
+        ic_daily=m,
+        ic_daily_sd=sd,
+        icir=m / sd if sd > 0 else nan,
+        ic_daily_ci_lo=b["ci_lo"],
+        ic_daily_ci_hi=b["ci_hi"],
+        ic_daily_p=b["p"],
+    )
+    ok = ~np.isnan(sp)
+    if ok.sum() >= 20:
+        sv = sp[ok]
+        ms = float(sv.mean())
+        b = boot_summary(
+            ms, block_bootstrap(d[ok], lambda i: sv[i].mean(), block=block, reps=reps, rng=rng)
+        )
+        out.update(q_spread=ms, q_spread_ci_lo=b["ci_lo"], q_spread_ci_hi=b["ci_hi"],
+                   q_spread_p=b["p"])  # fmt: skip
+    return out
+
+
+def rank_residuals(v: np.ndarray, controls: np.ndarray) -> np.ndarray:
+    """Residual of rank(v) after OLS (with intercept) on the ranks of each control column."""
+    rc = np.column_stack([np.ones(len(v))] + [_rank(c) for c in controls.T])
+    rv = _rank(v)
+    beta, *_ = np.linalg.lstsq(rc, rv, rcond=None)
+    return rv - rc @ beta
+
+
+def partial_rank_corr(
+    x: np.ndarray,
+    y: np.ndarray,
+    controls: np.ndarray,
+    sessions: np.ndarray,
+    *,
+    block: int,
+    reps: int,
+    rng: np.random.Generator,
+) -> dict[str, float]:
+    """Partial rank correlation of x and y given ``controls`` (rows x columns): Pearson of the
+    rank residuals of x and y. The residuals are computed once on the full sample (the fit
+    uses every row, so its sampling error is negligible next to the correlation's) and the
+    bootstrap resamples residual pairs by calendar-session blocks. Rows with any NaN dropped."""
+    ok = ~(np.isnan(x) | np.isnan(y) | np.isnan(controls).any(axis=1))
+    nan = float("nan")
+    if ok.sum() < 30:
+        return {"n": int(ok.sum()), "ic": nan, "partial_ic": nan, "ci_lo": nan, "ci_hi": nan,
+                "p": nan}  # fmt: skip
+    rx = rank_residuals(x[ok], controls[ok])
+    ry = rank_residuals(y[ok], controls[ok])
+
+    def corr(i: np.ndarray) -> float:
+        a, b = rx[i], ry[i]
+        sa, sb = a.std(), b.std()
+        return float(((a - a.mean()) * (b - b.mean())).mean() / (sa * sb)) if sa and sb else nan
+
+    point = corr(np.arange(len(rx)))
+    boots = block_bootstrap(sessions[ok], corr, block=block, reps=reps, rng=rng)
+    return {
+        "n": int(ok.sum()),
+        "ic": spearman(x[ok], y[ok]),
+        "partial_ic": point,
+        **boot_summary(point, boots),
+    }
+
+
 # --------------------------------------------------------------------- dataset
 @dataclass
 class EvalInputs:
@@ -130,6 +244,7 @@ class EvalInputs:
     targets: pl.DataFrame  # ticker, date, entry, horizon, label_end, ret_raw/market/sector
     caps: pl.DataFrame  # ticker, date, mcap, size_bucket
     sessions: list[date]  # all trading sessions (benchmark calendar)
+    vol_targets: pl.DataFrame | None = None  # ticker, date, rv_<h>, absret_1 (test 7)
 
 
 def feature_blocks(cols: list[str]) -> tuple[list[str], list[str]]:
@@ -213,6 +328,8 @@ def run_eval(
 ) -> dict[str, Any]:
     ec = cfg.eval
     rng = np.random.default_rng(ec.seed)
+    # own stream for the descriptive daily view, so adding it left every test's p unchanged
+    rng_daily = np.random.default_rng(ec.seed + 1)
     base = assemble(inp, cfg)
     news_cols, llm_cols = feature_blocks(inp.features.columns)
     sets = {
@@ -272,9 +389,14 @@ def run_eval(
                         rng=rng,
                     )
                     n = int(np.sum(~(np.isnan(x[rows]) | np.isnan(y[rows]))))
+                    daily = ic_detail(
+                        s[rows], x[rows], y[rows], block=block, reps=ec.bootstrap_reps,
+                        rng=rng_daily,
+                    )  # fmt: skip
                     uni_rows.append(
-                        {**cell, "feature": feat, "n": n, "ic": ic, **boot_summary(ic, boots)}
-                    )
+                        {**cell, "feature": feat, "n": n, "ic": ic, **boot_summary(ic, boots),
+                         **{f"d_{k}": v for k, v in daily.items()}}
+                    )  # fmt: skip
                     for bucket in ("small", "mid", "large", "unknown"):
                         bm = df["size_bucket"].to_numpy()[rows] == bucket
                         if bm.sum() >= 5:
@@ -413,6 +535,13 @@ def _fmt(v: Any) -> str:
     return str(v)
 
 
+def bp(v: Any) -> str:
+    """A return as basis points."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "-"
+    return f"{v * 1e4:+.1f} bp"
+
+
 def render_markdown(result: dict[str, Any], meta: dict[str, Any]) -> str:
     lines = [
         f"# Eval report {meta['run_id']}",
@@ -477,6 +606,26 @@ def render_markdown(result: dict[str, Any], meta: dict[str, Any]) -> str:
                     vals.append("-")
             lines.append(f"| {feat} | " + " | ".join(vals) + " |")
         lines += ["", "`*` = Benjamini-Hochberg discovery across all tests of this run.", ""]
+        if "d_icir" in mk.columns:
+            lines += [
+                "## Daily cross-section (descriptive, market-adjusted; not BH-tested)",
+                "",
+                "Sessions with >= 10 names. ICIR = mean / sd of the daily IC (per day). Q5 - Q1 ="
+                " mean daily return spread between the top and bottom quintile of the feature.",
+                "",
+                "| feature | cell | days | daily IC | ICIR | Q5 - Q1 | 95% CI |",
+                "|---|---|---|---|---|---|---|",
+            ]
+            for r in mk.sort("feature", "entry", "horizon").to_dicts():
+                if not r["d_days"]:
+                    continue
+                lines.append(
+                    f"| {r['feature']} | {r['entry']}/{r['horizon']}d | {r['d_days']} | "
+                    f"{_fmt(r['d_ic_daily'])} | {_fmt(r['d_icir'])} | "
+                    f"{bp(r['d_q_spread'])} | [{bp(r['d_q_spread_ci_lo'])}, "
+                    f"{bp(r['d_q_spread_ci_hi'])}] |"
+                )
+            lines.append("")
     disc_u = u.filter(pl.col("bh_discovery")) if u.height else u
     disc_m = m.filter(pl.col("bh_discovery")) if m.height else m
     lines += ["## Discoveries after multiple-testing correction", ""]
@@ -565,12 +714,16 @@ def univariate_cells(
     cfg: AppConfig,
     feature: str,
     cells: list[tuple[str, int, str]],
+    *,
+    detail: bool = False,
 ) -> list[dict[str, Any]]:
     """Rank IC of one feature on the ``assemble`` sample, pre-holdout, for the given
     (entry, horizon, adjustment) cells, with circular block-bootstrap CI / p (exploratory
-    breakdowns: the caller applies BH across everything it ran)."""
+    breakdowns: the caller applies BH across everything it ran). ``detail`` adds the
+    descriptive daily view (``ic_detail``) as ``d_*`` columns."""
     ec = cfg.eval
     rng = np.random.default_rng(ec.seed)
+    rng_daily = np.random.default_rng(ec.seed + 1)
     base = assemble(inp, cfg)
     session_idx = {d: i for i, d in enumerate(inp.sessions)}
     out = []
@@ -591,14 +744,19 @@ def univariate_cells(
         x = df[feature].to_numpy().astype(float)
         y = df[f"ret_{adj}"].to_numpy().astype(float)
         ic = spearman(x, y)
+        block = h + 1 if entry == "close" else h + 2
         boots = block_bootstrap(
             s,
             lambda idx, x=x, y=y: spearman(x[idx], y[idx]),
-            block=h + 1 if entry == "close" else h + 2,
+            block=block,
             reps=ec.bootstrap_reps,
             rng=rng,
         )
-        out.append({**row, "ic": ic, **boot_summary(ic, boots)})
+        row |= {"ic": ic, **boot_summary(ic, boots)}
+        if detail:
+            daily = ic_detail(s, x, y, block=block, reps=ec.bootstrap_reps, rng=rng_daily)
+            row |= {f"d_{k}": v for k, v in daily.items()}
+        out.append(row)
     return out
 
 

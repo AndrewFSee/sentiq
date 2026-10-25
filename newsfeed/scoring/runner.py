@@ -94,6 +94,9 @@ class ScoringJob:
         self.prompt_hash = self.prompt.hash(self.settings)
         self.stats = JobStats()
         self._items: dict[str, dict[str, Any]] = {}
+        # sources the targets can come from (None = any): lets item lookups skip the rest of
+        # the lake (the live hook sets collect.sources)
+        self.item_sources: list[str] | None = None
 
     # ---------------------------------------------------------------- targets
     def target(
@@ -143,10 +146,10 @@ class ScoringJob:
         need = sorted(set(item_ids) - set(self._items))
         if not need:
             return
-        df = self.store.query(
-            "SELECT item_id, source, publisher, title, body_text, body_truncated, meta, text_hash "
-            "FROM items WHERE item_id IN (SELECT unnest($ids))",
-            {"ids": need},
+        df = self.store.items_by_id(
+            need,
+            sources=self.item_sources,
+            columns="item_id, source, publisher, title, body_text, body_truncated, meta, text_hash",
         )
         for r in df.to_dicts():
             r["meta"] = json.loads(r["meta"] or "{}")
@@ -479,6 +482,7 @@ def plan_targets(
     seed: int = 1,
     limit: int | None = None,
     event_types: list[str] | None = None,
+    paired: bool = True,
 ) -> list[Target]:
     """Targets still to score for this job.
 
@@ -498,7 +502,8 @@ def plan_targets(
         since_tradable=since_tradable,
     )
     is_study = masked or replicates > 0 or job.model != cfg.scoring.model
-    if is_study:
+    # paired=False: a masked run used on its own (features), not as an agreement study
+    if is_study and paired:
         ok = ok_keys(job.store)
         pairs = [
             p

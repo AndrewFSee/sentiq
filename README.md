@@ -27,6 +27,8 @@ uv run newsfeed backfill --start 2025-01-01 --end 2026-01-01                 # E
 uv run newsfeed backfill --start 2025-01-01 --end 2026-01-01 --tickers AAPL,MSFT
 uv run newsfeed backfill --start 2024-10-13 --end 2026-10-12 --source news_api \
     --config config/variants/news_massive.yaml                               # Massive news
+uv run newsfeed backfill --start 2019-01-01 --end 2026-10-12 --source transcripts  # earnings calls
+uv run newsfeed backfill --start 2017-10-01 --end 2026-10-16 --source edgar_periodic  # 10-K / 10-Q
 ```
 Backfill is idempotent and resumable. Re-running skips stored items without re-downloading
 them, and failures are logged to the `failures` table and retried on the next run. Each run
@@ -38,12 +40,21 @@ ends by refreshing the derived tables (ticker links and stories).
 > `page_size: 1000`). Massive supplies headline + machine-written summary, publisher time only;
 > its per-ticker "insights" sentiment is dropped at ingest.
 
+> `transcripts` reads earnings-call transcripts from a local copy of the Hugging Face dataset
+> `defeatbeta/yahoo-finance-data` (`data/ref/defeatbeta/`, content-addressed files plus a
+> `CURRENT` pointer). The dataset has the call date only, so a call becomes tradable at the next
+> session open. Each call is tagged with the ticker its company held on that date (tickers shared
+> by two companies, such as IR, are resolved by date) and links only to its own company.
+> `transcripts_qa` / `transcripts_prep` are backfill-only views of the Q&A and prepared-remarks
+> sections of the same calls.
+
 ### 2. Live collection
 ```bash
 uv run newsfeed collect                  # loop every collect.interval_seconds
 uv run newsfeed collect --once           # one cycle, for cron (state persists in data/state/)
 uv run newsfeed collect --check          # health from saved state; exit 1 if unhealthy
 uv run newsfeed collect --sources edgar,news_api --max-cycles 10
+uv run newsfeed transcripts-latency      # how late live-collected calls arrive vs the 8-K release
 ```
 On Windows, `scripts\collect_window.cmd` runs one `collect --once` per 120 s in a single
 console window titled "sentiq - COLLECTING 8-Ks" (problems show in the title); put a shortcut
@@ -55,8 +66,10 @@ Example cron entry (every 2 minutes, plus a health check that alerts via your ma
 */2 * * * * cd /path/to/sentiq && uv run newsfeed collect --once >> data/collect.log 2>&1
 */5 * * * * cd /path/to/sentiq && uv run newsfeed collect --check || <notify>
 ```
-Each cycle polls each source and ingests new items, refreshes the derived tables, evaluates
-health and writes `data/state/heartbeat.json`. Health problems:
+Each cycle polls each source (`collect.sources`: EDGAR and transcripts) and ingests new items,
+refreshes the derived tables, evaluates health and writes `data/state/heartbeat.json`. For
+transcripts, catch-up polls (hourly) check Hugging Face with one HEAD request and download a new
+copy only when the transcripts file itself changed. Health problems:
 
 | kind | meaning |
 |---|---|
@@ -71,6 +84,7 @@ A `collect` loop and a `backfill` can run at the same time against the same data
 ```bash
 uv run newsfeed derive          # incremental (runs automatically after backfill/collect)
 uv run newsfeed derive --full   # rebuild stories from scratch
+uv run newsfeed derive --relink-source transcripts   # force a fresh link batch for one source
 ```
 - **Ticker links** (`item_tickers`): from vendor tags or the EDGAR filer, plus exchange tags,
   cashtags and company-name aliases. Each link records its method and confidence.
@@ -182,8 +196,34 @@ event, `all`), `eval.sample_event_types`, `eval.sample_size_buckets` and
 uv run newsfeed leakage --feature-set <unmasked> --masked-set <masked> --config <variant>
 uv run newsfeed explore-types --feature-set news=<id> --feature-set 8k=<id> --types earnings,guidance
 ```
-`leakage` compares masked vs unmasked LLM features on identical rows (paired block bootstrap);
-`explore-types` is an explicitly exploratory per-event-type breakdown with one BH correction.
+```bash
+uv run newsfeed partial-ic --feature-set <id> --control-set <id> --config <variant>
+uv run newsfeed delay-sensitivity --source edgar --event-types earnings --delays 0,1,2,5
+uv run newsfeed cluster-explore --k 25 --config <variant>
+```
+`leakage` compares two LLM features (masked vs unmasked, or any pair) on identical rows with a
+paired block bootstrap; `partial-ic` asks whether one source adds information beyond another
+(rank IC after regressing out the control); `delay-sensitivity` recomputes the event-level IC
+when each document becomes usable N sessions later; `explore-types` and `cluster-explore` are
+explicitly exploratory per-type and per-text-cluster breakdowns with one BH correction each.
+
+```bash
+uv run newsfeed event-ic --value surprise_vs_expectations [--control sentiment] [--masked]
+uv run newsfeed vol-test --feature-set <id>      # attention vs realised volatility
+uv run newsfeed item-study --feature-set <id>    # mean abnormal return by 8-K item code
+uv run newsfeed ic-detail --feature-set <id> --config <variant>   # daily IC, ICIR, Q5 - Q1
+uv run newsfeed doc-change                       # 10-K/10-Q change vs year-earlier report
+```
+`event-ic` is the event-level IC of any LLM score field (optionally beyond another field);
+`vol-test` asks whether news attention predicts realised volatility beyond trailing volatility,
+the gap, yesterday's move and volume (partial rank correlation); `item-study` measures the
+drift after 8-Ks by item code (abnormal return vs the equal-weighted index members);
+`ic-detail` adds the daily cross-sectional view (mean daily IC, ICIR, top-minus-bottom quintile
+spread), which eval reports now also include as a descriptive table.
+
+Bootstrap p-values are (k + 1)/(B + 1), never 0, and each report states whether the smallest
+attainable p is below the first Benjamini-Hochberg threshold. With 1,000 reps over 180 tests it
+is not: cells at the floor need at least ~3,600 reps (`eval.bootstrap_reps`).
 
 ### Universe: point-in-time S&P 500
 `universe.mode: sp500_pit` (default) uses historical index membership: the
@@ -211,13 +251,41 @@ decisions log). Rank IC of LLM sentiment vs market-adjusted returns from the 15:
 | 3. sentiment × novelty | ~48k | +0.006 | +0.013 | no |
 | 4. vendor news (Massive, masked) | ~38k, 2024-10 → | +0.002 | +0.003 | no |
 | 4b. vendor news, cleaned | ~12k | −0.001 | +0.003 | no |
+| **5. earnings calls (masked)** | ~11.3k call-days | **+0.029 (p 0.026)** | **+0.035 (p 0.024)** | no |
+| ↳ 5b. beyond the 8-K release (partial IC) | same rows | +0.012 | +0.015 | — |
+| ↳ prepared remarks / Q&A only (masked) | ~10.8k, identical rows | +0.028 / +0.020 | +0.031 / +0.030 | — |
+| 6. LLM earnings surprise (8-K, event-level) | 3.5k releases | +0.033 | +0.040 (p 0.044) | — |
+| ↳ beyond sentiment (semi-partial) | same rows | −0.011 | −0.015 | — |
+
+Other signal families (tests 7–8, no LLM direction involved):
+
+| test | result |
+|---|---|
+| 7. 8-K count → realised volatility, beyond trailing vol / gap / volume | partial IC −0.001 (p 0.64): nothing |
+| 8. drift after 8-Ks by item code (15 codes × 1/5/20 days) | no BH discovery; large codes within a few bp of 0 |
+| 10. 10-K/10-Q change vs the year-earlier report ("Lazy Prices"), 20/60 days | IC −0.011 / −0.029 (n.s., wrong sign) |
 
 - The only effect that holds up is on **earnings 8-Ks**: ≈ +0.03 IC at 2–10 days, half of it
   overnight; hiding identities does not reduce it (no evidence of training-data recall), and
   Loughran-McDonald tone is negative on the same filings. Exploratory per-type analysis adds
   **8-K guidance** (+0.078 at 2 days, n 1,411) as a candidate.
+- **Earnings calls** carry about the same signal as the press release (+0.03, robust to
+  masking) but add little beyond it (partial IC +0.01, n.s.). Prepared remarks and the Q&A
+  carry similar signal on their own (no significant difference).
+- **Timing:** the release-based signal holds for 1–2 sessions after the release and then
+  fades; a transcript usable one session later than assumed loses about half its IC. The 8-K
+  arrives within minutes through EDGAR, so speed is not the bottleneck; live call
+  transcription would add little.
+- The LLM's **surprise vs expectations** score (present when a release compares results with
+  consensus or guidance) predicts drift about as well as sentiment, but adds nothing beyond it.
+  On those releases sentiment itself is stronger (+0.06 at 2 days): a candidate subgroup.
+- **Daily cross-section:** for earnings 8-Ks the mean daily IC (days with ≥ 10 releases) is
+  only ≈ +0.01 against +0.03 pooled, so much of the pooled IC is not a same-day ranking edge;
+  for earnings calls the daily IC matches the pooled one (+0.037, ICIR ≈ 0.13 per day).
+- Filing type alone (8-K item codes) and 8-K counts carry no tradable drift or volatility
+  information beyond standard controls.
 - Vendor news (headlines + summaries from Motley Fool, GlobeNewswire, Benzinga, Investing.com)
-  shows nothing, pooled, cleaned or by type.
+  shows nothing, pooled, cleaned, by type or by text cluster.
 - All pre-holdout ICs are upper bounds: the model's training data likely covers the period.
   The confirmatory test is pre-registered on the holdout (from 2026-07-01, growing with live
   collection): H1 earnings and H2 guidance, one look on/after 2027-08-31, α split 0.025/0.025.
@@ -239,13 +307,17 @@ data/lake/baselines/part-*.parquet                        # LM / FinBERT scores 
 data/lake/features/set=<feature_set_id>/part-*.parquet    # built feature tables
 data/lake/embeddings/part-*.parquet                       # story embeddings
 data/reports/eval-<run>.md                                # evaluation reports (+ leakage-,
-                                                          #   explore-types-, prices-prefetch)
-data/ref/prices/ data/ref/sec_shares/ data/ref/models/     # cached prices, SEC shares, model
+                                                          #   partial-ic-, delay-, clusters-, ...)
+data/ref/prices/ data/ref/sec_shares/                     # cached prices, SEC share counts (slim)
+data/ref/defeatbeta/                                      # transcripts dataset copy + CURRENT
+data/labeling/                                            # hand-labelling sample + answer key
 data/ref/prices_tiingo/                                   # cached Tiingo prices (delisted)
 data/ref/universe/                                        # PIT S&P 500 tables + sources
 data/state/                                               # collector state, heartbeat, locks
 data/ref/company_tickers.json                             # cached SEC ticker map
 ```
+Large reference data not needed day to day (the transcripts version the backfill used, full SEC
+companyfacts, the embedding model, old run logs) lives in an archive described in `CLAUDE.md`.
 
 ## Item timing, in one paragraph
 `published_at` for EDGAR is the filing's acceptance time from its SGML header (Eastern,

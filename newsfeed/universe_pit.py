@@ -31,6 +31,7 @@ import httpx
 import polars as pl
 from bs4 import BeautifulSoup
 
+from newsfeed.config import ExtraMember, UniverseConfig
 from newsfeed.tickers import Universe, normalize_ticker
 
 log = logging.getLogger(__name__)
@@ -240,6 +241,46 @@ class PitUniverse:
             pl.read_parquet(directory / "sp500_members.parquet"),
             pl.read_parquet(directory / "sp500_sectors.parquet"),
         )
+
+    @classmethod
+    def load_for(cls, ucfg: UniverseConfig) -> PitUniverse:
+        """The configured universe: the stored S&P 500 tables plus ``extra_members`` (added in
+        memory only; the stored tables, and so their content hash, never include extras)."""
+        return cls.load(ucfg.pit_dir).with_extras(ucfg.extra_members)
+
+    def with_extras(self, extras: list[ExtraMember]) -> PitUniverse:
+        """Add non-PIT extra members (open spells from ``start``, sector valid from ``start``).
+        A ticker or CIK that is already in the S&P 500 tables is rejected: the extras are
+        meant to be companies the index never held, so no spell can overlap."""
+        if not extras:
+            return self
+        known_t, known_c = set(self.members["ticker"]), set(self.members["cik"])
+        for e in extras:
+            if e.ticker in known_t or e.cik in known_c:
+                raise ValueError(f"extra member {e.ticker} (CIK {e.cik}) is already in the S&P 500")
+        if len({e.ticker for e in extras}) != len(extras):
+            raise ValueError("duplicate ticker in extra_members")
+        members = pl.concat(
+            [
+                self.members,
+                pl.DataFrame(
+                    [(e.ticker, e.cik, e.name, e.start, None) for e in extras],
+                    schema=self.members.schema,
+                    orient="row",
+                ),
+            ]
+        )
+        sectors = pl.concat(
+            [
+                self.sectors,
+                pl.DataFrame(
+                    [(e.ticker, e.start, e.sector) for e in extras],
+                    schema=self.sectors.schema,
+                    orient="row",
+                ),
+            ]
+        )
+        return PitUniverse(members, sectors)
 
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)

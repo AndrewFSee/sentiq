@@ -138,3 +138,20 @@ def controls(panel: pl.DataFrame, market: str) -> pl.DataFrame:
     return out.join(mkt, on="date", how="left").select(
         pl.col("symbol").alias("ticker"), "date", *CONTROL_COLS
     )
+
+
+def volatility_targets(panel: pl.DataFrame, horizons: list[int]) -> pl.DataFrame:
+    """ticker, date, rv_<h>, absret_1: realised risk after a close entry on ``date``.
+
+    rv_h = sample sd of the daily log close-to-close returns of sessions i+1..i+h (null if any
+    is missing); absret_1 = |close[i+1] / close[i] - 1|. Raw returns: a volatility target is
+    about the stock's own risk, not its move relative to a benchmark."""
+    p = panel.sort("symbol", "date").with_columns(
+        (pl.col("close") / pl.col("close").shift(1)).log().over("symbol").alias("_r")
+    )
+    cols = [
+        (pl.col("close").shift(-1) / pl.col("close") - 1).abs().over("symbol").alias("absret_1")
+    ]
+    for h in horizons:
+        cols.append(pl.col("_r").rolling_std(h).shift(-h).over("symbol").alias(f"rv_{h}"))
+    return p.select(pl.col("symbol").alias("ticker"), "date", *cols)

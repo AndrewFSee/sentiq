@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from newsfeed.dedupe import content_hash, normalize_url
 from newsfeed.ingest.base import RawItem
 from newsfeed.ingest.runner import build_row
-from newsfeed.storage import Store
+from newsfeed.storage import ITEMS_SCHEMA, Store, item_text_hash
 
 
 def utc(*a: int) -> datetime:
@@ -73,6 +75,71 @@ def test_view_keeps_earliest_sighting_even_if_duplicate_files_exist(store: Store
     df = store.query("SELECT first_seen_at FROM items")
     assert df.height == 1
     assert df["first_seen_at"][0] == utc(2026, 7, 30, 15, 1)
+
+
+def test_items_by_id_and_source_relation_match_the_view(store: Store, calendar):
+    # duplicate sightings of item 1 (the view must keep the earliest), plus another source
+    early = rows([item("1", utc(2026, 7, 30, 15), seen=utc(2026, 7, 30, 15, 1))], calendar)
+    late = rows([item("1", utc(2026, 7, 30, 15), seen=utc(2026, 7, 30, 15, 9))], calendar)
+    other = item("3", utc(2026, 7, 30, 17)).model_copy(update={"source": "other"})
+    store.write_items(late + rows([item("2", utc(2026, 7, 30, 16)), other], calendar), "r1")
+    store._known_ids = set()
+    store.write_items(early, "r2")
+    ids = store.query("SELECT item_id FROM items ORDER BY item_id")["item_id"].to_list()
+    assert len(ids) == 3
+
+    def view(where: str) -> list[dict]:
+        return store.query(f"SELECT * FROM items WHERE {where} ORDER BY item_id").to_dicts()
+
+    by_id = store.items_by_id(ids).sort("item_id").to_dicts()
+    assert by_id == view("true")
+    assert by_id[0]["first_seen_at"] == utc(2026, 7, 30, 15, 1)  # dedupe rule still applied
+    only_test = store.items_by_id(ids, sources=["test"]).sort("item_id").to_dicts()
+    assert only_test == view("source = 'test'") and len(only_test) == 2
+    rel = store.query(f"SELECT * FROM {store.items_relation(['test'])} ORDER BY item_id")
+    assert rel.to_dicts() == view("source = 'test'")
+    assert store.items_by_id([]).height == 0
+
+
+def _old_format_file(store: Store, rows_: list[dict], name: str) -> None:
+    """An item file as written before text_hash was stored (column absent)."""
+    schema = pa.schema([f for f in ITEMS_SCHEMA if f.name != "text_hash"])
+    d = store.items_dir / "src=test" / "ym=2026-07"
+    d.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.Table.from_pylist(rows_, schema=schema), d / name)
+
+
+def test_text_hash_is_stored_on_write_and_matches_duckdb(store: Store, calendar):
+    store.write_items(rows([item("1", utc(2026, 7, 30, 15))], calendar), "r1")
+    raw = store.query(
+        f"SELECT text_hash, sha256(coalesce(title, '') || chr(10) || coalesce(body_text, '')) "
+        f"AS h FROM read_parquet('{(store.items_dir / '**' / '*.parquet').as_posix()}')"
+    )
+    assert raw["text_hash"][0] == raw["h"][0]
+    assert (
+        item_text_hash("t\N{EURO SIGN}", None)
+        == hashlib.sha256("t\N{EURO SIGN}\n".encode()).hexdigest()
+    )
+
+
+def test_migration_adds_identical_hashes_and_switches_the_view(store: Store, calendar):
+    old = rows([item("1", utc(2026, 7, 30, 15)), item("2", utc(2026, 7, 30, 16))], calendar)
+    _old_format_file(store, old, "part-old.parquet")
+    store.write_items(rows([item("3", utc(2026, 7, 30, 17))], calendar), "r2")
+    store.refresh_views()
+    before = store.query("SELECT * FROM items ORDER BY item_id").to_dicts()
+    assert not store.text_hash_migrated and store.rows_without_text_hash() == 2
+    out = store.migrate_text_hash()
+    assert out["migrated"] == 1 and out["already"] == 1 and out["missing"] == 0
+    assert store.text_hash_migrated
+    after = store.query("SELECT * FROM items ORDER BY item_id").to_dicts()
+    assert after == before  # every value, incl. the hash, unchanged
+    assert store.migrate_text_hash()["migrated"] == 0  # idempotent
+    # a file without the column appearing later: the guard falls back to computing hashes
+    _old_format_file(store, rows([item("4", utc(2026, 7, 30, 18))], calendar), "late.parquet")
+    assert not store.check_text_hash() and not store.text_hash_migrated
+    h = store.query("SELECT text_hash FROM items WHERE native_id = '4'")
+    assert h["text_hash"].to_list() == [item_text_hash("t4", "body 4")]
 
 
 def test_timestamps_roundtrip_as_utc(store: Store, calendar):

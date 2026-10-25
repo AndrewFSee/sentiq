@@ -20,6 +20,7 @@ from newsfeed import coverage
 from newsfeed.collect import Collector, check_states
 from newsfeed.config import AppConfig, load_config, load_secrets
 from newsfeed.derive import derive as run_derive
+from newsfeed.distill import dataset as distill_ds
 from newsfeed.eval.caps import load_shares, market_caps
 from newsfeed.eval.prices import (
     CachedPrices,
@@ -27,22 +28,31 @@ from newsfeed.eval.prices import (
     TiingoPrices,
     TradierPrices,
     build_panel,
+    horizon_days,
     route_prices,
 )
 from newsfeed.eval.report import (
     DEFAULT_UNIVARIATE,
     EvalInputs,
     add_derived,
+    assemble,
     benjamini_hochberg,
+    bp,
     decision_dates,
     eval_config_id,
+    p_floor_note,
     paired_ic_comparison,
     partial_ic_cells,
     render_markdown,
     run_eval,
     univariate_cells,
 )
-from newsfeed.eval.targets import adjusted_targets, controls, forward_returns
+from newsfeed.eval.targets import (
+    adjusted_targets,
+    controls,
+    forward_returns,
+    volatility_targets,
+)
 from newsfeed.features.aggregate import (
     FeatureSources,
     as_of_grid,
@@ -61,8 +71,9 @@ from newsfeed.scoring import agreement as agr
 from newsfeed.scoring import batch as batch_mod
 from newsfeed.scoring.client import AnthropicClient, LLMClient
 from newsfeed.scoring.mask import MaskLexicon
+from newsfeed.scoring.prompt import load_prompt
 from newsfeed.scoring.runner import ScoringJob, estimate_cost, plan_targets
-from newsfeed.storage import Store
+from newsfeed.storage import FileLock, Store
 from newsfeed.tickers import TickerLinker, TickerMap, Universe, load_ticker_map
 from newsfeed.timeutil import MarketCalendar, get_calendar, utcnow
 from newsfeed.universe_pit import PitUniverse
@@ -72,7 +83,14 @@ NY_TZ = ZoneInfo("America/New_York")
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("newsfeed")
 
-SOURCES = ("edgar", "news_api", "transcripts")
+SOURCES = (
+    "edgar",
+    "edgar_periodic",
+    "news_api",
+    "transcripts",
+    "transcripts_qa",
+    "transcripts_prep",
+)
 ConfigOpt = Annotated[Path | None, typer.Option("--config", help="YAML config path")]
 TickersOpt = Annotated[
     str | None, typer.Option("--tickers", help="Comma-separated subset of the universe")
@@ -142,7 +160,7 @@ class Context:
             d = self.cfg.universe.pit_dir
             if not (d / "sp500_members.parquet").exists():
                 raise typer.BadParameter(f"no PIT universe in {d}; run `newsfeed universe build`")
-            self._pit = PitUniverse.load(d)
+            self._pit = PitUniverse.load_for(self.cfg.universe)
         return self._pit
 
     def universe(self, full: bool = False) -> Universe:
@@ -174,19 +192,22 @@ class Context:
         import hashlib
 
         p = self.cfg.universe.pit_dir / "sp500_members.parquet"
-        return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+        h = hashlib.sha256(p.read_bytes())
+        if self.cfg.universe.extra_members:  # absent -> same signature as before extras existed
+            h.update(json.dumps(self.cfg.universe.hashable()["extra_members"]).encode())
+        return h.hexdigest()[:16]
 
     def cik_windows(
-        self, start: datetime, end: datetime
+        self, start: datetime, end: datetime, before_days: int | None = None
     ) -> dict[int, tuple[datetime, datetime]] | None:
-        """sp500_pit: per-CIK ingestion windows (membership +- margins) inside [start, end)."""
+        """sp500_pit: per-CIK ingestion windows (membership +- margins) inside [start, end);
+        ``before_days`` overrides ``universe.ingest_margin_before_days``."""
         if self.cfg.universe.mode != "sp500_pit":
             return None
         uc = self.cfg.universe
         u = self.universe()
-        w = self.pit.ingest_windows(
-            start.date(), end.date(), uc.ingest_margin_before_days, uc.ingest_margin_after_days
-        )
+        before = uc.ingest_margin_before_days if before_days is None else before_days
+        w = self.pit.ingest_windows(start.date(), end.date(), before, uc.ingest_margin_after_days)
         return {
             c: (_parse_day(s.isoformat()), _parse_day(e.isoformat()))
             for c, (s, e) in w.items()
@@ -198,6 +219,13 @@ class Context:
             return EdgarAdapter(
                 self.cfg.sources.edgar, self.http(), self.universe(), self.store.raw
             )
+        if source == "edgar_periodic":
+            from newsfeed.ingest.edgar_periodic import EdgarPeriodicAdapter
+            from newsfeed.storage import RawStore
+
+            pcfg = self.cfg.sources.edgar_periodic
+            raw = RawStore(pcfg.raw_dir) if pcfg.raw_dir is not None else self.store.raw
+            return EdgarPeriodicAdapter(pcfg, self.http(), self.universe(), raw)
         if source == "news_api":
             ncfg = self.cfg.sources.news_api
 
@@ -208,7 +236,7 @@ class Context:
                 return df["m"][0]
 
             return NewsApiAdapter(ncfg, make_vendor(ncfg), self.universe(), watermark=watermark)
-        if source == "transcripts":
+        if source in ("transcripts", "transcripts_qa", "transcripts_prep"):
             from newsfeed.ingest.transcripts import TranscriptsAdapter
 
             spells = None
@@ -217,14 +245,24 @@ class Context:
                 for r in self.pit.members.select("ticker", "start", "end", "cik").iter_rows():
                     spells.setdefault(r[0], []).append((r[1], r[2], int(r[3])))
             return TranscriptsAdapter(
-                self.cfg.sources.transcripts, self.universe(), self.tmap, spells=spells
+                getattr(self.cfg.sources, source),
+                self.universe(),
+                self.tmap,
+                spells=spells,
+                section={"transcripts": "full", "transcripts_qa": "qa"}.get(source, "prep"),
             )
         raise typer.BadParameter(f"unknown source {source!r}; choose from {SOURCES}")
 
     def derive_fn(
-        self, run_id: str, full: bool = False, relink_sources: list[str] | None = None
+        self,
+        run_id: str,
+        full: bool = False,
+        relink_sources: list[str] | None = None,
+        *,
+        if_changed: bool = False,
     ) -> Callable[[], dict[str, Any]]:
         linker = self.linker()
+        retry = self.store.state_dir / "live-scoring-retry"
 
         def fn() -> dict[str, Any]:
             out = run_derive(
@@ -234,9 +272,16 @@ class Context:
                 run_id,
                 full_stories=full,
                 relink_sources=relink_sources,
+                if_changed=if_changed,
             )
-            if self.cfg.scoring.live_in_collect and not out.get("skipped"):
+            # nothing new -> nothing to score, unless the last attempt hit API errors
+            new_or_retry = not out.get("unchanged") or retry.exists()
+            if self.cfg.scoring.live_in_collect and not out.get("skipped") and new_or_retry:
                 out["scoring"] = self.score_recent(run_id)
+                if out["scoring"].get("by_status", {}).get("error"):
+                    retry.touch()
+                else:
+                    retry.unlink(missing_ok=True)
             return out
 
         return fn
@@ -267,7 +312,15 @@ class Context:
         """Collect-loop hook: score new story founders live (scoring.live_in_collect)."""
         job = self.scoring_job(run_id, None, self.llm_client())
         since = utcnow() - timedelta(hours=self.cfg.scoring.live_lookback_hours)
-        targets = plan_targets(job, self.universe(full=True).cik_to_tickers, since_tradable=since)
+        # only what the loop collects: a backfill running alongside (e.g. 10-K full text, ~100k
+        # tokens each) must never be scored by the live hook
+        job.item_sources = list(self.cfg.collect.sources)
+        targets = plan_targets(
+            job,
+            self.universe(full=True).cik_to_tickers,
+            since_tradable=since,
+            sources=job.item_sources,
+        )
         return job.run_live(targets).as_dict() if targets else {"calls": 0}
 
 
@@ -315,7 +368,8 @@ def backfill(
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         adapter = ctx.adapter(source)
-        windows = ctx.cik_windows(t0, t1) if source in ("edgar", "transcripts") else None
+        before = getattr(getattr(cfg.sources, source), "ingest_margin_before_days", None)
+        windows = ctx.cik_windows(t0, t1, before) if source != "news_api" else None
         if windows is not None:
             adapter.cik_windows = windows
             stats["cik_windows"] = len(windows)
@@ -386,7 +440,12 @@ def collect(
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         adapters = {s: ctx.adapter(s) for s in srcs}
         collector = Collector(
-            cfg, ctx.store, adapters, ctx.calendar, run_id, derive_fn=ctx.derive_fn(run_id)
+            cfg,
+            ctx.store,
+            adapters,
+            ctx.calendar,
+            run_id,
+            derive_fn=ctx.derive_fn(run_id, if_changed=True),
         )
         try:
             collector.run(max_cycles=1 if once else max_cycles)
@@ -504,6 +563,10 @@ def score(
         typer.Option(help="Only pairs whose primary score has these event types (comma-sep.)"),
     ] = None,
     seed: int = 1,
+    unpaired: Annotated[
+        bool,
+        typer.Option("--unpaired", help="Masked/model runs without requiring a primary score"),
+    ] = False,
     replicates: Annotated[int, typer.Option(help="Noise study: re-draw K times")] = 0,
     limit: Annotated[int | None, typer.Option(help="Cap the number of requests")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Estimate cost, call nothing")] = False,
@@ -537,6 +600,7 @@ def score(
             seed=seed,
             limit=limit,
             event_types=_split(event_types) or None,
+            paired=not unpaired,
         )
         typer.echo(
             f"model={job.model} prompt={job.prompt.version}/{job.prompt_hash} "
@@ -785,6 +849,8 @@ def universe_cmd(
         f"{m['ticker'].n_unique()} tickers, {m['cik'].n_unique()} CIKs, "
         f"{m.filter(pl.col('end').is_null()).height} current members"
     )
+    for e in uc.extra_members:
+        typer.echo(f"  + extra ({e.index}, not PIT): {e.ticker} {e.name} from {e.start}")
 
 
 @app.command("coverage")
@@ -792,11 +858,24 @@ def coverage_cmd(
     rebuild_from_runs: Annotated[
         bool, typer.Option("--rebuild-from-runs", help="Recreate backfill coverage from runs")
     ] = False,
+    bridge_live_since: Annotated[
+        str | None,
+        typer.Option(
+            help="Add live coverage for poll gaps <= collect.coverage_max_gap_minutes after "
+            "this date (YYYY-MM-DD); rows are added, never edited"
+        ),
+    ] = None,
     config: ConfigOpt = None,
 ) -> None:
     """Show collected coverage (tradable-time ranges) per source and ticker."""
     cfg = load_config(config)
     with Store(cfg.paths) as store:
+        if bridge_live_since:
+            tag = f"bridge-{utcnow():%Y%m%dT%H%M%SZ}"
+            gap = timedelta(minutes=cfg.collect.coverage_max_gap_minutes)
+            for src in cfg.collect.sources:
+                n = coverage.bridge_live_gaps(store, src, gap, _parse_day(bridge_live_since), tag)
+                typer.echo(f"{src}: {n} bridge rows ({tag})")
         if rebuild_from_runs:
             cal = get_calendar(cfg.market.calendar, cfg.market.calendar_start)
             n = coverage.rebuild_from_runs(
@@ -834,7 +913,8 @@ def _eval_inputs(
             cfg.paths.ref_dir / "prices_tiingo",
         ),
     }
-    lo, end = dates[0], min(dates[-1] + timedelta(days=45), utcnow().date())
+    after_days, max_pad = horizon_days(max(ec.horizons))
+    lo, end = dates[0], min(dates[-1] + timedelta(days=after_days), utcnow().date())
     tickers = sorted(feats["ticker"].unique().to_list())
     bench = [ec.market_etf, *sorted(set(ec.sector_etfs.values()))]
     pit = cfg.universe.mode == "sp500_pit"
@@ -842,7 +922,12 @@ def _eval_inputs(
         bench += sorted(set(ec.gics_sector_etfs.values()) - set(bench))
         members = ctx.pit.members.filter(pl.col("ticker").is_in(tickers))
         routes = route_prices(
-            members, ctx.tmap.ticker_to_cik, lo, end, overrides=ec.price_overrides
+            members,
+            ctx.tmap.ticker_to_cik,
+            lo,
+            end,
+            after_days=after_days,
+            overrides=ec.price_overrides,
         )
     else:
         routes = [PriceRoute(t, t, "tradier", lo, end, "", "current") for t in tickers]
@@ -850,7 +935,9 @@ def _eval_inputs(
     # sessions = the market ETF's trading days (fetched first)
     spy, _, _ = build_panel(routes[-len(bench) :][:1], caches, [], refresh=refresh_prices)
     sessions = sorted(spy["date"].to_list())
-    panel, price_report, splits = build_panel(routes, caches, sessions, refresh=refresh_prices)
+    panel, price_report, splits = build_panel(
+        routes, caches, sessions, refresh=refresh_prices, max_pad=max_pad
+    )
     panel = panel.drop("synthetic")
     fwd = forward_returns(panel, ec.horizons, ec.entries)
     sector_of = ctx.pit.sector_etf_frame(ec.gics_sector_etfs) if pit else ec.sector_etfs
@@ -875,7 +962,8 @@ def _eval_inputs(
         pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
     )
     caps = market_caps(decisions, panel, shares, splits)
-    return EvalInputs(feats, ctl, targets, caps, sessions), price_report
+    vol = volatility_targets(panel, [5, 20]).filter(pl.col("ticker").is_in(tickers))
+    return EvalInputs(feats, ctl, targets, caps, sessions, vol), price_report
 
 
 @app.command("eval")
@@ -972,6 +1060,102 @@ def eval_cmd(
         typer.echo(md)
 
     _run("eval", cfg, {"feature_set": feature_set, "use_holdout": use_holdout}, body)
+
+
+@app.command("migrate-text-hash")
+def migrate_text_hash_cmd(config: ConfigOpt = None, verbose: bool = False) -> None:
+    """One-time: store text_hash in item files written before the column existed (values are
+    unchanged), then switch the items view to the stored column. Idempotent."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        def progress(k: int, n: int) -> None:
+            if k % 500 == 0 or k == n:
+                typer.echo(f"  {k}/{n} files", err=True)
+
+        # the collector's derive (long scans holding files open) must not run meanwhile:
+        # Windows can't replace a file another process is reading
+        lock = FileLock(ctx.store.state_dir / "derive.lock")
+        if not lock.acquire():
+            raise typer.BadParameter("derive is running (lock held); try again when it's done")
+        try:
+            out = ctx.store.migrate_text_hash(progress)
+        finally:
+            lock.release()
+        stats["migrate"] = out
+        stats["written"] = out["migrated"]
+        typer.echo(f"{out}; stored-hash view {'ON' if ctx.store.text_hash_migrated else 'OFF'}")
+
+    _run("migrate-text-hash", cfg, {}, body)
+
+
+@app.command("distill-data")
+def distill_data_cmd(
+    sources: Annotated[str, typer.Option(help="Comma-separated item sources")] = "edgar,news_api",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Build the distillation dataset: pre-holdout unmasked LLM labels + the exact text the
+    LLM saw, split train/val/test per source by time; hand-labelled pairs held out as gold."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    src = _split(sources)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        pairs = distill_ds.load_pairs(ctx.store, src, cfg.scoring.model)
+        dup = pairs.group_by("item_id", "ticker").len().filter(pl.col("len") > 1)
+        if dup.height:
+            raise typer.BadParameter(f"{dup.height} (item, ticker) pairs have several scores")
+        pre = distill_ds.pre_holdout(pairs, cfg.eval.holdout_start)
+        hashes = pre["prompt_hash"].unique().to_list()
+        if len(hashes) != 1:
+            raise typer.BadParameter(f"expected one prompt version, found {hashes}")
+        prompt = load_prompt(cfg.scoring.prompt_version)
+        names = ctx.titles(ctx.universe(full=True))
+        df = distill_ds.render_texts(pre, prompt, names)
+        gold = distill_ds.gold_pairs(cfg.paths.data_dir / "labeling")
+        df = distill_ds.finalize(distill_ds.assign_splits(df, gold))
+        out = cfg.paths.data_dir / "distill" / f"v{distill_ds.DISTILL_VERSION}"
+        out.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(out / "dataset.parquet", compression="zstd")
+        summary = (
+            df.group_by("source", "split")
+            .agg(
+                pl.len().alias("n"),
+                pl.col("text_ok").mean().round(4).alias("text_ok"),
+                pl.col("tradable_at").min().dt.date().alias("from"),
+                pl.col("tradable_at").max().dt.date().alias("to"),
+            )
+            .sort("source", "from")
+        )
+        meta = {
+            "run_id": run_id,
+            "version": distill_ds.DISTILL_VERSION,
+            "sources": src,
+            "model": cfg.scoring.model,
+            "prompt_hash": hashes[0],
+            "holdout_start": str(cfg.eval.holdout_start),
+            "dropped_holdout_rows": pairs.height - pre.height,
+            "gold_pairs_found": int((df["split"] == "gold").sum()),
+            "splits": summary.with_columns(pl.col("from", "to").cast(pl.String)).to_dicts(),
+        }
+        (out / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        stats["written"] = df.height
+        with pl.Config(
+            tbl_rows=20,
+            tbl_hide_dataframe_shape=True,
+            tbl_hide_column_data_types=True,
+            tbl_formatting="ASCII_MARKDOWN",  # Windows consoles can't print box drawing
+        ):
+            typer.echo(summary)
+        typer.echo(
+            f"{df.height} rows -> {out}; dropped {pairs.height - pre.height} holdout rows; "
+            f"gold {meta['gold_pairs_found']}; text matches stored hash: "
+            f"{df['text_ok'].mean():.2%}"
+        )
+
+    _run("distill-data", cfg, {"sources": src}, body)
 
 
 @app.command("leakage")
@@ -1316,6 +1500,94 @@ def partial_ic_cmd(
     _run("partial-ic", cfg, {"feature_set": feature_set, "control_set": control_set}, body)
 
 
+def _llm_events(
+    ctx: Context,
+    cfg: AppConfig,
+    source: str,
+    event_types: list[str],
+    *,
+    masked: bool | None = None,
+) -> tuple[pl.DataFrame, list[datetime], pl.DataFrame]:
+    """Scored story-founder events of one source at relevance >= ``features.min_relevance``:
+    (events with canon ticker, score fields and t_use = tradable_at, or max(tradable_at,
+    scored_at) for live items; the decision grid; canon -> ticker fan-out)."""
+    from newsfeed.features.aggregate import RELEVANCE_RANK
+
+    store, fc = ctx.store, cfg.features
+    now = utcnow()
+    items = store.items_as_of(
+        now, source=source, columns="item_id, tradable_at, ingest_mode, published_at"
+    )
+    founders = store.query("SELECT item_id FROM item_story WHERE story_id = item_id")
+    items = items.join(founders, on="item_id", how="semi")
+    src = feature_sources(ctx)
+    scores = store.query(
+        """
+        SELECT item_id, ticker AS canon, sentiment, relevance, event_type, scored_at,
+               surprise_vs_expectations, materiality
+        FROM scores
+        WHERE status = 'ok' AND masked = $masked AND replicate = 0
+          AND model = $m AND prompt_hash = $h
+        """,
+        {
+            "masked": fc.llm_masked if masked is None else masked,
+            "m": src.llm_model,
+            "h": src.llm_prompt_hash,
+        },
+    )
+    ev = items.join(scores, on="item_id").filter(
+        pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1)
+        >= RELEVANCE_RANK[fc.min_relevance]
+    )
+    if event_types:
+        ev = ev.filter(pl.col("event_type").is_in(event_types))
+    ev = ev.with_columns(
+        pl.when(pl.col("ingest_mode") == "live")
+        .then(pl.max_horizontal("tradable_at", "scored_at"))
+        .otherwise(pl.col("tradable_at"))
+        .alias("t_use"),
+        pl.lit(0).alias("cluster"),
+    )
+    grid = as_of_grid(
+        ctx.calendar, ev["t_use"].min().date(), now.date(), fc.grid, fc.decision_lag_minutes
+    )
+    c2t = ctx.universe(full=True).cik_to_tickers
+    canon_cik = {t: c for c, ts in c2t.items() for t in ts}
+    fan = pl.DataFrame(
+        [{"canon": t, "ticker": x} for t, c in canon_cik.items() for x in c2t[c]],
+        schema={"canon": pl.Utf8, "ticker": pl.Utf8},
+    )
+    return ev, grid, fan
+
+
+def _dated_events(
+    ctx: Context,
+    cfg: AppConfig,
+    ev: pl.DataFrame,
+    grid: list[datetime],
+    fan: pl.DataFrame,
+    *,
+    delay: int = 0,
+) -> pl.DataFrame:
+    """Events (t_use, canon) -> as_of = first decision >= t_use (+ ``delay`` sessions), date in
+    New York, fanned out to the canon ticker's share classes that are members on that date."""
+    from newsfeed.eval.clusters import decision_times
+
+    e = ev.with_columns(
+        pl.Series(
+            "as_of",
+            decision_times(ev["t_use"].to_list(), grid, delay=delay),
+            dtype=pl.Datetime("us", "UTC"),
+        )
+    ).drop_nulls("as_of")
+    e = e.with_columns(
+        pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+    ).join(fan, on="canon")
+    if cfg.universe.mode == "sp500_pit":
+        e = e.filter(ctx.pit.is_member(e.select("ticker", "date")))
+    return e
+
+
 @app.command("delay-sensitivity")
 def delay_sensitivity_cmd(
     source: Annotated[str, typer.Option(help="Item source")] = "transcripts",
@@ -1334,7 +1606,6 @@ def delay_sensitivity_cmd(
     """Event-level rank IC of LLM sentiment when every event becomes usable N sessions later
     than its tradable time: how fast does the signal decay if the data arrives late?"""
     from newsfeed.eval.clusters import cluster_ic, decision_times
-    from newsfeed.features.aggregate import RELEVANCE_RANK
 
     _setup_logging(verbose)
     cfg = load_config(config)
@@ -1342,60 +1613,12 @@ def delay_sensitivity_cmd(
     delay_list = [int(x) for x in _split(delays)]
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
-        store, fc = ctx.store, cfg.features
-        now = utcnow()
-        items = store.items_as_of(
-            now, source=source, columns="item_id, tradable_at, ingest_mode, published_at"
-        )
-        founders = store.query("SELECT item_id FROM item_story WHERE story_id = item_id")
-        items = items.join(founders, on="item_id", how="semi")
-        src = feature_sources(ctx)
-        scores = store.query(
-            """
-            SELECT item_id, ticker AS canon, sentiment, relevance, event_type, scored_at
-            FROM scores
-            WHERE status = 'ok' AND masked = $masked AND replicate = 0
-              AND model = $m AND prompt_hash = $h
-            """,
-            {"masked": fc.llm_masked, "m": src.llm_model, "h": src.llm_prompt_hash},
-        )
-        ev = items.join(scores, on="item_id").filter(
-            pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1)
-            >= RELEVANCE_RANK[fc.min_relevance]
-        )
-        if event_types:
-            ev = ev.filter(pl.col("event_type").is_in(_split(event_types)))
-        ev = ev.with_columns(
-            pl.when(pl.col("ingest_mode") == "live")
-            .then(pl.max_horizontal("tradable_at", "scored_at"))
-            .otherwise(pl.col("tradable_at"))
-            .alias("t_use"),
-            pl.lit(0).alias("cluster"),
-        )
-        grid = as_of_grid(
-            ctx.calendar, ev["t_use"].min().date(), now.date(), fc.grid, fc.decision_lag_minutes
-        )
-        c2t = ctx.universe(full=True).cik_to_tickers
-        canon_cik = {t: c for c, ts in c2t.items() for t in ts}
-        fan = pl.DataFrame(
-            [{"canon": t, "ticker": x} for t, c in canon_cik.items() for x in c2t[c]],
-            schema={"canon": pl.Utf8, "ticker": pl.Utf8},
-        )
+        fc = cfg.features
+        ev, grid, fan = _llm_events(ctx, cfg, source, _split(event_types))
         rows = []
         inp_cache = None
         for d in delay_list:
-            e = ev.with_columns(
-                pl.Series(
-                    "as_of",
-                    decision_times(ev["t_use"].to_list(), grid, delay=d),
-                    dtype=pl.Datetime("us", "UTC"),
-                )
-            ).drop_nulls("as_of")
-            e = e.with_columns(
-                pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
-            ).join(fan, on="canon")
-            if cfg.universe.mode == "sp500_pit":
-                e = e.filter(ctx.pit.is_member(e.select("ticker", "date")))
+            e = _dated_events(ctx, cfg, ev, grid, fan, delay=d)
             if inp_cache is None:  # prices/targets once, over the widest set of decisions
                 wide = ev.with_columns(
                     pl.Series(
@@ -1528,6 +1751,633 @@ def transcripts_latency_cmd(config: ConfigOpt = None) -> None:
                 f"by the next 15:50 decision: {m['by_next_decision'].mean():.0%}"
             )
         typer.echo(f"rows: {out}")
+
+
+def _cells(spec: str) -> list[tuple[str, int, str]]:
+    return [(e, int(h), a) for e, h, a in (c.split("/") for c in _split(spec))]
+
+
+def _write_report(cfg: AppConfig, name: str, md: str, frame: pl.DataFrame) -> Path:
+    out_dir = cfg.paths.data_dir / "reports"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if frame.height:
+        frame.write_parquet(out_dir / f"{name}.parquet")
+    path = out_dir / f"{name}.md"
+    path.write_text(md, encoding="utf-8")
+    typer.echo(md)
+    return path
+
+
+def _num(v: Any, fmt: str = "+.3f") -> str:
+    return "-" if v is None or v != v else format(v, fmt)
+
+
+@app.command("event-ic")
+def event_ic_cmd(
+    source: Annotated[str, typer.Option(help="Item source")] = "edgar",
+    event_types: Annotated[
+        str | None, typer.Option(help="Only LLM events of these types (comma-separated)")
+    ] = "earnings",
+    value: Annotated[
+        str, typer.Option(help="Score field tested (sentiment, surprise_vs_expectations)")
+    ] = "surprise_vs_expectations",
+    control: Annotated[
+        str | None, typer.Option(help="Semi-partial IC: residualise the value on this field")
+    ] = None,
+    by: Annotated[
+        str | None, typer.Option(help="Break down by 'materiality' (high vs medium/low)")
+    ] = None,
+    masked: Annotated[
+        bool | None, typer.Option("--masked/--unmasked", help="Default: features.llm_masked")
+    ] = None,
+    cells: Annotated[str, typer.Option(help="entry/horizon/adjustment cells")] = (
+        "close/1/market,close/2/market"
+    ),
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Event-level rank IC of one LLM score field (test 6: earnings surprise), each event dated
+    to the first decision at or after it became usable; pre-holdout."""
+    from newsfeed.eval.clusters import cluster_ic
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cell_list = _cells(cells)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        ev, grid, fan = _llm_events(ctx, cfg, source, _split(event_types), masked=masked)
+        if by == "materiality":
+            ev = ev.filter(pl.col("materiality").is_not_null()).with_columns(
+                pl.when(pl.col("materiality") == "high")
+                .then(pl.lit("high"))
+                .otherwise(pl.lit("medium/low"))
+                .alias("cluster")
+            )
+        elif by:
+            raise typer.BadParameter(f"unknown --by {by!r}")
+        e = _dated_events(ctx, cfg, ev, grid, fan)
+        inp, _ = _eval_inputs(ctx, cfg, e.select("ticker", "as_of").unique())
+        cols = ["ticker", "date", "cluster", value] + ([control] if control else [])
+        res = pl.DataFrame(
+            cluster_ic(
+                e.select(cols),
+                inp.targets,
+                inp.sessions,
+                cfg,
+                cell_list,
+                value=value,
+                control=control,
+            )
+        )
+        is_masked = cfg.features.llm_masked if masked is None else masked
+        what = f"semi-partial IC of `{value}` given `{control}`" if control else f"`{value}`"
+        head = "| cell | group | n | IC | 95% CI | p |"
+        if control:
+            head += " IC value | IC control |"
+        lines = [
+            f"# Event IC {run_id}",
+            "",
+            f"- {what}; source `{source}`, events {event_types or 'all'}, masked={is_masked}, "
+            f"relevance >= {cfg.features.min_relevance}; event-level, pre-holdout; rows with the "
+            "value present.",
+            "",
+            head,
+            "|---" * head.count(" |") + "|",
+        ]
+        for r in res.iter_rows(named=True):
+            line = (
+                f"| {r['entry']}/{r['horizon']}/{r['adjustment']} | {r['cluster']} | {r['n']} | "
+                f"{_num(r['ic'])} | [{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} |"
+            )
+            if control:
+                line += f" {_num(r.get('ic_value'))} | {_num(r.get('ic_control'))} |"
+            lines.append(line)
+        path = _write_report(cfg, f"event-ic-{run_id}", "\n".join(lines) + "\n", res)
+        stats["report"] = str(path)
+
+    params = {
+        "source": source,
+        "event_types": event_types,
+        "value": value,
+        "control": control,
+        "by": by,
+        "masked": masked,
+        "cells": cells,
+    }
+    _run("event-ic", cfg, params, body)
+
+
+@app.command("recall-check")
+def recall_check_cmd(
+    predictions: Annotated[
+        str, typer.Option(help="Comma-separated walk-forward student runs under data/distill/runs")
+    ] = "wf1,wf2,wf3,wf4",
+    start: Annotated[str, typer.Option(help="Events with t_use >= this UTC date")] = "2021-01-01",
+    end: Annotated[str, typer.Option(help="Events with t_use < this UTC date")] = "2026-07-01",
+    cells: Annotated[str, typer.Option(help="entry/horizon/adjustment cells")] = (
+        "close/2/market,close/1/market,close/1/sector,close/2/sector"
+    ),
+    reps: Annotated[int, typer.Option(help="Bootstrap repetitions")] = 10_000,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Distillation step 3 (pre-registered 2026-10-24): on identical 8-K events, rank IC of
+    Haiku's sentiment vs a walk-forward student's (each document scored by a student trained
+    only on documents tradable before its period). Earnings (primary) and guidance events."""
+    from newsfeed.eval.clusters import paired_event_ic
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cfg = cfg.model_copy(update={"eval": cfg.eval.model_copy(update={"bootstrap_reps": reps})})
+    cell_list = _cells(cells)
+    runs = _split(predictions)
+    t0, t1 = _parse_day(start), _parse_day(end)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        if cfg.universe.extra_members:
+            raise typer.BadParameter("use an S&P 500-only config (the pre-registered universe)")
+        d = cfg.paths.data_dir / "distill" / "runs"
+        preds = pl.concat(
+            [
+                pl.read_parquet(d / r / "predictions.parquet")
+                .filter(pl.col("source") == "edgar")
+                .select("item_id", pl.col("ticker").alias("canon"), "pred_sent")
+                for r in runs
+            ]
+        )
+        dup = preds.group_by("item_id", "canon").len().filter(pl.col("len") > 1)
+        if dup.height:
+            raise typer.BadParameter(f"{dup.height} documents scored by several students")
+        lines = [
+            f"# Recall check {run_id}",
+            "",
+            f"- events: 8-K founders, unmasked Haiku labels, relevance >= "
+            f"{cfg.features.min_relevance}, t_use in [{start}, {end}), dated to the first "
+            "decision; student = walk-forward runs " + ", ".join(runs),
+            f"- a = Haiku sentiment, b = student sentiment; diff = IC(b) - IC(a), paired block "
+            f"bootstrap over sessions, {reps} reps",
+            "",
+            "| events | cell | n | corr(a,b) | IC Haiku | IC student | diff | 95% CI diff | "
+            "p diff | p Haiku | p student |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        frames = []
+        for etype in ("earnings", "guidance"):
+            ev, grid, fan = _llm_events(ctx, cfg, "edgar", [etype], masked=False)
+            ev = ev.filter((pl.col("t_use") >= t0) & (pl.col("t_use") < t1))
+            n_ev = ev.height
+            ev = ev.join(preds, on=["item_id", "canon"], how="inner")
+            stats[f"{etype}_events"] = n_ev
+            stats[f"{etype}_with_student"] = ev.height
+            e = _dated_events(ctx, cfg, ev, grid, fan)
+            inp, _ = _eval_inputs(ctx, cfg, e.select("ticker", "as_of").unique())
+            res = pl.DataFrame(
+                paired_event_ic(
+                    e.select("ticker", "date", "sentiment", "pred_sent"),
+                    inp.targets,
+                    inp.sessions,
+                    cfg,
+                    cell_list,
+                    "sentiment",
+                    "pred_sent",
+                )
+            ).with_columns(pl.lit(etype).alias("events"))
+            frames.append(res)
+            for r in res.iter_rows(named=True):
+                lines.append(
+                    f"| {etype} | {r['entry']}/{r['horizon']}/{r['adjustment']} | {r['n']} | "
+                    f"{_num(r.get('corr_ab'), '.3f')} | {_num(r['ic_a'])} | {_num(r['ic_b'])} | "
+                    f"{_num(r['diff'])} | [{_num(r.get('ci_lo_diff'))}, "
+                    f"{_num(r.get('ci_hi_diff'))}] | {_num(r.get('p_diff'), '.3f')} | "
+                    f"{_num(r.get('p_a'), '.3f')} | {_num(r.get('p_b'), '.3f')} |"
+                )
+            lines.append(
+                f"\n_{etype}: {n_ev} Haiku events in the window, {ev.height} with a student "
+                "score_\n"
+            )
+        out = pl.concat(frames, how="diagonal_relaxed")
+        path = _write_report(cfg, f"recall-check-{run_id}", "\n".join(lines) + "\n", out)
+        stats["report"] = str(path)
+        with ctx.store.ops() as con:
+            con.execute(
+                "INSERT INTO experiments VALUES ('recall_check', ?, ?, ?, ?)",
+                [
+                    f"recall:{','.join(runs)}:{run_id}",
+                    utcnow(),
+                    run_id,
+                    json.dumps(
+                        {"runs": runs, "start": start, "end": end, "cells": cells, "reps": reps}
+                    ),
+                ],
+            )
+
+    params = {"predictions": predictions, "start": start, "end": end, "cells": cells, "reps": reps}
+    _run("recall-check", cfg, params, body)
+
+
+# test 7 controls: trailing volatility, |overnight gap|, |yesterday's return|, liquidity, volume
+VOL_CONTROLS = ["ctl_vol_20d", "abs_gap", "abs_ret_1d", "ctl_log_dvol_20d", "ctl_volume_ratio"]
+
+
+@app.command("vol-test")
+def vol_test_cmd(
+    feature_set: Annotated[str, typer.Option(help="Feature set (all member ticker-days)")],
+    features: Annotated[str, typer.Option(help="Attention features, comma-separated")] = (
+        "1d_n_stories,1d_volume_z,5d_n_stories,1d_llm_sent_maxabs"
+    ),
+    targets: Annotated[str, typer.Option(help="rv_5, rv_20, absret_1")] = "rv_5,rv_20,absret_1",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 7: does news attention predict realised volatility beyond trailing volatility,
+    the overnight gap, yesterday's move and trading volume? Partial rank correlation on every
+    member ticker-day (pre-holdout), all days and non-earnings days."""
+    from newsfeed.eval.report import partial_rank_corr
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    cfg = cfg.model_copy(update={"eval": cfg.eval.model_copy(update={"sample": "all"})})
+    feat_list, target_list = _split(features), _split(targets)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        drop = ("feature_set_id", "build_run_id", "built_at")
+        feats = ctx.store.features(feature_set).drop(*drop, strict=False)
+        inp, _ = _eval_inputs(ctx, cfg, feats.select("ticker", "as_of"))
+        inp.features = feats
+        base = assemble(inp, cfg).join(inp.vol_targets, on=["ticker", "date"], how="left")
+        base = base.with_columns(
+            pl.col("ctl_gap").abs().alias("abs_gap"),
+            pl.col("ctl_ret_1d").abs().alias("abs_ret_1d"),
+        )
+        session_idx = {d: i for i, d in enumerate(inp.sessions)}
+        hold = next(
+            (i for i, d in enumerate(inp.sessions) if d >= cfg.eval.holdout_start),
+            len(inp.sessions),
+        )
+        s_all = np.array([session_idx.get(d, -1) for d in base["date"].to_list()])
+        earn = base["1d_llm_evt_earnings"].fill_null(0).to_numpy() > 0
+        ctl = base.select(VOL_CONTROLS).to_numpy().astype(float)
+        rng = np.random.default_rng(cfg.eval.seed)
+        rows = []
+        for tgt in target_list:
+            h = 1 if tgt == "absret_1" else int(tgt.split("_")[1])
+            y = base[tgt].to_numpy().astype(float)
+            pre = (s_all >= 0) & (s_all + h < hold)  # the label ends before the holdout
+            for feat in feat_list:
+                x = base[feat].to_numpy().astype(float)
+                for subset, m in (("all", pre), ("non-earnings", pre & ~earn)):
+                    r = partial_rank_corr(
+                        x[m],
+                        y[m],
+                        ctl[m],
+                        s_all[m],
+                        block=h + 1,
+                        reps=cfg.eval.bootstrap_reps,
+                        rng=rng,
+                    )
+                    rows.append({"feature": feat, "target": tgt, "subset": subset, **r})
+                    log.info("vol-test %s %s %s: %s", feat, tgt, subset, r)
+        res = pl.DataFrame(rows)
+        lines = [
+            f"# Attention -> volatility {run_id}",
+            "",
+            f"- feature set `{feature_set}`, every member ticker-day with the feature present, "
+            "pre-holdout; close entry, raw returns. rv_h = sd of daily log returns over the next "
+            "h sessions; absret_1 = |next-day return|.",
+            f"- partial IC = rank correlation after regressing out {', '.join(VOL_CONTROLS)} "
+            "(ranks); block bootstrap over sessions. Primary (pre-registered): 1d_n_stories vs "
+            "rv_5, all days.",
+            "",
+            "| feature | target | subset | n | raw IC | partial IC | 95% CI | p |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['feature']} | {r['target']} | {r['subset']} | {r['n']} | "
+                f"{_num(r['ic'])} | {_num(r['partial_ic'])} | [{_num(r['ci_lo'])}, "
+                f"{_num(r['ci_hi'])}] | {_num(r['p'], '.3f')} |"
+            )
+        path = _write_report(cfg, f"vol-{run_id}", "\n".join(lines) + "\n", res)
+        stats["report"] = str(path)
+
+    _run("vol-test", cfg, {"feature_set": feature_set, "features": features}, body)
+
+
+ITEM_CODES = "2.02,7.01,8.01,5.02,1.01,5.07,2.03,5.03,1.02,2.01,3.03,3.02,2.05,3.01,2.06"
+
+
+@app.command("item-study")
+def item_study_cmd(
+    feature_set: Annotated[
+        str, typer.Option(help="Feature set whose rows define index members per day")
+    ],
+    codes: Annotated[str, typer.Option(help="8-K item codes")] = ITEM_CODES,
+    horizons: Annotated[str, typer.Option(help="Close-entry horizons")] = "1,5,20",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 8: mean abnormal return after 8-Ks by item code (drift from the first decision
+    after the filing); market-adjusted cells tested with one BH, sector-adjusted reported."""
+    from newsfeed.eval.clusters import decision_times
+    from newsfeed.eval.events import abnormal_returns, event_mean_cells
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    code_list = _split(codes)
+    hs = [int(h) for h in _split(horizons)]
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        fc = cfg.features
+        now = utcnow()
+        items = ctx.store.items_as_of(now, source="edgar", columns="item_id, tradable_at, meta")
+        meta = pl.Struct({"form": pl.Utf8, "cik": pl.Int64, "items": pl.List(pl.Utf8)})
+        items = (
+            items.with_columns(pl.col("meta").str.json_decode(meta).alias("_m"))
+            .unnest("_m")
+            .filter(pl.col("form") == "8-K")
+            .explode("items")
+            .rename({"items": "group"})
+            .filter(pl.col("group").is_in(code_list))
+        )
+        grid = as_of_grid(
+            ctx.calendar,
+            items["tradable_at"].min().date(),
+            now.date(),
+            fc.grid,
+            fc.decision_lag_minutes,
+        )
+        c2t = ctx.universe(full=True).cik_to_tickers
+        fan = pl.DataFrame(
+            [{"cik": c, "ticker": t} for c, ts in c2t.items() for t in ts],
+            schema={"cik": pl.Int64, "ticker": pl.Utf8},
+        )
+        ev = (
+            items.with_columns(
+                pl.Series(
+                    "as_of",
+                    decision_times(items["tradable_at"].to_list(), grid),
+                    dtype=pl.Datetime("us", "UTC"),
+                )
+            )
+            .drop_nulls("as_of")
+            .with_columns(
+                pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+            )
+            .join(fan, on="cik")
+        )
+        if cfg.universe.mode == "sp500_pit":
+            ev = ev.filter(ctx.pit.is_member(ev.select("ticker", "date")))
+        members = ctx.store.features(feature_set).select("ticker", "as_of")
+        inp, _ = _eval_inputs(ctx, cfg, members)
+        members = members.select(
+            "ticker",
+            pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
+        )
+        ar = abnormal_returns(inp.targets, members)
+        cells = [("close", h, a) for h in hs for a in ("market", "sector")]
+        res = pl.DataFrame(event_mean_cells(ev, ar, inp.sessions, cfg, cells))
+        mk = (res["adjustment"] == "market").to_numpy()
+        p_mk = res["p"].to_numpy().astype(float)[mk]
+        flags = np.zeros(res.height, dtype=bool)
+        flags[np.flatnonzero(mk)] = benjamini_hochberg(p_mk, cfg.eval.fdr_q)
+        res = res.with_columns(pl.Series("bh_discovery", flags))
+        n_tests = int(np.sum(~np.isnan(p_mk)))
+        lines = [
+            f"# 8-K item event study {run_id}",
+            "",
+            "- original 8-Ks; one event per (member ticker, decision date, item code); decision "
+            "= first 15:50 ET at or after tradable_at; close entry; pre-holdout.",
+            "- abnormal return (AR) = benchmark-adjusted return minus the same-date "
+            "equal-weighted mean over all index members (members from feature set "
+            f"`{feature_set}`); mean vs 0, block bootstrap over sessions.",
+            f"- BH (q {cfg.eval.fdr_q}) over the {n_tests} market-adjusted tests; "
+            "sector-adjusted columns are descriptive.",
+            *p_floor_note(cfg.eval.bootstrap_reps, n_tests, cfg.eval.fdr_q),
+            "",
+            "| item | h | n | sessions | mean AR (mkt) | 95% CI | p | BH | share > 0 | "
+            "mean AR (sector) | p (sector) |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        sec = res.filter(~pl.Series(mk))
+        for r in res.filter(pl.Series(mk)).sort("group", "horizon").iter_rows(named=True):
+            o = sec.filter((pl.col("group") == r["group"]) & (pl.col("horizon") == r["horizon"]))
+            o = o.to_dicts()[0] if o.height else {"mean": float("nan"), "p": float("nan")}
+            lines.append(
+                f"| {r['group']} | {r['horizon']} | {r['n']} | {r['sessions']} | "
+                f"{bp(r['mean'])} | [{bp(r['ci_lo'])}, {bp(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} | {'yes' if r['bh_discovery'] else ''} | "
+                f"{_num(r['hit'], '.2f')} | {bp(o['mean'])} | {_num(o['p'], '.3f')} |"
+            )
+        path = _write_report(cfg, f"items-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), n_tests=n_tests, discoveries=int(flags.sum()))
+
+    params = {"feature_set": feature_set, "codes": codes, "horizons": horizons}
+    _run("item-study", cfg, params, body)
+
+
+@app.command("ic-detail")
+def ic_detail_cmd(
+    feature_set: Annotated[str, typer.Option(help="Feature set id")],
+    feature: Annotated[str, typer.Option(help="Feature column")] = "1d_llm_sent_cwmean",
+    cells: Annotated[str, typer.Option(help="entry/horizon/adjustment cells")] = (
+        "close/1/market,close/2/market"
+    ),
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 9 (descriptive): pooled IC next to the daily cross-sectional IC, ICIR and Q5 - Q1
+    spread of one feature on the config's eval sample, pre-holdout."""
+    _setup_logging(verbose)
+    cfg = load_config(config)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        drop = ("feature_set_id", "build_run_id", "built_at")
+        feats = add_derived(ctx.store.features(feature_set).drop(*drop, strict=False))
+        inp, _ = _eval_inputs(ctx, cfg, feats)
+        res = pl.DataFrame(univariate_cells(inp, cfg, feature, _cells(cells), detail=True))
+        ec = cfg.eval
+        sample = f"`{ec.sample}`"
+        if ec.sample_event_types:
+            sample += f", event types {ec.sample_event_types}"
+        if ec.sample_pure_event_type:
+            sample += f", pure {ec.sample_pure_event_type}"
+        lines = [
+            f"# IC detail {run_id}",
+            "",
+            f"- feature set `{feature_set}`, `{feature}`, sample {sample}; pre-holdout.",
+            "- daily view (descriptive, not BH-tested): sessions with >= 10 names; ICIR = mean /"
+            " sd of the daily IC (per day); Q5 - Q1 = mean daily spread between the top and "
+            "bottom quintile of the feature. CIs: block bootstrap over sessions.",
+            "",
+            "| cell | rows | pooled IC | p | days | daily IC | 95% CI | p | ICIR | Q5 - Q1 | "
+            "95% CI | p |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['entry']}/{r['horizon']}/{r['adjustment']} | {r['n']} | {_num(r['ic'])} | "
+                f"{_num(r['p'], '.3f')} | {r.get('d_days', 0)} | {_num(r.get('d_ic_daily'))} | "
+                f"[{_num(r.get('d_ic_daily_ci_lo'))}, {_num(r.get('d_ic_daily_ci_hi'))}] | "
+                f"{_num(r.get('d_ic_daily_p'), '.3f')} | {_num(r.get('d_icir'))} | "
+                f"{bp(r.get('d_q_spread'))} | [{bp(r.get('d_q_spread_ci_lo'))}, "
+                f"{bp(r.get('d_q_spread_ci_hi'))}] | {_num(r.get('d_q_spread_p'), '.3f')} |"
+            )
+        path = _write_report(cfg, f"ic-detail-{run_id}", "\n".join(lines) + "\n", res)
+        stats["report"] = str(path)
+
+    _run("ic-detail", cfg, {"feature_set": feature_set, "feature": feature, "cells": cells}, body)
+
+
+@app.command("doc-change")
+def doc_change_cmd(
+    primary_cells: Annotated[str, typer.Option(help="Pre-registered cells")] = (
+        "close/20/market,close/60/market"
+    ),
+    secondary_cells: Annotated[str, typer.Option(help="Reported, not primary")] = (
+        "close/1/market,close/5/market,close/10/market,close/20/sector,close/60/sector"
+    ),
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 10: does a 10-K / 10-Q that changed little from the year-earlier report predict
+    higher returns ("Lazy Prices")? Event-level rank IC of document similarity, pre-holdout."""
+    from newsfeed.eval.clusters import cluster_ic, decision_times
+    from newsfeed.eval.cv import pre_holdout_mask
+    from newsfeed.eval.docchange import filing_meta, pair_filings, similarities
+    from newsfeed.eval.report import ic_detail
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    prim, sec = _cells(primary_cells), _cells(secondary_cells)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        store, fc, src = ctx.store, cfg.features, "edgar_periodic"
+        now = utcnow()
+        f = filing_meta(store.items_as_of(now, source=src, columns="item_id, tradable_at, meta"))
+        pairs = pair_filings(f)
+        log.info("doc-change: %d filings, %d with a year-earlier pair", f.height, pairs.height)
+
+        def load(ids: list[str]) -> dict[str, str]:
+            b = store.items_as_of(now, source=src, item_ids=ids, columns="item_id, body_text")
+            return dict(zip(b["item_id"].to_list(), b["body_text"].to_list(), strict=True))
+
+        sim = similarities(f, pairs, load)
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        sim.write_parquet(out_dir / f"doc-change-{run_id}-similarity.parquet")
+        grid = as_of_grid(
+            ctx.calendar, sim["tradable_at"].min().date(), now.date(), fc.grid,
+            fc.decision_lag_minutes,
+        )  # fmt: skip
+        c2t = ctx.universe(full=True).cik_to_tickers
+        fan = pl.DataFrame(
+            [{"cik": c, "ticker": t} for c, ts in c2t.items() for t in ts],
+            schema={"cik": pl.Int64, "ticker": pl.Utf8},
+        )
+        ev = (
+            sim.with_columns(
+                pl.Series(
+                    "as_of",
+                    decision_times(sim["tradable_at"].to_list(), grid),
+                    dtype=pl.Datetime("us", "UTC"),
+                )
+            )
+            .drop_nulls("as_of")
+            .with_columns(
+                pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+            )
+            .join(fan, on="cik")
+        )
+        if cfg.universe.mode == "sp500_pit":
+            ev = ev.filter(ctx.pit.is_member(ev.select("ticker", "date")))
+        inp, _ = _eval_inputs(ctx, cfg, ev.select("ticker", "as_of").unique())
+        ev = ev.join(inp.caps.select("ticker", "date", "mcap"), on=["ticker", "date"], how="left")
+        # NaN (section missing in one filing) -> null, so it counts as absent, not as a value
+        ev = ev.with_columns(
+            pl.col("mcap").log().alias("log_mcap"),
+            *[pl.col(c).fill_nan(None) for c in ("cos", "jac", "cos_mda", "cos_rf")],
+        )
+        stacked = pl.concat(
+            [
+                ev.with_columns(pl.lit("all").alias("cluster")),
+                ev.with_columns(pl.col("form").alias("cluster")),
+            ]
+        )
+        cols = ["ticker", "date", "cluster", "cos", "jac", "cos_mda", "cos_rf", "log_mcap"]
+        stacked = stacked.select(cols)
+        rows = []
+        for tier, cells in (("primary", prim), ("secondary", sec)):
+            for value, control in (("cos", None), ("jac", None), ("cos_mda", None),
+                                   ("cos_rf", None), ("cos", "log_mcap")):  # fmt: skip
+                if tier == "primary" or value == "cos":
+                    for r in cluster_ic(
+                        stacked, inp.targets, inp.sessions, cfg, cells, value=value,
+                        control=control,
+                    ):  # fmt: skip
+                        rows.append({"tier": tier, "value": value, "control": control or "", **r})
+        res = pl.DataFrame(rows)
+        # descriptive daily view for the primary measure / cells, all filings
+        session_idx = {d: i for i, d in enumerate(inp.sessions)}
+        daily = []
+        rng = np.random.default_rng(cfg.eval.seed + 1)
+        for entry, h, adj in prim:
+            t = inp.targets.filter((pl.col("entry") == entry) & (pl.col("horizon") == h))
+            d = ev.join(t, on=["ticker", "date"]).filter(pl.col("cos").is_not_null())
+            dec = d["date"].to_numpy().astype("datetime64[D]")
+            end = d["label_end"].to_numpy().astype("datetime64[D]")
+            d = d.filter(pl.Series(pre_holdout_mask(dec, end, cfg.eval.holdout_start)))
+            s = np.array([session_idx.get(x, -1) for x in d["date"].to_list()])
+            daily.append(
+                {"cell": f"{entry}/{h}/{adj}", **ic_detail(
+                    s, d["cos"].to_numpy().astype(float), d[f"ret_{adj}"].to_numpy().astype(float),
+                    block=h + 1, reps=cfg.eval.bootstrap_reps, rng=rng,
+                )}
+            )  # fmt: skip
+        n_pre = ev.filter(pl.col("date") < cfg.eval.holdout_start)
+        lines = [
+            f"# Document change (Lazy Prices) {run_id}",
+            "",
+            f"- {f.height} 10-K/10-Q filings, {pairs.height} with a year-earlier same-form pair; "
+            f"{n_pre.height} member-ticker events before the holdout "
+            f"({n_pre['ticker'].n_unique()} tickers).",
+            "- similarity: cosine of term-frequency vectors (words of >= 2 letters, numbers "
+            "dropped); high = little change; event dated to the first decision after tradable_at;"
+            " pre-holdout; block bootstrap over sessions.",
+            f"- median cosine: all {sim['cos'].median():.3f}, 10-K "
+            f"{sim.filter(pl.col('form') == '10-K')['cos'].median():.3f}, 10-Q "
+            f"{sim.filter(pl.col('form') == '10-Q')['cos'].median():.3f}; MD&A found in both "
+            f"filings for {sim['cos_mda'].is_not_nan().sum()} pairs, risk factors for "
+            f"{sim['cos_rf'].is_not_nan().sum()}.",
+            "",
+            "| tier | value | control | cell | group | n | IC | 95% CI | p |",
+            "|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['tier']} | {r['value']} | {r['control'] or '-'} | "
+                f"{r['entry']}/{r['horizon']}/{r['adjustment']} | {r['cluster']} | {r['n']} | "
+                f"{_num(r['ic'])} | [{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} |"
+            )
+        lines += [
+            "",
+            "Daily view (descriptive; sessions with >= 10 filings):",
+            "",
+            "| cell | days | daily IC | 95% CI | ICIR | Q5 - Q1 | 95% CI |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for d in daily:
+            lines.append(
+                f"| {d['cell']} | {d['days']} | {_num(d['ic_daily'])} | "
+                f"[{_num(d['ic_daily_ci_lo'])}, {_num(d['ic_daily_ci_hi'])}] | "
+                f"{_num(d['icir'])} | {bp(d['q_spread'])} | [{bp(d['q_spread_ci_lo'])}, "
+                f"{bp(d['q_spread_ci_hi'])}] |"
+            )
+        path = _write_report(cfg, f"doc-change-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), filings=f.height, pairs=pairs.height)
+
+    _run("doc-change", cfg, {"primary": primary_cells, "secondary": secondary_cells}, body)
 
 
 if __name__ == "__main__":

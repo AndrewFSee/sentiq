@@ -19,6 +19,7 @@ refreshing the Parquet) stamp the true first-seen time instead.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterator
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -28,7 +29,7 @@ import duckdb
 
 from newsfeed.config import TranscriptsConfig
 from newsfeed.ingest.base import ErrorFn, RawItem, SkipFn, make_item_id
-from newsfeed.ingest.hf_refresh import current_file, refresh
+from newsfeed.ingest.hf_refresh import current_file, pending_download, refresh
 from newsfeed.textutil import estimate_tokens, truncate_tokens
 from newsfeed.tickers import TickerMap, Universe, normalize_ticker
 from newsfeed.timeutil import IngestMode, ensure_utc, utcnow
@@ -42,6 +43,34 @@ NY = ZoneInfo("America/New_York")
 
 def end_of_day_ny(d: date) -> datetime:
     return datetime.combine(d, time(23, 59, 59), tzinfo=NY).astimezone(ZoneInfo("UTC"))
+
+
+# Q&A start = the first paragraph (not the opening one) that says questions begin NOW
+# ("Our first question comes from ...", "We will now begin the question-and-answer session"),
+# ignoring announcements of what comes later ("after the speakers' remarks, there will be a
+# question-and-answer session"). Checked on the S&P 500 calls: found in 95.5%.
+_QA_START = re.compile(
+    r"(our|the) first question|first question (comes|is) from"
+    r"|we will now (begin|start|open|take|conduct)\b.{0,40}question"
+    r"|(now|ready to) (open|take|begin)\b.{0,40}questions"
+    r"|now (open|turn)\b.{0,30}\b(line|lines|floor|call)\b.{0,25}questions"
+    r"|(begin|start|open) the question[- ]and[- ]answer"
+    r"|question[- ]and[- ]answer (session|portion)\b.{0,40}\bnow\b",
+    re.I,
+)
+_QA_FUTURE = re.compile(
+    r"will follow|after (the|today's) (speakers|prepared|presentation|remarks)"
+    r"|at the (end|conclusion) of|later in the call",
+    re.I,
+)
+
+
+def split_sections(paras: list[str]) -> tuple[list[str], list[str]] | None:
+    """(prepared remarks, Q&A) of 'Speaker: text' paragraphs, or None if no Q&A start."""
+    for i, p in enumerate(paras):
+        if i > 0 and _QA_START.search(p) and not _QA_FUTURE.search(p):
+            return paras[:i], paras[i:]
+    return None
 
 
 def transcript_text(paragraphs: list[dict], drop_speakers: set[str]) -> str:
@@ -65,6 +94,7 @@ class TranscriptsAdapter:
         tmap: TickerMap,
         *,
         spells: dict[str, list[tuple[date, date | None, int]]] | None = None,
+        section: str = "full",
         clock=utcnow,
     ) -> None:
         """``spells``: ticker -> [(start, end exclusive | None, cik)] index-membership spells.
@@ -73,6 +103,12 @@ class TranscriptsAdapter:
         has a ticker of its own (a re-registration such as Disney 2019). A ticker then held by
         a different, still-trading company (IR in 2019 = old Ingersoll-Rand plc, now TT) is
         never put on another company's call (Gardner Denver, whose symbol is IR today)."""
+        if section not in ("full", "qa", "prep"):
+            raise ValueError(f"unknown transcript section {section!r}")
+        self.section = section
+        # section views are separate sources (own items, scores and features); the full call
+        # stays "transcripts"
+        self.name = SOURCE if section == "full" else f"{SOURCE}_{section}"
         self.cfg = cfg
         self.universe = universe
         self.tmap = tmap
@@ -111,6 +147,7 @@ class TranscriptsAdapter:
             fallback_commit=self.cfg.dataset_commit,
             keep_files=[f"{self.cfg.dataset_commit[:12]}.parquet"],
             client=self._http,
+            max_seconds=60 * self.cfg.download_minutes_per_poll,
         )
         self.stats["refresh"] = out
         return out
@@ -198,18 +235,26 @@ class TranscriptsAdapter:
             self._bump("no_valid_ticker")
             return None
         text = transcript_text(r["transcripts"], self._drop)
+        if self.section != "full":
+            parts = split_sections(text.split("\n\n")) if text else None
+            if parts is None:
+                self._bump("no_qa_boundary")
+                return None
+            text = "\n\n".join(parts[1] if self.section == "qa" else parts[0])
         if not text:
             self._bump("empty")
             return None
         body, truncated = truncate_tokens(text, self.cfg.max_tokens, self.cfg.chars_per_token)
         q, y = r["fiscal_quarter"], r["fiscal_year"]
         self._bump("items")
+        suffix = "" if self.section == "full" else f":{self.section}"
+        label = {"full": "", "qa": " (Q&A only)", "prep": " (prepared remarks only)"}
         return RawItem(
-            source=SOURCE,
-            native_id=f"defeatbeta:{r['transcripts_id']}",
+            source=self.name,
+            native_id=f"defeatbeta:{r['transcripts_id']}{suffix}",
             publisher="Earnings call (defeatbeta)",
             url=None,
-            title=f"{sym} earnings call transcript, fiscal Q{q} {y}",
+            title=f"{sym} earnings call transcript, fiscal Q{q} {y}{label[self.section]}",
             body_text=body,
             body_tokens_est=estimate_tokens(body, self.cfg.chars_per_token),
             body_truncated=truncated,
@@ -228,7 +273,7 @@ class TranscriptsAdapter:
                 "n_paragraphs": len(r["transcripts"] or []),
             },
             raw_json="{}",  # full text lives in the pinned Parquet (not duplicated)
-            parser_version=PARSER_VERSION,
+            parser_version=PARSER_VERSION + ("" if self.section == "full" else f"+{self.section}"),
         )
 
     # ---- adapter interface
@@ -239,12 +284,14 @@ class TranscriptsAdapter:
         d0 = start.astimezone(NY).date() - timedelta(days=1)
         d1 = end.astimezone(NY).date() + timedelta(days=1)
         for r in self._rows(d0, d1):
-            native = f"defeatbeta:{r['transcripts_id']}"
+            native = f"defeatbeta:{r['transcripts_id']}" + (
+                "" if self.section == "full" else f":{self.section}"
+            )
             try:
                 d = date.fromisoformat(str(r["report_date"])[:10])
                 if not (start <= end_of_day_ny(d) < end):
                     continue
-                if skip(make_item_id(SOURCE, native)):
+                if skip(make_item_id(self.name, native)):
                     continue
                 item = self._item(r, mode="backfill", first_seen=self.clock())
             except Exception as exc:
@@ -260,8 +307,10 @@ class TranscriptsAdapter:
     ) -> Iterator[RawItem]:
         """Calls in the last ``poll_lookback_days`` not stored yet (refresh the Parquet first).
         Live items get first_seen_at = now, so tradable_at is honest even when the dataset
-        added a call late."""
-        if catch_up:
+        added a call late. Refreshes on catch-up polls, and on every poll while a capped
+        download is still incomplete."""
+        p = Path(self.cfg.path)
+        if catch_up or (self.cfg.auto_refresh and pending_download(p)):
             try:
                 self.refresh()
             except Exception as exc:  # a failed refresh must not stop polling the local copy
@@ -274,10 +323,12 @@ class TranscriptsAdapter:
         for r in self._rows(
             today - timedelta(days=self.cfg.poll_lookback_days), today + timedelta(1)
         ):
-            native = f"defeatbeta:{r['transcripts_id']}"
+            native = f"defeatbeta:{r['transcripts_id']}" + (
+                "" if self.section == "full" else f":{self.section}"
+            )
             d = end_of_day_ny(date.fromisoformat(str(r["report_date"])[:10]))
             newest = d if newest is None else max(newest, d)
-            if skip(make_item_id(SOURCE, native)):
+            if skip(make_item_id(self.name, native)):
                 continue
             try:
                 item = self._item(r, mode="live", first_seen=seen_at)

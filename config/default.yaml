@@ -18,6 +18,22 @@ universe:
   ingest_margin_before_days: 90
   ingest_margin_after_days: 30
   name_linking: aliases_only        # names of 500+ companies collide with ordinary words
+  # Nasdaq-100 members not in the S&P 500 that file 8-Ks (user decision 2026-10-21). NOT
+  # point-in-time: picked by the index on 2026-10-21 and treated as members from the later of
+  # 2019-01-01 and their listing (survivorship bias). The frozen S&P 500 variants (H1/H2 etc.)
+  # don't list them, so their samples and ids are unchanged. 6-K filers (ARM, ASML, CCEP, FER,
+  # NBIS, PDD, TRI) are left out: their reports are 6-Ks, which the EDGAR source doesn't read.
+  extra_members:
+    - {ticker: SPCX, cik: 1181412, name: SpaceX, start: "2026-06-11", sector: Industrials}
+    - {ticker: ALNY, cik: 1178670, name: Alnylam Pharmaceuticals, start: "2019-01-01", sector: Health Care}
+    - {ticker: ALAB, cik: 1736297, name: Astera Labs, start: "2024-03-20", sector: Information Technology}
+    - {ticker: CRWV, cik: 1769628, name: CoreWeave, start: "2025-03-28", sector: Information Technology}
+    - {ticker: MELI, cik: 1099590, name: MercadoLibre, start: "2019-01-01", sector: Consumer Discretionary}
+    - {ticker: MSTR, cik: 1050446, name: Strategy, start: "2019-01-01", sector: Information Technology}
+    - {ticker: RKLB, cik: 1819994, name: Rocket Lab, start: "2021-08-25", sector: Industrials,
+       note: "listed via SPAC (Vector Acquisition); start = merger close, not the SPAC listing"}
+    - {ticker: SHOP, cik: 1594805, name: Shopify, start: "2019-01-01", sector: Information Technology,
+       note: "files 10-K/8-K only since 2025; 40-F/6-K before, so few 8-Ks pre-2025"}
   # Original development universe (static mode); in sp500_pit mode an optional subset only.
   tickers: []
   # static dev set was: [AAPL, MSFT, NVDA, AMZN, GOOGL, GOOG, META, JPM, XOM, JNJ, WMT, BRK-B]
@@ -81,6 +97,9 @@ timing:
     edgar: 60
     news_api: 300
     transcripts: 0                    # published_at is already the END of the call date (NY)
+    transcripts_qa: 0
+    transcripts_prep: 0
+    edgar_periodic: 60
 
 sources:
   edgar:
@@ -101,6 +120,16 @@ sources:
     catch_up_every_minutes: 60        # per-CIK sweep to catch anything the feed window missed
     silence_alert_minutes: 45         # market-open minutes with no new 8-K from ANY company
 
+  edgar_periodic:                     # 10-K / 10-Q full text (Lazy Prices etc.); backfill for now
+    forms: ["10-K", "10-Q"]           # originals only: amendments change little and would pair badly
+    exhibit_type_prefixes: []         # primary document only
+    max_tokens: 400000                # effectively uncapped (largest 10-Ks ~300k tokens)
+    ingest_margin_before_days: 400    # one year before membership: the comparison filing
+    raw_dir: D:/sentiq-data/raw       # ~0.3-1.5 MB gzipped per filing; C: is short of space
+    current_feed_url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=10-&company=&dateb=&owner=include&output=atom
+    catch_up_every_minutes: 1440
+    silence_alert_minutes: 20000      # reports cluster in filing seasons
+
   news_api:
     vendor: fixture                   # no vendor licensed yet; recorded/synthetic fixtures
     fixture_path: tests/fixtures/news/articles.jsonl
@@ -120,6 +149,12 @@ sources:
     auto_refresh: true                # catch-up polls fetch a newer version (HEAD check first)
     catch_up_every_minutes: 60        # hourly HEAD check (downloads only when the file changes)
     silence_alert_minutes: 20000      # market minutes: calls are seasonal
+  transcripts_qa:                     # test-5 robustness: Q&A section of each call, from the pin
+    path: D:/sentiq-archive/defeatbeta_pin/860d42ac253f.parquet
+    auto_refresh: false
+  transcripts_prep:                   # ... and the prepared remarks
+    path: D:/sentiq-archive/defeatbeta_pin/860d42ac253f.parquet
+    auto_refresh: false
     max_tokens: 16000                 # median call ~10k tokens
     flush_every: 200
 
@@ -129,6 +164,7 @@ collect:
   max_consecutive_failures: 3
   stalled_after_intervals: 3
   realert_minutes: 60
+  coverage_max_gap_minutes: 60       # live coverage bridges poll gaps up to this if the poll reached back
 
 dedupe:
   near_dup_threshold: 0.8   # estimated Jaccard over word 5-shingles
@@ -137,6 +173,8 @@ dedupe:
   max_chars: 5000
   window_hours: 72          # exact-text / near-dup matches only within this window (URL matches: any time)
   require_ticker_overlap: true
+  isolated_sources: [transcripts_qa, transcripts_prep]   # section views never join the full call's story
+  excluded_sources: [edgar_periodic]  # 10-K/10-Q: no stories (standalone; backfill out of order)
   seed: 1
 
 scoring:
@@ -210,7 +248,7 @@ eval:
   market_etf: SPY
   sector_etfs: {AAPL: XLK, MSFT: XLK, NVDA: XLK, AMZN: XLY, GOOGL: XLC, GOOG: XLC, META: XLC,
                 JPM: XLF, BRK-B: XLF, XOM: XLE, JNJ: XLV, WMT: XLP}
-  horizons: [1, 2, 5, 10, 20]       # trading sessions after entry
+  horizons: [1, 2, 5, 10, 20, 60]   # trading sessions after entry (60 added 2026-10-15)
   entries: [close, next_open]       # decision at session close - 10 min (= NYSE MOC cutoff)
   adjustments: [market, sector]     # forward return minus SPY / the sector ETF (same window)
   holdout_start: "2026-07-01"       # frozen: eval refuses data from here on without --use-holdout

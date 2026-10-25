@@ -122,6 +122,7 @@ class _Node:
     content_hash: str | None
     tickers: frozenset[str]
     mh: MinHash | None = field(default=None, repr=False)
+    group: str = ""  # isolated source name, else "" (all other sources match each other)
 
     @property
     def tradable_at(self) -> datetime:
@@ -150,6 +151,8 @@ class StoryAssigner:
         self._last_key: SortKey | None = None
 
     def _compatible(self, a: _Node, b: _Node) -> bool:
+        if a.group != b.group:
+            return False
         if a.tradable_at - b.tradable_at > self.window:
             return False
         if self.cfg.require_ticker_overlap and a.tickers and b.tickers:
@@ -215,12 +218,14 @@ def rebuild_stories(
     chash = dedupe_config_hash(cfg, linker_id)
     meta = store.query(
         """
-        SELECT i.item_id, i.url_norm, i.content_hash, i.tradable_at, i.published_at,
+        SELECT i.item_id, i.source, i.url_norm, i.content_hash, i.tradable_at, i.published_at,
                coalesce(t.tickers, []) AS tickers
         FROM items i
         LEFT JOIN (SELECT item_id, list(DISTINCT ticker ORDER BY ticker) AS tickers
                    FROM item_tickers GROUP BY item_id) t USING (item_id)
-        """
+        WHERE i.source NOT IN (SELECT unnest($excluded))
+        """,
+        {"excluded": list(cfg.excluded_sources) or [""]},
     ).to_dicts()
     if not meta:
         return {"assigned": 0, "months_rewritten": 0}
@@ -314,6 +319,7 @@ def _node(
         content_hash=r["content_hash"],
         tickers=frozenset(r["tickers"] or ()),
         mh=mh,
+        group=r.get("source", "") if r.get("source") in cfg.isolated_sources else "",
     )
 
 

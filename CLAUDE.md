@@ -17,9 +17,13 @@ speed and polish.** It is not a trading system.
   **M6 done** (branch `m6-sp500`): point-in-time S&P 500 universe 2019–present, per-CIK
   backfill windows, price routing (Tradier / renamed / Tiingo for delisted), split-consistent
   market caps, PIT sector ETFs, member-only feature rows, Massive vendor news, masked-score
-  leakage checks, pre-registered tests 1–4b + exploratory per-type breakdown (results in the
-  decisions log). Ongoing: live collection (`scripts\collect_window.cmd`) for the holdout;
-  the single pre-registered holdout look (H1 earnings, H2 guidance) is on/after 2027-08-31.
+  leakage checks, pre-registered tests 1–9 (incl. earnings-call transcripts, partial IC vs the
+  release, delay sensitivity, LLM surprise, attention → volatility, 8-K item event study,
+  daily IC / quintile view) + exploratory per-type and text-cluster breakdowns (results in
+  the decisions log). Ongoing: live collection of 8-Ks and transcripts
+  (`scripts\collect_window.cmd`) for the holdout; `transcripts-latency` once the Q3-2026
+  season has data; the single pre-registered holdout look (H1 earnings, H2 guidance, ≥ 10,000
+  bootstrap reps) is on/after 2027-08-31.
 - Every command that calls the model costs money: run `score --dry-run` first; jobs estimated
   above `scoring.confirm_above_usd` need `--yes`. Never run paid jobs without the user's OK.
 
@@ -291,6 +295,11 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
 - Windows: `os.replace` onto a file another process is reading can fail; `write_table_atomic`
   retries.
 - `item_id = sha256("<source>:<native_id>")[:32]`, deterministic.
+- `text_hash` (sha256 hex of title + "\n" + body, `storage.item_text_hash`) is stored in every
+  item row since 2026-10-22; the view reads the column only while the marker
+  `lake/items/_text_hash_migrated` exists (derive drops it, and the view computes hashes
+  again, if a row without one appears). Empty schema templates are named by a schema hash
+  (`lake/_empty_<name>_<hash8>.parquet`) so a schema change never replaces a file in use.
 - Every run records `run_id`, `config_hash` (non-secret, path-independent), git SHA, versions.
 - Archive (moved off C: 2026-10-14, see `D:\sentiq-archive\README.md`): the defeatbeta pin
   860d42ac253f.parquet (transcripts backfill version), full SEC companyfacts JSON (the
@@ -347,7 +356,7 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   CPU, ~1–3 chunks/s × ~355k 300-word chunks, single write at the end): left running.
 - 2026-10-11 (M6): batch scoring 55,493 requests (7 batches, byte-capped), done in ~25 min,
   $15.91 (55,471 ok, 22 max_tokens). Feature set 8990ee7a9775 (embeddings off, config
-  `data/configs/sp500_noemb.yaml`): 984,567 rows, 1,954 sessions, ~504 members/day.
+  `config/variants/sp500_noemb.yaml`): 984,567 rows, 1,954 sessions, ~504 members/day.
 - 2026-10-11 (M6, eval e1a1af, pre-holdout, ~52k news ticker-days, 1,878 sessions, 659
   tickers): no BH discovery out of 180 tests. LLM sentiment univariate IC is small and
   positive for `close` entry (≈ +0.01–0.016 at 1–2d; best p 0.01, sector-adj), ≈ 0 for
@@ -582,3 +591,356 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   curve shifted: it drops once it passes ~2 sessions after the release. Conclusion: what
   matters is reading the release within a session or two; the 8-K arrives within minutes via
   EDGAR (live collector + live scoring), so live call transcription would add little.
+- 2026-10-14 PRE-REGISTERED test 5 robustness (owed: the test-5 primary passed nominally) —
+  Q&A vs prepared remarks, before any backfill/scoring. Section views of each call from the
+  pin (D:\sentiq-archive\defeatbeta_pin\860d42ac253f.parquet): sources `transcripts_qa` /
+  `transcripts_prep`; split at the first paragraph after the opening that says questions start
+  now (`transcripts.split_sections`, found in 95.5% of calls; calls without it are skipped);
+  each section capped at 16k tokens; same date-only timing; `dedupe.isolated_sources` keeps
+  them out of the full call's story. Scored MASKED only (`score --masked --unpaired`), Haiku
+  5.5, prompt 6108c555090fa4b3. Feature sets `config/variants/transcripts_{qa,prep}_masked.yaml`.
+  Readout: masked `1d_llm_sent_cwmean` IC of each section at close/1 and close/2 market, and
+  the paired difference IC(Q&A) − IC(prepared) on identical rows (`newsfeed leakage` used as a
+  generic paired comparison: --feature-set prep --masked-set qa). Reading: Q&A carries the
+  signal if its IC ≥ the full-call IC and the difference CI excludes 0; otherwise no evidence
+  that either section dominates. Descriptive robustness, not a new BH family.
+- 2026-10-15 RESULT test 5 robustness (sections: 11,866 items each, 544 calls without a Q&A
+  boundary skipped; masked scoring 11,355 + 11,354 requests, $10.59; feature sets Q&A
+  a8fa32903f0c / prepared 69b725996572). Identical rows (10,811), close/market IC h1/h2:
+  prepared +0.028 / +0.031, Q&A +0.020 / +0.030, diff Q&A − prepared −0.008 (p 0.28) / −0.001
+  (p 0.87); vs the full call (10,773 rows, +0.028 / +0.034): Q&A −0.008 / −0.004, n.s. Section
+  sentiments correlate 0.68. By the pre-registered reading: no evidence that either section
+  dominates; both carry similar signal (Q&A slightly higher at 5–20d, +0.011..+0.016,
+  p 0.10–0.20, n.s.). Test 5's signal is not an artefact of one part of the call.
+- 2026-10-15 PRE-REGISTERED tests 6–9 (signal families of "Machine Learning for Trading"
+  §10.5 that were not yet tested; no LLM cost, existing scores and feature sets only;
+  pre-holdout; each run counts as a tried variant):
+  6. **LLM earnings surprise** (`newsfeed event-ic`): events = 8-K story founders with LLM
+     event_type earnings, relevance ≥ secondary, unmasked Haiku 5.5 prompt 6108c555090fa4b3,
+     non-null `surprise_vs_expectations` (≈ 22% of releases: the prompt asks for null unless the
+     text compares results with expectations); event-level, dated to the first 15:50 decision
+     ≥ tradable_at (as `delay-sensitivity` at delay 0), fanned out to member tickers. Primary:
+     rank IC of surprise > 0 at close entry, h ∈ {1, 2}, market-adjusted. Secondary: (a)
+     semi-partial IC of surprise given LLM sentiment on the same rows (beyond sentiment?), (b)
+     masked surprise, (c) transcript surprise. Exploratory: sentiment IC by materiality (high
+     vs medium/low).
+  7. **Attention → volatility** (`newsfeed vol-test`): all member ticker-days of feature set
+     8990ee7a9775 (8-K attention) where the feature is non-null. Targets, close entry, raw:
+     RV_h = sd of daily log close-to-close returns over sessions i+1..i+h, h ∈ {5, 20}, and
+     |r| close[i] → close[i+1]. Statistic: partial rank correlation (Pearson of the rank
+     residuals of feature and target, each regressed on the ranks of ctl_vol_20d, |ctl_gap|,
+     |ctl_ret_1d|, ctl_log_dvol_20d, ctl_volume_ratio), circular block bootstrap over sessions
+     (block h + 1). Primary: `1d_n_stories` vs RV5, partial IC > 0. Secondary: `1d_volume_z`,
+     `5d_n_stories`, `1d_llm_sent_maxabs` (news days only), targets RV20 and |r1|, and every
+     cell again on non-earnings days (`1d_llm_evt_earnings` = 0). Expectation: the primary is
+     positive mostly through earnings releases (known event-volatility effect), so the
+     non-earnings rows are the informative ones. A pass says attention predicts risk, not
+     direction (not a return signal).
+  8. **8-K item event study** (`newsfeed item-study`): original 8-Ks (form 8-K, not 8-K/A),
+     one event per (member ticker, decision date, item code) from `meta.items`; codes with
+     ≥ 100 pre-holdout filings except 9.01 (exhibits): 2.02, 7.01, 8.01, 5.02, 1.01, 5.07, 2.03,
+     5.03, 1.02, 2.01, 3.03, 3.02, 2.05, 3.01, 2.06 (15 codes; 4.02 restatements has only 14,
+     not tested). Decision = first 15:50 ≥ tradable_at. Statistic: mean abnormal return =
+     market-adjusted return minus the same-date equal-weighted mean market-adjusted return of
+     all index members (removes the equal- vs cap-weighted drift), close entry, h ∈ {1, 5, 20};
+     circular block bootstrap over sessions; two-sided; one BH (q 0.10) over the 45 tests.
+     Sector-adjusted abnormal returns reported, not tested. This is drift after the first
+     tradable decision, not the announcement reaction.
+  9. **ICIR + quintile spreads** (reporting, no new hypothesis): for univariate cells, daily
+     cross-sectional rank IC on sessions with ≥ 10 names (mean, sd, ICIR = mean/sd, days) and
+     the Q5 − Q1 mean return (quintiles by within-day rank), averaged over days, CIs by
+     circular block bootstrap over sessions. Descriptive only, never added to a BH family; the
+     pooled IC stays the pre-registered statistic. Reported by `newsfeed ic-detail` for the
+     primaries of test 1, test 5 (masked) and H2 guidance (pre-holdout), and in future eval
+     reports.
+- 2026-10-15 RESULT test 6 (LLM earnings surprise, event-level; runs 6ef6e6 primary, 3cbc44
+  semi-partial, 21de45 masked, d5c0ac transcripts, ea04fb materiality; sanity: `--value
+  sentiment` run ebe354 reproduces the 8-K earnings delay-0 IC +0.020 / +0.031). Surprise is
+  present on 3,504 of 15,938 earnings events. Primary close/market IC h1 +0.033 (p 0.078), h2
+  +0.040 (CI [+0.001, +0.075], p 0.044; ×2 primary cells = 0.088) → weak: h2 nominal only.
+  (a) Beyond sentiment: semi-partial IC −0.011 / −0.015 (p 0.52 / 0.35); on the same rows
+  sentiment alone has IC +0.047 / +0.060 → surprise adds nothing; sentiment already contains
+  it. (b) Masked surprise +0.045 / +0.044 (p 0.006 / 0.018): masking does not lower it. (c)
+  Transcript surprise +0.007 / +0.021 (n 6,502, n.s.). Materiality split uninformative: 94% of
+  earnings releases are "high" (high +0.018 / +0.029; medium/low n 904, ≈ 0). Not
+  pre-registered, noted only: sentiment IC is about twice as large on releases that state a
+  comparison with expectations (+0.060 at h2) as on all releases (+0.031) — a candidate
+  subgroup, not a finding.
+- 2026-10-15 RESULT test 7 (attention → volatility, run e58be9; ~0.93M member ticker-days,
+  1,000 reps so p ≥ 0.002): primary FAILS — `1d_n_stories` vs rv_5 partial IC −0.001
+  (p 0.64; raw +0.012): once trailing volatility, |gap|, |yesterday's return|, dollar volume
+  and volume ratio are controlled, the 8-K count adds nothing. Secondary (no BH family, read
+  with care): `1d_volume_z` partial +0.047 (rv_5) / +0.097 (rv_20), same on non-earnings days;
+  `5d_n_stories` −0.036 / −0.077; `1d_llm_sent_maxabs` (news days only, n ≈ 47k) +0.026
+  (rv_5), +0.048 (|r1|; non-earnings +0.024). Caveat: volume_z = (count − own baseline mean)
+  / sd is mostly a *cross-sectional* filing-frequency measure on the ~95% of days with no
+  8-K (frequent filers sit below zero), so its sign may reflect who files often rather than
+  attention shocks; checking it only on days with an 8-K would separate the two. Strong LLM
+  |sentiment| days are followed by bigger moves, as expected for material news.
+- 2026-10-15 RESULT test 8 (8-K item event study, run 81e0c0; 15 codes × close/{1,5,20},
+  45 market-adjusted tests): no BH discovery (smallest p 0.052: 3.01 delisting notices, 5d,
+  −118 bp, n 88). The large codes (2.02 n 15.8k, 8.01 13.3k, 7.01 11.6k, 5.02 9.5k, 1.01 5.1k,
+  5.07 4.1k) sit within a few bp of zero at 1–5 days (1.01 −11 bp at 5d, p 0.08). For S&P 500
+  members the filing type alone carries no drift after the first tradable decision; whatever
+  the market does with the item happens before 15:50 on the first day.
+- 2026-10-15 RESULT test 9 (descriptive daily view, `ic-detail`; `1d_llm_sent_cwmean`,
+  close/market h1 / h2 / h5). Test 1 earnings (run 817cdc): pooled +0.019 / +0.032 / +0.031;
+  only 464 sessions have ≥ 10 earnings names; daily IC +0.011 / +0.012 / +0.011 (all n.s.),
+  ICIR ≈ 0.04 per day, Q5 − Q1 +8 / +9 / +1 bp (n.s.). Test 5 transcripts masked (run
+  322f51): pooled +0.031 / +0.036 / +0.032; 332 days; daily IC +0.037 (p 0.022) / +0.036
+  (p 0.050) / +0.026, ICIR 0.13 / 0.13 / 0.09 per day, Q5 − Q1 +16 / +5 / −3 bp (n.s.). H2
+  guidance (run a99584): pooled +0.041 / +0.082 / +0.054, but no session has ≥ 10 guidance
+  names, so no daily view. Reading: for earnings 8-Ks most of the pooled IC is not a same-day
+  cross-sectional ranking on busy days — either it lives on thin days (< 10 releases) or in the
+  between-day component (days with more positive releases are followed by better
+  market-adjusted returns); the pooled statistic of H1 stays as pre-registered. Quintile
+  spreads are small and noisy everywhere (a few bp per 1–2 days, CIs ±20–40 bp).
+- 2026-10-15 (user decision) eval horizons += 60 sessions (default config; variants keep their
+  own lists, so earlier eval ids are unchanged). Price windows and post-delisting cash padding
+  now scale with the longest horizon (`prices.horizon_days`: 20 → 45 days / 25 sessions as
+  before, 60 → 105 days / 65 sessions). Caveat grows with the horizon: delisted names are held
+  as cash at the last trade for up to 65 sessions. Cache: a series that stopped > 30 days
+  before the end of the window it was fetched for is treated as ended (no refetch for a later
+  end).
+- 2026-10-15 (user: "that order sounds good") new source `edgar_periodic` = 10-K / 10-Q
+  originals (no amendments), primary document only, full visible text (no truncation in
+  practice), section offsets in `meta.sections` (10-K items 1, 1A, 7, 7A; 10-Q MD&A "I-2" found
+  by its title, risk factors "II-1A"; cross-referenced sections, e.g. banks' MD&A, are
+  missing). Same header timing as 8-Ks (backfill lag 60 s). Raw HTML on D:
+  (`sources.edgar_periodic.raw_dir`); ingest windows start 400 days before membership so each
+  filing has its year-earlier comparison. Excluded from stories; not in `collect.sources`; the
+  live scoring hook now plans only `collect.sources` (guard: a 10-K is ~100k tokens). Not added
+  to `universe.source_only_linking` (that would change the linker id → full relink); analyses
+  use the filer CIK from `meta.cik`.
+- 2026-10-16 Collector cycles had slowed from ~30 s (10-12) to ~2 min (each derive step scans
+  every stored item: relink 39 s, baselines 35 s, live-scoring plan 29 s, stories 22 s, even
+  when nothing was ingested), so poll gaps exceeded the 6-min live-coverage limit more often
+  (16 on 10-15). Fixes: the collect loop's derive returns `unchanged` when the item lake
+  fingerprint (Parquet count / size / newest mtime + derive inputs) matches the last
+  successful derive, and live scoring then runs only after API errors; `dedupe.excluded_
+  sources: [edgar_periodic]` keeps 10-K / 10-Q items out of stories (standalone documents;
+  their out-of-order backfill would otherwise force a full story recompute — ~8 min — every
+  cycle). Manual `derive` and backfills always run in full. Cycles with new 8-Ks still pay the
+  ~2-min scan; coverage gaps already recorded stay as they are (gaps are honest nulls).
+- 2026-10-15 Infra: Tiingo name searches and 404 (unknown ticker) answers are now cached in
+  the price cache (`search/`, meta `not_found`); before, every eval repeated about a dozen
+  throttled requests for unpriced names (~25 min, and 429s when runs overlapped).
+- 2026-10-16 PRE-REGISTERED test 10 (document change, "Lazy Prices", Cohen-Malloy-Nguyen; no LLM
+  cost; written before any similarity was computed). Documents: `edgar_periodic` 10-K / 10-Q
+  originals. Pair each filing with the same CIK's filing of the same form whose period of
+  report is 300–430 days earlier (10-K vs the prior 10-K; 10-Q vs the same fiscal quarter's
+  10-Q a year earlier; closest to 365 days if several); no pair → no event. Text: full visible
+  text, lower-cased, words = runs of ≥ 2 letters (numbers dropped), term-frequency vectors.
+  Primary measure: cosine similarity of the two term-frequency vectors (high = little change).
+  Event = filing dated to the first 15:50 decision ≥ tradable_at, fanned out to the filer's
+  member tickers on that date, pre-holdout (label end before 2026-07-01). Primary: event-level
+  rank IC of cosine similarity > 0 (non-changers outperform) at close entry, h ∈ {20, 60},
+  market-adjusted; reported like earlier tests (nominal p per cell, ×2 for the two cells).
+  Secondary (no BH family): sector-adjusted; h ∈ {1, 5, 10}; 10-K and 10-Q separately; Jaccard
+  similarity of word sets; section-level cosine for MD&A (10-K item 7 / 10-Q "I-2") and risk
+  factors (10-K item 1A) where both filings have the section; semi-partial IC given log market
+  cap (stable large firms may change their filings less); the daily view (sessions with ≥ 10
+  filings: daily IC, ICIR, Q5 − Q1). Expectation from the paper (monthly portfolios, months of
+  drift): a small positive IC that grows with the horizon.
+- 2026-10-16 (user decision) LIVE COVERAGE RULE: was "successful polls ≤ 3 intervals (360 s)
+  apart"; collect cycles of 2–3 min plus the 120 s pause broke live coverage 34 times since
+  10-12 (22 gaps of 6–8 min, 10 of 11–64 min, 2 of 7.8 h / 14.5 h), so no live interval lasted
+  24 h and every 1d feature of the live holdout period was null. New rule: a successful poll
+  covers [previous successful poll, now] if that is ≤ `collect.coverage_max_gap_minutes` (60)
+  AND the poll saw everything since the previous one — the 8-K feed paged back to an entry at
+  or before the previous poll (`EdgarAdapter.last_poll_reach`; the feed holds 500 entries ≈
+  40 h), or a catch-up sweep ran, or the adapter re-reads its whole dataset (transcripts).
+  Items from a gap are still timed by when we first saw them, so nothing becomes earlier.
+  Past gaps re-evaluated with `coverage --bridge-live-since 2026-10-12` (adds tagged
+  `bridge-*` live rows for gaps ≤ 60 min; recorded rows are never edited). Gaps > 60 min stay.
+- 2026-10-16 10-K/10-Q backfill done: 19,294 filings fetched (18,535 distinct items; 0
+  failures, 14 truncated above 400k tokens), ~7 h with two processes at 3.5 req/s. The first
+  collect cycle that saw a new 8-K afterwards linked the whole 18.5k-item backlog (50 min, then
+  18 and 12 min); those cycles ran under the old rule, so live coverage has an 87-min gap on
+  10-16 10:03–11:30 UTC (pre-open) that the bridge cannot close (the polls in between were never
+  recorded). Quiet collect cycles now take ~13 s.
+- 2026-10-16 RESULT test 10 (document change, run a1d37f; 15,976 filings with a year-earlier
+  pair, 15.5k member-ticker events, 657 tickers): primary FAILS — cosine similarity close/
+  market IC h20 −0.011 (CI [−0.063, +0.048], p 0.69), h60 −0.029 (p 0.33): wrong sign, n.s.
+  10-K alone −0.010 / −0.051, 10-Q −0.029 / −0.010; Jaccard, MD&A and risk-factor similarity,
+  size-controlled and sector-adjusted versions all ≈ 0 (one secondary cell of ~60 at p < 0.05:
+  10-Q risk factors h60 +0.060, p 0.026 — chance level). Daily view: h20 +0.001, h60 +0.020
+  (CI [−0.006, +0.046]), Q5 − Q1 −19 / +55 bp, n.s. Caveat on the measure: median cosine is
+  0.997 (raw term frequencies are dominated by function words; no stop-word removal or TF-IDF,
+  as pre-registered), so the cosine ranks small differences; Jaccard on word sets avoids that
+  and is null too. Lazy Prices does not show up in the 2019–2026 S&P 500 (the paper's sample
+  ends before publication; the anomaly may have been arbitraged away).
+- 2026-10-20 RESULT hand labels vs Haiku 5.5 (news sample v1, 200 pairs, 25 per model event
+  type; labels exported from the News Label Desk db to `data/labeling/news_sample_v1_labels.csv`
+  (data/ is gitignored, so this file and the artifact db are the only copies);
+  `scripts/label_agreement.py`, stratified bootstrap, rates also reweighted to the population's
+  model event-type mix). **Sentiment is read well**: Spearman(model sentiment, hand direction)
+  +0.886 [+0.850, +0.914], AUC positive vs negative 0.996, 3-class kappa 0.83 with the model
+  neutral band |s| ≤ 0.1, one opposite sign (INTU "beat and raise" but the stock fell; the hand
+  label followed the price move). Masked: Spearman +0.775, AUC 0.988. **Relevance**: unmasked
+  exact 0.885 (kappa 0.88), "≥ secondary" agreement 0.945; masked clearly worse (exact 0.745,
+  "≥ secondary" 0.81), so masked feature sets filter on noisier relevance. **Event type**:
+  agreement 0.64 (weighted 0.665, kappa 0.59). Precise: other 0.96, legal 0.88, m&a 0.84,
+  earnings 0.80. Weak: analyst_action 0.08 (19/25 hand "other", Motley Fool picks citing Wall
+  Street targets, no event), guidance 0.48 (10/25 hand "earnings": results + outlook, which the
+  prompt itself assigns to earnings), macro 0.48 (11/25 "other": stock-pick lists), product
+  0.60. The test-4 null is not explained by misread sentiment; test 4b's type filter kept
+  analyst_action, which is almost all non-events. News sample only, so it says nothing about
+  8-K labels (H2 guidance); one labeller.
+- 2026-10-20 PRE-REGISTERED (descriptive, written before any 8-K hand label) 8-K label check:
+  `make_label_sample.py --source edgar --name edgar_8k_sample_v1 --counts guidance=60,earnings=40
+  --qualifying` (8-K founders with unmasked model relevance ≥ secondary, published before
+  2026-07-01, seed 2026; 99 8-K + one 8-K/A, 52 cut at the 6k-token cap, text = what the model
+  saw). Blind desk "8-K Label Desk" (claude.ai/artifact/HXR6qd5UChabPouMDxf6Xb, labels in db
+  collection `labels`): has_results, has_outlook (yes/no), event_type, direction, relevance.
+  Readouts: (1) precision of model guidance and model earnings vs the hand event type under the
+  same rubric; (2) share of model-guidance filings with reported results (has_results = yes),
+  i.e. how much of what the model calls guidance is results + outlook, which the rubric assigns
+  to earnings; (3) sentiment agreement as in the news check. Reading: H2's definition stays
+  frozen; this only describes what its events are. If fewer than half of model-guidance filings
+  are outlook-only (has_outlook yes, has_results no), H2 is reported as "8-Ks the model labels
+  guidance (mostly results + outlook)", not as guidance-only releases. Sample covers guidance
+  founders in general, not only H2's pure-guidance days (a superset). No BH family.
+- 2026-10-20 RESULT transcripts-latency, first look (29 live calls, 10-13 → 10-20, early
+  reporters, mostly banks): 28 of 29 were first seen before the next 09:30 open after the call
+  date (2–8 h after the call day ends, i.e. overnight; defeatbeta's daily compaction runs ~05:30
+  UTC), so live tradable_at equals the backfill rule's (next open after the call date) and test
+  5's timing assumption holds on this sample. Exception: LW (call 10-06, first seen 10-13).
+  Versus the earnings 8-K: median 19.7 h after the release, 18% in hand by the first 15:50
+  decision after it (the call is ~1 session behind the release, as delay sensitivity assumed).
+  Re-run later in the season (small n, one sector).
+- 2026-10-21 New laptop (C:\Users\andre; Seagate back on D:). Preinstalled McAfee throttled
+  downloads to ~0.45 MB/s and HF closed the 2.3 GB transcripts response after ~110 MB, so every
+  hourly refresh restarted from zero and failed (10-20 calls stuck); removed → ~16 MB/s. Fixes
+  kept regardless: `hf_refresh` resumes a dropped download with HTTP Range from
+  `<sha12>.parquet.part`, caps each poll at `sources.transcripts.download_minutes_per_poll` (5)
+  and resumes on every poll while a part file exists, and checks the LFS sha256 before use.
+  Collector cycles with new 8-Ks had grown to 30–40 min: every live-scoring item lookup went
+  through the `items` view, which dedupes and hashes the whole 3.3 GB lake (2.1 GB of it 10-K /
+  10-Q text) before the id filter. `Store.items_by_id` / `items_relation` filter ids before the
+  dedupe window (same rows: the window partitions by item_id) and read only the needed `src=`
+  partitions: 5 ids 204 s → 4.2 s. Torch for the finbert extra now comes from the PyTorch cu128
+  index (RTX 5060, CUDA 12.8; `uv sync --extra finbert`, plain `uv sync` removes it).
+- 2026-10-21 Distillation step 1 (user-approved plan: local student model for (1) free
+  rescoring and (2) a recall check — student IC vs teacher IC on the same rows, with each
+  period scored only by a model trained on earlier periods, pre-registered before it runs):
+  `newsfeed distill-data` → `data/distill/v1/dataset.parquet`, 147,716 pre-holdout unmasked
+  Haiku 5.5 pairs (8-K 54k, news 93.6k; text = the exact user turn, 99.86% match the stored
+  `user_text_hash`, the rest are the M5 12-ticker names), per-source chronological 70/10/20
+  train/val/test, 300 hand-labelled pairs held out as gold. Found while building: 54 8-K pairs
+  had a second, Sonnet validation score (now filtered to `scoring.model`). Smoke run
+  (ModernBERT-base, 8k news rows, 256 tokens, 1.4 min): vs Haiku on news test sentiment r 0.72,
+  relevance 87%, event type 72%; vs hand labels sentiment Spearman 0.71 (Haiku 0.89), event
+  type 62.5% (Haiku 64%).
+- 2026-10-21 (user decision) NASDAQ-100 EXTRAS: `universe.extra_members` in default.yaml = the
+  Nasdaq-100 members (as of 2026-10-21) that are not in the S&P 500 and file 8-Ks: SPCX
+  (SpaceX, listed 2026-06-11), ALNY, ALAB (2024-03-20), CRWV (2025-03-28), MELI, MSTR, RKLB
+  (from the 2021-08-25 SPAC merger, not the SPAC listing), SHOP (8-Ks only since 2025). NOT
+  point-in-time: picked by today's index, members from max(2019-01-01, listing) on —
+  survivorship bias, exploratory use only. The seven 6-K filers (ARM, ASML, CCEP, FER, NBIS,
+  PDD, TRI) are left out (EDGAR source reads 8-Ks). Added in memory by
+  `PitUniverse.load_for` (never written to `sp500_members.parquet`); `UniverseConfig.hashable()`
+  and `universe_sig` ignore an empty list, so the frozen S&P 500 variants (H1/H2, tests 1–10)
+  keep their samples and ids. Backfills: 569 8-Ks (2018-10 → 2026-10-21, 4 req/s) and 128
+  calls from defeatbeta's *current* version (not the test-5 pin), all `backfill` rule; share
+  counts fetched. Full relink: 165,139 items, stories recomputed (97 month files) — S&P
+  stories can differ only where an item now links an extra. Scoring not run yet (dry-run →
+  user OK). News (Massive) not backfilled for the extras.
+- 2026-10-21 FEATURE-SET IDS: they hashed the absolute `features.embedding_cache` path, so ids
+  depended on the machine (old laptop: C:\Users\Andrew\…); now excluded. Ids also change
+  whenever FeaturesConfig gains a field, and 8990ee7a9775 predates the universe joining the
+  hash (10-12), so recorded ids are build fingerprints, not reproducible names. Checked
+  against the `experiments` records: today's sp500_noemb (H1/H2) and transcripts_masked (test
+  5) feature settings equal the recorded ones except fields added later at neutral defaults
+  (None / [] / False). The holdout look rebuilds features anyway; it is pinned by config file
+  + model + prompt hash.
+- 2026-10-21 DERIVE LOCK: a 35-min manual relink outlived `FileLock.stale_after` (30 min); the
+  collector broke the lock and started a second full relink (two ~15 GB processes, commit
+  63/63.5 GB on this 16 GB laptop). Fix: the holder touches the lock file every
+  min(60 s, stale_after/4) from a daemon thread; a killed process still goes stale. RAM is the
+  binding constraint until the 32 GB upgrade: run heavy jobs (full derive, training,
+  backfill + its derive) one at a time. Distillation trainer now keeps tokens as flat int32
+  arrays (Python int lists of 148k documents were paged out and starved the GPU at 17%), reads
+  only the selected sources lazily, pre-cuts texts to 8 chars/token and caches tokenization in
+  `data/distill/v1/tok_cache/`; GPU memory capped at 92% (Windows spills to system RAM instead
+  of raising OOM; 2×2048-token batches = 6k tok/s, 4×2048 thrashed at 1k tok/s).
+- 2026-10-22 RESULT distillation step 2 (run `full_v1`: ModernBERT-base, 8-K + news train
+  splits = 103,284 rows, 8-Ks cut at 2,048 tokens (Haiku saw ≤ 6k), 1 epoch, 3,072-token
+  batches × 10 accumulation, lr 5e-5, 206 min on the RTX 5060; weights
+  `data/distill/runs/full_v1/student.pt`). Student vs Haiku on the held-out test periods:
+  8-K sentiment r 0.85 (Spearman 0.78), event type 95.7% (macro F1 0.68), relevance 98.9%;
+  news sentiment r 0.82 (Spearman 0.71), event type 77.5%, relevance 89.9%. Vs the 200 news
+  hand labels: sentiment Spearman 0.77 (Haiku 0.89), event type 65% (Haiku 64%), relevance
+  87.5% (Haiku 88.5%). Reading: as good as Haiku on type/relevance, clearly weaker on
+  sentiment (below the Sonnet–Haiku r 0.915) — a usable free scorer for exploration, not a
+  replacement. The 8-K hand-label comparison is added when that sample is labelled. Step 3
+  (walk-forward students for the recall check) is pre-registered before it runs.
+- 2026-10-22 Scored the Nasdaq-100 extras' history (+ stragglers): 775 batch requests, all ok,
+  $0.28.
+- 2026-10-22 (user-approved) STORED TEXT HASH: the `items` view used to hash every body on
+  each query that touched `text_hash` (relink, scoring plans, baselines), which made collector
+  cycles with new items take up to 30–40 min and ~11–15 GB. Writers now store `text_hash`;
+  `newsfeed migrate-text-hash` rewrote all 15,165 existing item files once (the only
+  exception to append-only: one added column, every other value unchanged; each file's
+  hashes checked against DuckDB's sha256 before the atomic replace; backup of the pre-migration
+  lake in `D:\sentiq-archive\lake_items_backup_20261022`). After: whole-lake text_hash query
+  4.9 s; 181,897 of 181,909 ok unmasked scores match their item's current hash (the 12 others
+  are scores of pre-re-parse text, as before). First attempt crashed replacing
+  `_empty_items.parquet` while a collector query had it open → templates are now named by
+  schema hash.
+- 2026-10-23 LIVE COVERAGE GAP 04:24 → 07:53 ET (~3.5 h, > the 60-min rule, so it stays a gap;
+  pre-market; items from it are timed by when we first saw them). Cause: a collector cycle
+  spent 3.5 h / 15 GB in the LM-baseline step — `compute_baselines` (and `relink`) selected
+  title/body from the `items` view with an id filter DuckDB can't push below the dedupe
+  window, so every body in the lake was read and ordered. Both now take two steps: ids via a
+  text-free query (stored text_hash), then `items_by_id` for just those. The cycle also
+  starved the walk-forward training (0.9 rows/s vs 8): wf1 took 6.2 h, wf2 ~8 h incl. a
+  cuBLAS internal error and a checkpoint resume.
+- 2026-10-24 Walk-forward students done (`scripts/distill_walkforward.sh`, settings as
+  full_v1; student k trained on non-gold rows tradable before cut k, scores [cut k, cut k+1)):
+  wf1 < 2021-01 (15,861 rows) → 2021-01..2022-06, wf2 < 2022-07 (26,965) → ..2023-12, wf3
+  < 2024-01 (36,807) → ..2025-06, wf4 < 2025-07 (77,064) → ..2026-06; predictions in
+  `data/distill/runs/wf*/predictions.parquet`. Out-of-period 8-K sentiment vs Haiku r 0.807 /
+  0.797 / 0.835 / 0.867. No returns looked at. Infra lessons: the laptop thermally throttles
+  (GPU 85–90 °C, P4) and a CUDA OOM left the driver slow until a reboot; the vendor fan mode
+  "Performance" helped; the trainer now saves a final checkpoint before predicting. The
+  comparison with returns waits for the pre-registration to be approved.
+- 2026-10-24 PRE-REGISTERED (user-approved, written before any student score met a return)
+  RECALL CHECK, distillation step 3 (`newsfeed recall-check`, config
+  `config/variants/sp500_noemb.yaml` = the S&P 500 universe of test 1, no Nasdaq extras).
+  Events: test-1 earnings 8-Ks at event level as in test 6 — 8-K story founders, unmasked
+  Haiku 5.5 prompt 6108c555090fa4b3 event_type earnings, relevance ≥ secondary, dated to the
+  first 15:50 decision ≥ tradable_at, fanned out to member tickers — restricted to t_use in
+  2021-01-01 → 2026-07-01 (the walk-forward students' period). Values on identical events:
+  Haiku sentiment vs the walk-forward student's sentiment (wf1–wf4, each scoring only
+  documents after its training cutoff); the sample stays defined by Haiku's labels. Primary:
+  the paired difference IC(student) − IC(Haiku) at close/2/market (the H1 cell) and each IC,
+  circular block bootstrap over sessions, 10,000 reps. Secondary (reported, not tested):
+  close/1/market, close/{1,2}/sector, and the same cells for 8-K guidance events. Reading:
+  student IC ≥ half of Haiku's and the difference CI covering 0 → the signal is learnable from
+  the text by a model that saw no outcomes after its cutoff → no evidence that recall drives
+  test 1. Student IC ≈ 0 with the difference CI excluding 0 → ambiguous (recall, or the
+  student's weaker reading: out-of-period r 0.80–0.87 with Haiku); not evidence of recall on
+  its own. Pre-holdout only; one run.
+- 2026-10-24 SMART APP CONTROL (Windows, enforcing since ~14:44 ET) blocks the unsigned
+  `.venv\Scripts\newsfeed.exe` launcher uv generates ("An Application Control policy has
+  blocked this file", os error 4551; Code Integrity events 3033/3077). The collector failed
+  every cycle from 18:44 to 23:17 UTC (~4.5 h, Saturday, EDGAR closed; a recorded live gap).
+  Fix without weakening Windows security: `newsfeed/__main__.py`, and everything runs as
+  `uv run python -m newsfeed …` (signed python.exe is allowed); `scripts\collect_window.cmd`
+  updated. Read every `uv run newsfeed …` in this file as `uv run python -m newsfeed …`.
+- 2026-10-24 RESULT recall check (run c4fc80, 10,000 reps; report
+  `data/reports/recall-check-20261024T231936Z-c4fc80.md`). Earnings: 11,811 Haiku events in
+  2021-01 → 2026-07, 11,706 with a student score. Primary close/2/market (n 11,622): IC Haiku
+  +0.025 (p 0.043), student +0.009 (p 0.43), diff −0.016 [−0.030, −0.001], p 0.033;
+  corr(Haiku, student) 0.777. By the pre-registered reading: the student keeps < half and the
+  difference CI excludes 0 → AMBIGUOUS (recall, or Haiku reads these releases better than the
+  student); not evidence of recall on its own. Other earnings cells the same pattern (close/1
+  market +0.016 vs +0.003; sector close/1 +0.021 vs +0.011, close/2 +0.029 vs +0.013, diff
+  p 0.019). Guidance (n 948): +0.080 vs +0.050, diff −0.030 [−0.079, +0.020] — student keeps
+  ~60%, CI covers 0. Not pre-registered, noted only: pure measurement noise at r 0.78 would
+  leave ~0.019 of the IC; the student keeps 0.009, so the predictive part sits
+  disproportionately in what it doesn't reproduce — consistent with both readings. Together
+  with leakage check A (masking didn't lower the IC): pre-holdout ICs remain upper bounds; the
+  holdout look (after Haiku's training cutoff, mostly live) stays the clean test; H1/H2
+  unchanged.

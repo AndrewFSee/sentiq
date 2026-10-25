@@ -86,4 +86,8 @@ def doc_type_for(source: str, meta: dict) -> str:
         return f"SEC Form {meta.get('form', '8-K')} filing (current report)"
     if source == "transcripts":
         return "earnings call transcript"
+    if source == "transcripts_qa":
+        return "earnings call transcript (question-and-answer session only)"
+    if source == "transcripts_prep":
+        return "earnings call transcript (prepared remarks only)"
     return "news article"

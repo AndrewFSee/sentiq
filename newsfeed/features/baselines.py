@@ -145,16 +145,20 @@ def compute_baselines(
         methods.append(("finbert", finbert[0]))
     out: dict[str, int] = {}
     for method, version in methods:
-        todo = store.query(
+        # two steps: ids first (no text columns, so the view never materialises the bodies of
+        # the whole lake -- that took ~15 GB and hours on a 16 GB laptop, 2026-10-23), then the
+        # text of just those items
+        ids = store.query(
             """
-            SELECT i.item_id, i.text_hash, i.title, i.body_text FROM items i
+            SELECT i.item_id FROM items i
             WHERE i.item_id IN (SELECT item_id FROM item_story WHERE story_id = item_id)
               AND NOT EXISTS (
                 SELECT 1 FROM baselines b WHERE b.item_id = i.item_id
                   AND b.text_hash = i.text_hash AND b.method = $m AND b.method_version = $v)
             """,
             {"m": method, "v": version},
-        ).to_dicts()
+        )["item_id"].to_list()
+        todo = store.items_by_id(ids, columns="item_id, text_hash, title, body_text").to_dicts()
         rows = []
         now = utcnow()
         for r in todo:

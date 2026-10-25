@@ -1,7 +1,8 @@
 """Massive (ex-Polygon) news vendor: mapping, pagination, auth, dropped vendor sentiment.
 
-The payloads are synthetic, in the documented response shape (massive.com/docs/rest/stocks/
-news, 2026-10-12); replace with a recorded fixture once a key is available."""
+Unit tests use synthetic pages in the documented shape; ``tests/fixtures/news/massive_page.json``
+is a real recorded page (2026-07-01, text fields redacted, ``scripts/record_massive_fixture.py``)
+that pins the live response layout."""
 
 from __future__ import annotations
 
@@ -102,3 +103,17 @@ def test_adapter_backfill_filters_to_universe(cfg, universe):
     assert [i.native_id for i in items] == ["massive:m1", "massive:m3"]  # ZZZZ not in universe
     assert items[1].tickers == ["AAPL", "MSFT"] and items[0].body_text == "Summary 1."
     assert items[0].meta["has_full_body"] is False
+
+
+def test_recorded_page_maps_cleanly():
+    from pathlib import Path
+
+    page = json.loads(
+        (Path(__file__).parent / "fixtures" / "news" / "massive_page.json").read_text("utf-8")
+    )
+    assert page["results"] and all(r.get("insights") for r in page["results"][:1])
+    arts = [article_from_massive(r) for r in page["results"]]
+    assert all(a.published_at.tzinfo is not None for a in arts)
+    assert all(a.tickers and a.publisher for a in arts)
+    assert all("insights" not in a.raw and "sentiment" not in json.dumps(a.raw) for a in arts)
+    assert [a.published_at for a in arts] == sorted(a.published_at for a in arts)

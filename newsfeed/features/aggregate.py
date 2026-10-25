@@ -64,14 +64,18 @@ class FeatureSources:
 def feature_set_id(cfg: AppConfig, src: FeatureSources, universe_sig: str = "") -> str:
     """Hash of everything that defines a feature table. Since 2026-10-12 this includes the
     universe (config + ``universe_sig``, e.g. a hash of the PIT membership table): before, a
-    12-ticker and an S&P 500 build with the same feature config shared id c35f16b5bccb."""
+    12-ticker and an S&P 500 build with the same feature config shared id c35f16b5bccb.
+    Paths are left out (the LM dictionary is identified by ``src.lm_version``): until
+    2026-10-21 the absolute ``embedding_cache`` path was hashed, so ids differed by machine.
+    Ids also change when FeaturesConfig gains a field; they fingerprint a build, while the
+    decisions log pins a feature set by its config file, model and prompt hash."""
     blob = json.dumps(
         [
             FEATURE_VERSION,
-            cfg.features.model_dump(mode="json", exclude={"lm_dictionary"}),
+            cfg.features.model_dump(mode="json", exclude={"lm_dictionary", "embedding_cache"}),
             cfg.scoring.link_policy.model_dump(),
             src.__dict__,
-            cfg.universe.model_dump(mode="json", exclude={"pit_dir"}),
+            cfg.universe.hashable(),
             universe_sig,
         ],
         sort_keys=True,

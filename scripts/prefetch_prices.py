@@ -47,7 +47,7 @@ def main() -> None:
     }
     lo, hi = date.fromisoformat(args.start), utcnow().date()
     tmap = load_ticker_map(lambda: None, cfg.sources.edgar.ticker_map_url, cfg.paths.ref_dir)  # type: ignore[arg-type,return-value]
-    u = PitUniverse.load(cfg.universe.pit_dir)
+    u = PitUniverse.load_for(cfg.universe)
     bench = sorted({ec.market_etf, *ec.sector_etfs.values(), *ec.gics_sector_etfs.values()})
     b_routes = [PriceRoute(b, b, "tradier", lo, hi, b, "benchmark") for b in bench]
     spy, _, _ = build_panel([r for r in b_routes if r.ticker == ec.market_etf], caches, [])

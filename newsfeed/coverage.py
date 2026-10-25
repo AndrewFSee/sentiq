@@ -23,6 +23,7 @@ import json
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
+from itertools import pairwise
 
 from newsfeed.storage import Store
 from newsfeed.timeutil import MarketCalendar, ensure_utc, utcnow
@@ -84,6 +85,38 @@ def record_live(
                 "INSERT INTO coverage VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [[source, t, start, end, start, "live", run_id, utcnow()] for t in rest],
             )
+
+
+def bridge_live_gaps(
+    store: Store, source: str, max_gap: timedelta, since: datetime, run_id: str
+) -> int:
+    """Re-apply the live-coverage gap rule to past polls (user decision 2026-10-16: a poll
+    covers up to ``collect.coverage_max_gap_minutes`` since the previous successful poll).
+    Every gap between two recorded live intervals starts and ends at a successful poll, so a
+    gap <= ``max_gap`` after ``since`` gets an extra live row [gap start, gap end) tagged with
+    ``run_id``; nothing is edited or deleted (the original rows stay as recorded). Returns the
+    number of rows added. Only valid for gaps whose later poll paged back past the earlier one,
+    which the 8-K feed (500 entries, ~40 h) always did for gaps of minutes."""
+    since = ensure_utc(since)
+    df = store.ops_query(
+        "SELECT ticker, start_at, end_at FROM coverage WHERE source = ? AND kind = 'live'",
+        [source],
+    )
+    by_ticker: dict[str, list[tuple[datetime, datetime, datetime]]] = defaultdict(list)
+    for r in df.to_dicts():
+        s, e = ensure_utc(r["start_at"]), ensure_utc(r["end_at"])
+        by_ticker[r["ticker"]].append((s, e, s))
+    rows = []
+    now = utcnow()
+    for tk, ivs in by_ticker.items():
+        m = _merge(ivs)
+        for (_, e0), (s1, _) in pairwise(m):
+            if e0 >= since and timedelta(0) < s1 - e0 <= max_gap:
+                rows.append([source, tk, e0, s1, e0, "live", run_id, now])
+    if rows:
+        with store.ops() as con:
+            con.executemany("INSERT INTO coverage VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    return len(rows)
 
 
 def _merge(intervals: list[tuple[datetime, datetime, datetime]]) -> list[Interval]:

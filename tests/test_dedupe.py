@@ -305,3 +305,65 @@ def test_relink_force_sources_writes_a_fresh_batch(store, calendar, corpus):
     assert relink(store, linker, "r") == 5
     assert relink(store, linker, "r") == 0
     assert relink(store, linker, "r", force_sources=["test"]) == 5  # corpus source is "test"
+
+
+def test_isolated_sources_never_join_other_sources_stories():
+    cfg = CFG.model_copy(update={"isolated_sources": ["iso"]})
+    base = text(31)
+    a = StoryAssigner(cfg)
+    a.add(_Node((T0, T0, "a"), "a", "", None, "h1", frozenset({"AAPL"}), make_minhash(base, cfg)))
+    iso = _Node((T0, T0, "b"), "b", "", None, "h2", frozenset({"AAPL"}),
+                make_minhash(base, cfg), group="iso")  # fmt: skip
+    assert a.add(iso).story_id == "b"  # identical text, but isolated -> own story
+    same = _Node((T0, T0, "c"), "c", "", None, "h3", frozenset({"AAPL"}),
+                 make_minhash(base, cfg), group="iso")  # fmt: skip
+    assert a.add(same).story_id == "b"  # matches within its own source
+
+
+def test_collect_derive_skips_unchanged_lake(store, calendar, corpus, cfg):
+    from newsfeed.derive import derive as full_derive
+
+    linker = TickerLinker(UNIVERSE)
+    write(store, calendar, corpus[:3])
+    first = full_derive(store, cfg, linker, "r1", if_changed=True)
+    assert first["assigned"] == 3
+    assert full_derive(store, cfg, linker, "r2", if_changed=True) == {"unchanged": True}
+    # explicit derives (CLI, backfill) always run
+    assert "unchanged" not in full_derive(store, cfg, linker, "r3")
+    write(store, calendar, corpus[3:])  # new items -> derived next cycle
+    assert full_derive(store, cfg, linker, "r4", if_changed=True)["assigned"] == 2
+    assert full_derive(store, cfg, linker, "r5", if_changed=True) == {"unchanged": True}
+    # a change in derive inputs (dedupe config) also forces a run
+    cfg2 = cfg.model_copy(
+        update={
+            "dedupe": cfg.dedupe.model_copy(update={"window_hours": cfg.dedupe.window_hours + 1})
+        }
+    )
+    assert "unchanged" not in full_derive(store, cfg2, linker, "r6", if_changed=True)
+
+
+def test_excluded_sources_get_no_stories_and_force_no_recompute(store, calendar, corpus):
+    cfg_x = CFG.model_copy(update={"excluded_sources": ["tenk"]})
+    linker = TickerLinker(UNIVERSE)
+    write(store, calendar, corpus)
+    relink(store, linker, "r")
+    assert rebuild_stories(store, cfg_x, linker.linker_id)["assigned"] == 5
+    # an old standalone filing arrives (out of order): no story row, nothing recomputed
+    old = raw("k1", T0 - timedelta(days=400), text(30)).model_copy(update={"source": "tenk"})
+    write(store, calendar, [old])
+    relink(store, linker, "r")
+    assert rebuild_stories(store, cfg_x, linker.linker_id) == {"assigned": 0, "months_rewritten": 0}
+    assert "k1" not in assignments(store)
+
+
+def test_fingerprint_ignores_excluded_sources(store, calendar, corpus):
+    from newsfeed.derive import lake_fingerprint
+
+    write(store, calendar, corpus[:2])
+    before = lake_fingerprint(store, "x", ["tenk"])
+    old = raw("k1", T0, text(30)).model_copy(update={"source": "tenk"})
+    write(store, calendar, [old])
+    assert lake_fingerprint(store, "x", ["tenk"]) == before
+    assert lake_fingerprint(store, "x") != before
+    write(store, calendar, corpus[2:3])
+    assert lake_fingerprint(store, "x", ["tenk"]) != before

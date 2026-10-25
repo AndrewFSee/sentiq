@@ -7,13 +7,13 @@ rebuilds across processes (``collect`` loop and a concurrent ``backfill``).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-
-import polars as pl
 
 from newsfeed.config import AppConfig
 from newsfeed.dedupe import rebuild_stories
@@ -36,13 +36,12 @@ def relink(
     """Link every item without links from the current ``linker_id`` for its current text and
     newer than its stored row (a re-parsed item gets relinked even when only its source tags
     changed). Returns items linked."""
-    # streamed in batches: all bodies at once (8-Ks + news + ~40k-char transcripts) exceed a
-    # single 2 GB Arrow buffer
-    cur = store.q.cursor()  # own connection: writes below must not end this stream
-    reader = cur.execute(
+    # two steps: the ids to link first (no text columns, so the view never materialises the
+    # bodies of the whole lake -- ~15 GB on 2026-10-23), then their text in batches (all bodies
+    # at once -- 8-Ks + news + ~40k-char transcripts -- would exceed a 2 GB Arrow buffer)
+    ids = store.query(
         """
-        SELECT i.item_id, i.source, i.title, i.body_text, i.tickers, i.text_hash, i.meta
-        FROM items i
+        SELECT i.item_id FROM items i
         WHERE list_contains($force, i.source) OR NOT EXISTS (
             SELECT 1 FROM item_tickers_all t
             WHERE t.item_id = i.item_id AND t.linker_id = $lid AND t.text_hash = i.text_hash
@@ -50,16 +49,17 @@ def relink(
               -- its source tags without changing its text
               AND t.linked_at >= i.ingested_at
         )
+        ORDER BY i.item_id
         """,
         {"lid": linker.linker_id, "force": list(force_sources or [])},
-    ).to_arrow_reader(batch_size)
+    )["item_id"].to_list()
     total = 0
-    for batch in reader:
-        pending = pl.from_arrow(batch).to_dicts()
+    cols = "item_id, source, title, body_text, tickers, text_hash, meta"
+    for s in range(0, len(ids), batch_size):
+        pending = store.items_by_id(ids[s : s + batch_size], columns=cols).to_dicts()
         if pending:
             _link_batch(store, linker, pending, run_id)
             total += len(pending)
-    cur.close()
     return total
 
 
@@ -127,9 +127,15 @@ def derive(
     wait: bool = False,
     embedder: Embedder | None = None,
     relink_sources: list[str] | None = None,
+    if_changed: bool = False,
 ) -> dict[str, Any]:
     """Relink, rebuild stories, compute text baselines for story founders. If another process
-    holds the lock, skip (or raise if ``wait``) -- every step is self-healing next cycle."""
+    holds the lock, skip (or raise if ``wait``) -- every step is self-healing next cycle.
+
+    ``if_changed`` (the collect loop): return ``{"unchanged": True}`` without touching anything
+    when the item lake and the derive inputs are exactly as at the last successful derive.
+    Each step otherwise scans every stored item (~2 min at 300k items), which made collect
+    cycles overrun their interval although almost every cycle ingests nothing."""
     lock = FileLock(store.state_dir / "derive.lock")
     if not lock.acquire():
         if wait:
@@ -137,16 +143,61 @@ def derive(
         log.info("derive skipped: lock held by another process")
         return {"skipped": True}
     try:
+        fp = lake_fingerprint(store, derive_inputs(cfg, linker), cfg.dedupe.excluded_sources)
+        fp_path = store.state_dir / "derive-fingerprint.json"
+        quick = if_changed and not full_stories and not relink_sources
+        if quick and fp_path.exists() and json.loads(fp_path.read_text())["fingerprint"] == fp:
+            return {"unchanged": True}
+        store.check_text_hash()  # new files without a stored hash -> view computes it again
         linked = relink(store, linker, run_id, force_sources=relink_sources)
         stories = rebuild_stories(store, cfg.dedupe, linker.linker_id, full=full_stories)
-        return {
+        out = {
             "linked": linked,
             **stories,
             "baselines": derive_baselines(store, cfg, run_id),
             "embeddings": derive_embeddings(store, cfg, run_id, embedder),
         }
+        # taken before the steps ran: items written meanwhile change it, so they are derived
+        # next time
+        fp_path.write_text(json.dumps({"fingerprint": fp, "run_id": run_id}))
+        return out
     finally:
         lock.release()
+
+
+def derive_inputs(cfg: AppConfig, linker: TickerLinker) -> str:
+    """Everything besides the items that decides what derive produces."""
+    fc = cfg.features
+    return json.dumps(
+        [
+            linker.linker_id,
+            cfg.dedupe.model_dump(mode="json"),
+            str(fc.lm_dictionary),
+            fc.finbert,
+            fc.finbert_model,
+            fc.embeddings,
+            fc.embedding_model,
+        ],
+        sort_keys=True,
+    )
+
+
+def lake_fingerprint(store: Store, inputs: str, ignore_sources: list[str] | None = None) -> str:
+    """Hash of the item lake's Parquet files (count, total size, newest mtime) + ``inputs``.
+    Items are append-only and written by atomic rename, so any new item changes it.
+    ``ignore_sources`` (``dedupe.excluded_sources``: no stories, not scored live) are left out,
+    so a long 10-K backfill does not make every collect cycle re-derive; their links are made
+    by the backfill's own derive or the next derive that runs for other items."""
+    skip = {f"src={s}" for s in ignore_sources or []}
+    n = size = newest = 0
+    for root, dirs, files in os.walk(store.items_dir):
+        dirs[:] = [d for d in dirs if d not in skip]
+        for name in files:
+            if name.endswith(".parquet"):
+                st = os.stat(os.path.join(root, name))
+                n, size, newest = n + 1, size + st.st_size, max(newest, st.st_mtime_ns)
+    blob = f"{inputs}|{n}|{size}|{newest}"
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
 def derive_baselines(store: Store, cfg: AppConfig, run_id: str) -> dict[str, int]:
