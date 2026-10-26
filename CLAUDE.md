@@ -29,26 +29,32 @@ speed and polish.** It is not a trading system.
 
 ## Commands
 ```
-uv sync                                   # install (Python >=3.11)
+# Smart App Control blocks uv's newsfeed.exe launcher: always `python -m newsfeed`
+uv sync --extra finbert                   # install (Python >=3.11; extra = CUDA torch)
 uv run pytest                             # no network: pytest-socket --disable-socket
 uv run ruff check . && uv run ruff format --check .
-uv run newsfeed backfill --start 2025-01-01 --end 2026-01-01 [--tickers AAPL,MSFT] [--source news_api]
-uv run newsfeed collect                   # loop; --once for cron; --check = health exit code
-uv run newsfeed derive [--full]           # rebuild ticker links + stories (normally automatic)
-uv run newsfeed inspect
-uv run newsfeed reparse                   # re-parse stored EDGAR items after a parser fix
-uv run newsfeed score --dry-run           # plan + cost estimate (count_tokens is free)
-uv run newsfeed score [--mode batch --wait] [--start/--end] [--limit N]
-uv run newsfeed score --masked --sample 200        # leakage study
-uv run newsfeed score --replicates 2 --sample 100  # noise floor
-uv run newsfeed score --model claude-sonnet-5-5 --sample 100   # validation
-uv run newsfeed score-batches [--wait]    # collect submitted batches
-uv run newsfeed agreement --compare masked|model|replicates
-uv run newsfeed cost                      # spend per run from the usage ledger
-uv run newsfeed coverage [--rebuild-from-runs]   # collected ranges per source/ticker
-uv run newsfeed features --start 2025-01-01 --end 2026-10-01   # build + store a feature set
-uv run newsfeed eval [--feature-set ID]   # pre-holdout grid report -> data/reports/
-uv run newsfeed eval --use-holdout        # FINAL test on the frozen holdout (each look counts)
+uv run python -m newsfeed backfill --start 2025-01-01 --end 2026-01-01 [--tickers AAPL,MSFT] [--source news_api]
+uv run python -m newsfeed collect                   # loop; --once for cron; --check = health exit code
+uv run python -m newsfeed derive [--full]           # rebuild ticker links + stories (normally automatic)
+uv run python -m newsfeed inspect
+uv run python -m newsfeed reparse                   # re-parse stored EDGAR items after a parser fix
+uv run python -m newsfeed score --dry-run           # plan + cost estimate (count_tokens is free)
+uv run python -m newsfeed score [--mode batch --wait] [--start/--end] [--limit N]
+uv run python -m newsfeed score --masked --sample 200        # leakage study
+uv run python -m newsfeed score --replicates 2 --sample 100  # noise floor
+uv run python -m newsfeed score --model claude-sonnet-5-5 --sample 100   # validation
+uv run python -m newsfeed score-batches [--wait]    # collect submitted batches
+uv run python -m newsfeed agreement --compare masked|model|replicates
+uv run python -m newsfeed cost                      # spend per run from the usage ledger
+uv run python -m newsfeed coverage [--rebuild-from-runs]   # collected ranges per source/ticker
+uv run python -m newsfeed features --start 2025-01-01 --end 2026-10-01   # build + store a feature set
+uv run python -m newsfeed eval [--feature-set ID]   # pre-holdout grid report -> data/reports/
+uv run python -m newsfeed eval --use-holdout        # FINAL test on the frozen holdout (each look counts)
+uv run python -m newsfeed distill-data              # distillation dataset (data/distill/v1)
+uv run python scripts/distill_train.py --name X ... # train a student (needs the finbert extra)
+bash scripts/distill_walkforward.sh                 # walk-forward students wf1-wf4 (skips finished)
+uv run python -m newsfeed recall-check --config config/variants/sp500_noemb.yaml
+uv run python -m newsfeed migrate-text-hash         # one-time, done 2026-10-22 (idempotent)
 uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (needs network)
 ```
 
