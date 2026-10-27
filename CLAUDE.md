@@ -29,9 +29,10 @@ speed and polish.** It is not a trading system.
 
 ## Commands
 ```
-# Smart App Control blocks the venv's own executables (newsfeed.exe, python.exe, pytest.exe):
-# run everything with the base interpreter + scripts/nf.py, which adds the venv's packages.
-# PY=%APPDATA%\uv\python\cpython-3.11.12-windows-x86_64-none\python.exe   (uv.exe is fine)
+# Smart App Control is OFF since 2026-10-26, so `uv run newsfeed …` / `uv run pytest` work again.
+# Fallback if it is ever back on (it blocked the venv's own .exe launchers): the base interpreter
+# + scripts/nf.py, as below; collect_window.cmd always uses this route (works either way).
+# PY=%APPDATA%\uv\python\cpython-3.11.12-windows-x86_64-none\python.exe
 uv sync --extra finbert                   # install (Python >=3.11; extra = CUDA torch)
 "$PY" scripts/nf.py -m pytest              # no network: pytest-socket --disable-socket
 "$PY" scripts/nf.py -m ruff check . && "$PY" scripts/nf.py -m ruff format --check .
@@ -964,3 +965,6 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   base interpreter ever gets blocked too, the remaining options are a python.org (signed)
   interpreter for the venv, or turning Smart App Control off (user decision; irreversible
   without a Windows reset).
+- 2026-10-26 (user decision) Smart App Control turned OFF (Defender antivirus, SmartScreen and
+  the firewall stay on). Verified: `uv run python`, `uv run newsfeed`, `uv run pytest` work
+  again. `scripts/nf.py` stays as the fallback and the collector window keeps using it.
