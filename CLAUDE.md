@@ -29,33 +29,35 @@ speed and polish.** It is not a trading system.
 
 ## Commands
 ```
-# Smart App Control blocks uv's newsfeed.exe launcher: always `python -m newsfeed`
+# Smart App Control blocks the venv's own executables (newsfeed.exe, python.exe, pytest.exe):
+# run everything with the base interpreter + scripts/nf.py, which adds the venv's packages.
+# PY=%APPDATA%\uv\python\cpython-3.11.12-windows-x86_64-none\python.exe   (uv.exe is fine)
 uv sync --extra finbert                   # install (Python >=3.11; extra = CUDA torch)
-uv run pytest                             # no network: pytest-socket --disable-socket
-uv run ruff check . && uv run ruff format --check .
-uv run python -m newsfeed backfill --start 2025-01-01 --end 2026-01-01 [--tickers AAPL,MSFT] [--source news_api]
-uv run python -m newsfeed collect                   # loop; --once for cron; --check = health exit code
-uv run python -m newsfeed derive [--full]           # rebuild ticker links + stories (normally automatic)
-uv run python -m newsfeed inspect
-uv run python -m newsfeed reparse                   # re-parse stored EDGAR items after a parser fix
-uv run python -m newsfeed score --dry-run           # plan + cost estimate (count_tokens is free)
-uv run python -m newsfeed score [--mode batch --wait] [--start/--end] [--limit N]
-uv run python -m newsfeed score --masked --sample 200        # leakage study
-uv run python -m newsfeed score --replicates 2 --sample 100  # noise floor
-uv run python -m newsfeed score --model claude-sonnet-5-5 --sample 100   # validation
-uv run python -m newsfeed score-batches [--wait]    # collect submitted batches
-uv run python -m newsfeed agreement --compare masked|model|replicates
-uv run python -m newsfeed cost                      # spend per run from the usage ledger
-uv run python -m newsfeed coverage [--rebuild-from-runs]   # collected ranges per source/ticker
-uv run python -m newsfeed features --start 2025-01-01 --end 2026-10-01   # build + store a feature set
-uv run python -m newsfeed eval [--feature-set ID]   # pre-holdout grid report -> data/reports/
-uv run python -m newsfeed eval --use-holdout        # FINAL test on the frozen holdout (each look counts)
-uv run python -m newsfeed distill-data              # distillation dataset (data/distill/v1)
-uv run python scripts/distill_train.py --name X ... # train a student (needs the finbert extra)
+"$PY" scripts/nf.py -m pytest              # no network: pytest-socket --disable-socket
+"$PY" scripts/nf.py -m ruff check . && "$PY" scripts/nf.py -m ruff format --check .
+"$PY" scripts/nf.py backfill --start 2025-01-01 --end 2026-01-01 [--tickers AAPL,MSFT] [--source news_api]
+"$PY" scripts/nf.py collect                   # loop; --once for cron; --check = health exit code
+"$PY" scripts/nf.py derive [--full]           # rebuild ticker links + stories (normally automatic)
+"$PY" scripts/nf.py inspect
+"$PY" scripts/nf.py reparse                   # re-parse stored EDGAR items after a parser fix
+"$PY" scripts/nf.py score --dry-run           # plan + cost estimate (count_tokens is free)
+"$PY" scripts/nf.py score [--mode batch --wait] [--start/--end] [--limit N]
+"$PY" scripts/nf.py score --masked --sample 200        # leakage study
+"$PY" scripts/nf.py score --replicates 2 --sample 100  # noise floor
+"$PY" scripts/nf.py score --model claude-sonnet-5-5 --sample 100   # validation
+"$PY" scripts/nf.py score-batches [--wait]    # collect submitted batches
+"$PY" scripts/nf.py agreement --compare masked|model|replicates
+"$PY" scripts/nf.py cost                      # spend per run from the usage ledger
+"$PY" scripts/nf.py coverage [--rebuild-from-runs]   # collected ranges per source/ticker
+"$PY" scripts/nf.py features --start 2025-01-01 --end 2026-10-01   # build + store a feature set
+"$PY" scripts/nf.py eval [--feature-set ID]   # pre-holdout grid report -> data/reports/
+"$PY" scripts/nf.py eval --use-holdout        # FINAL test on the frozen holdout (each look counts)
+"$PY" scripts/nf.py distill-data              # distillation dataset (data/distill/v1)
+"$PY" scripts/nf.py scripts/distill_train.py --name X ... # train a student (needs the finbert extra)
 bash scripts/distill_walkforward.sh                 # walk-forward students wf1-wf4 (skips finished)
-uv run python -m newsfeed recall-check --config config/variants/sp500_noemb.yaml
-uv run python -m newsfeed migrate-text-hash         # one-time, done 2026-10-22 (idempotent)
-uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (needs network)
+"$PY" scripts/nf.py recall-check --config config/variants/sp500_noemb.yaml
+"$PY" scripts/nf.py migrate-text-hash         # one-time, done 2026-10-22 (idempotent)
+"$PY" scripts/nf.py scripts/record_edgar_fixtures.py   # re-record test fixtures (needs network)
 ```
 
 ## Point-in-time rules (most important)
@@ -950,3 +952,15 @@ uv run python scripts/record_edgar_fixtures.py   # re-record test fixtures (need
   with leakage check A (masking didn't lower the IC): pre-holdout ICs remain upper bounds; the
   holdout look (after Haiku's training cutoff, mostly live) stays the clean test; H1/H2
   unchanged.
+- 2026-10-26 SMART APP CONTROL, round 2: it now also blocks `.venv\Scripts\python.exe` (and
+  every other venv launcher: pytest.exe, …). These are small per-environment executables uv
+  generates, so they have no cloud reputation; uv's *base* interpreter
+  (`%APPDATA%\uv\python\cpython-3.11.12-windows-x86_64-none\python.exe`, also unsigned but
+  widely used) is allowed. Live gap 22:41 UTC 10-26 → 00:03 UTC 10-27 (~1 h 22 min, after the
+  close; recorded). Fix, Smart App Control left on: `scripts/nf.py` runs `newsfeed`, any venv
+  module (`-m pytest`, `-m ruff`) or a script with the base interpreter after adding the
+  venv's site-packages (and exports PYTHONPATH so child processes see them too).
+  `collect_window.cmd` and `distill_walkforward.sh` use it; all tests pass that way. If the
+  base interpreter ever gets blocked too, the remaining options are a python.org (signed)
+  interpreter for the venv, or turning Smart App Control off (user decision; irreversible
+  without a Windows reset).

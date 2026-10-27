@@ -5,6 +5,8 @@
 #   bash scripts/distill_walkforward.sh        # from the project root; log: data/distill/runs/wf.log
 set -u
 cd "$(dirname "$0")/.."
+# base Python + scripts/nf.py: Smart App Control blocks the venv's own python.exe (see nf.py)
+PY="$APPDATA/uv/python/cpython-3.11.12-windows-x86_64-none/python.exe"
 LOG=data/distill/runs/wf.log
 mkdir -p data/distill/runs
 cuts=(2021-01-01 2022-07-01 2024-01-01 2025-07-01 2026-07-01)
@@ -16,7 +18,7 @@ for k in 0 1 2 3; do
     fi
     for attempt in 1 2 3 4 5; do
         echo "=== $name attempt $attempt $(date +%F\ %T)" >> "$LOG"
-        HF_HUB_OFFLINE=1 HF_HUB_DISABLE_SYMLINKS_WARNING=1 uv run python -u scripts/distill_train.py \
+        HF_HUB_OFFLINE=1 HF_HUB_DISABLE_SYMLINKS_WARNING=1 "$PY" -u scripts/nf.py scripts/distill_train.py \
             --name "$name" --sources edgar,news_api --max-len 2048 --batch-tokens 3072 \
             --batch-size 64 --grad-accum 10 --epochs 1 --resume \
             --train-before "${cuts[$k]}" --predict-from "${cuts[$k]}" \
