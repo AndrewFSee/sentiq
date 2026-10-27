@@ -2,4 +2,5 @@
 * text=auto eol=lf
 tests/fixtures/** -text
 *.parquet binary
-*.cmd text eol=crlf   # cmd.exe needs CRLF (labels/goto break on LF-only batch files)
+# cmd.exe needs CRLF (labels/goto break on LF-only batch files)
+*.cmd text eol=crlf
