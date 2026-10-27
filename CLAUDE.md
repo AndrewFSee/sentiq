@@ -968,3 +968,9 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
 - 2026-10-26 (user decision) Smart App Control turned OFF (Defender antivirus, SmartScreen and
   the firewall stay on). Verified: `uv run python`, `uv run newsfeed`, `uv run pytest` work
   again. `scripts/nf.py` stays as the fallback and the collector window keeps using it.
+- 2026-10-27 (user decision) `sources.edgar.silence_alert_minutes` 45 → 120. `silent_feed`
+  fired on almost every trading day (1–4×/day, 10-12 → 10-27), always on genuine market-wide
+  lulls: e.g. 10-27 the SEC 8-K feed itself had no entry from 09:46 to 10:34 ET after 100+
+  pre-open filings; our polls had seen every entry. Our own failures are caught by `stalled` /
+  `poll_failing`; `silent_feed` only backstops a frozen SEC feed, for which 2 h is enough.
+  Monitoring only — no effect on data, timing or coverage.

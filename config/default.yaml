@@ -118,7 +118,8 @@ sources:
     current_feed_max_pages: 5
     poll_lookback_hours: 48
     catch_up_every_minutes: 60        # per-CIK sweep to catch anything the feed window missed
-    silence_alert_minutes: 45         # market-open minutes with no new 8-K from ANY company
+    silence_alert_minutes: 120        # market-open minutes with no new 8-K from ANY company
+                                      # (45 fired 1-4x per trading day on normal lulls, 2026-10)
 
   edgar_periodic:                     # 10-K / 10-Q full text (Lazy Prices etc.); backfill for now
     forms: ["10-K", "10-Q"]           # originals only: amendments change little and would pair badly

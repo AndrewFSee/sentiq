@@ -162,12 +162,14 @@ def test_failures_accumulate_then_alert_once_then_recover(setup, store):
     assert st.open_alerts == {}
 
 
-def test_silent_feed_alert_from_activity_not_universe_items(setup, store):
+def test_silent_feed_alert_from_activity_not_universe_items(setup, store, cfg):
     make, adapter, clock = setup
+    threshold = cfg.sources.edgar.silence_alert_minutes
+    assert threshold > 30
     adapter.activity = MON_OPEN - timedelta(hours=40)  # nothing since Friday
     c = make()
     assert c.cycle() == []  # 30 market minutes so far
-    clock.t += timedelta(minutes=20)
+    clock.t += timedelta(minutes=threshold - 30 + 5)  # just past the threshold
     assert {p.kind for p in c.cycle()} == {"silent_feed"}
     adapter.activity = clock.t  # other companies are filing again; universe still quiet
     clock.t += timedelta(minutes=1)
