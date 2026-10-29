@@ -993,3 +993,12 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   0.975. Not pre-registered, noted only: on event type the student matches the hand label more
   often than Haiku (87% vs 68%), but the sample was drawn by Haiku's own labels (60 "guidance"),
   which selects Haiku's errors, so that comparison is biased in the student's favour.
+- 2026-10-29 (user decision) 8-K RUBRIC CLARIFICATIONS, `docs/8k_label_rubric.md`: R1 results
+  present → earnings; R2 pre-announced / preliminary figures for an ended period are results;
+  R3 guidance = new or changed outlook (initiated, raised, lowered, narrowed, withdrawn, new
+  multi-year targets), incl. quantitative operating guidance; R4 reaffirmed-unchanged guidance
+  alone → other (has_outlook = no); R5 fixed priority results → outlook change → dominant
+  remaining event (replaces "dominant event" for these two types); R6 label only visible text.
+  Motivated by the 37 unsure labels, where reaffirmations (5 guidance vs 6 other),
+  pre-announcements and operating guidance had been labelled both ways. For future labelling
+  and any new prompt version only; `score_v1` (frozen), existing scores, H1 and H2 unchanged.
