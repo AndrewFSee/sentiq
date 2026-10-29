@@ -1,0 +1,101 @@
+id,has_results,has_outlook,event_type,direction,relevance,unsure,note,labeled_at
+e001,yes,yes,earnings,positive,primary,False,Strong Q2 FY23; raises all FY23 guidance metrics,2026-10-28T15:29:57.708Z
+e002,yes,yes,earnings,neutral,primary,False,Solid Q1 2020 (adj. EPS up) but 2020 outlook suspended for COVID,2026-10-28T15:35:47.059Z
+e003,yes,yes,earnings,positive,primary,False,"Q4/FY25 beat FY guidance, EPS up; initiates 2026 guidance",2026-10-28T15:38:50.819Z
+e004,yes,no,earnings,neutral,primary,True,Q3 results; FY19 outlook affirmed with unchanged numbers (rubric: plain reaffirm is not new outlook),2026-10-28T15:40:05.447Z
+e005,no,yes,guidance,neutral,primary,False,"Q2 22 update: TRASM raised, fuel cost raised, margin held ~10%",2026-10-28T21:40:03.957Z
+e006,yes,yes,earnings,neutral,primary,False,Q3 GAAP loss from $3/sh fulfillment impairment; adj. solid; FY25 guidance narrowed,2026-10-28T21:41:09.984Z
+e007,yes,no,earnings,positive,primary,False,"Q1 21 adj. EPS +21%, margin up 260bp; no outlook",2026-10-28T21:42:47.663Z
+e008,yes,no,earnings,negative,primary,False,Preliminary Q4 24 EPS $0.89 vs $3.55 prior year,2026-10-28T21:43:54.441Z
+e009,no,yes,guidance,positive,primary,False,Raises 2024 AFFO low end and investment volume ($2B->$3B),2026-10-28T23:19:38.425Z
+e010,yes,no,earnings,negative,primary,True,"Q2 19 prepared remarks: weak demand, EM down sequentially, impairment; only reiterates April outlook assumptions",2026-10-28T23:20:58.150Z
+e011,yes,yes,earnings,positive,primary,False,Q1 22 revenue +8%; Q2 and FY22 guidance; buybacks resume early,2026-10-28T23:25:16.859Z
+e012,yes,yes,earnings,positive,primary,False,Q1 FY21 revenue +27%; raises FY21 guidance,2026-10-28T23:25:48.810Z
+e013,no,yes,guidance,neutral,primary,False,"FY21/Q2 guidance updated for Credit Karma close; GAAP EPS down, non-GAAP up",2026-10-28T23:28:07.406Z
+e014,yes,yes,earnings,negative,primary,False,"Q3 23 flat sales, impairment loss; FY23 outlook cut",2026-10-28T23:28:44.018Z
+e015,yes,yes,earnings,negative,primary,True,Q1 FY20 adj. EPS up but guidance revised on weaker orders; LORD price correction,2026-10-28T23:29:50.235Z
+e016,yes,no,earnings,neutral,primary,False,"Q1 26 revenue -2.9%, EPS $1.14 vs $1.19; improving demand trend",2026-10-28T23:54:46.641Z
+e017,no,yes,guidance,positive,primary,False,Investor meeting: updates 2021 and issues 2022 guidance (EPS up); pipeline updates,2026-10-28T23:55:28.341Z
+e018,yes,yes,earnings,negative,primary,False,Q1 2020 comps hit by COVID; withdraws 2020 and long-term outlook; buybacks suspended,2026-10-28T23:58:31.571Z
+e019,yes,yes,earnings,positive,primary,False,Q3 19 beat guidance midpoint; raises FY adj. EPS guidance despite macro headwind,2026-10-28T23:59:07.206Z
+e020,no,no,other,neutral,primary,True,Investor presentation; no change to 2020 guidance,2026-10-28T23:59:56.619Z
+e021,no,yes,guidance,positive,primary,False,Investor Day: new FY2025 revenue/EPS targets and $3B capital return,2026-10-29T00:00:55.659Z
+e022,yes,no,earnings,positive,primary,True,"Q3 20 revenue +12%, EPS +13-19%; outlook not in visible text",2026-10-29T00:01:35.019Z
+e023,yes,yes,earnings,positive,primary,True,Q1 FY20 organic +8.7%; maintains FY20 guidance but adjusts GAAP EPS guidance,2026-10-29T00:02:25.511Z
+e024,yes,yes,earnings,positive,primary,False,FQ3 2022 results above guidance midpoint; FQ4 guidance issued,2026-10-29T00:04:01.871Z
+e025,yes,yes,earnings,negative,primary,False,"Q2 2024 revenue -3%, EPS -15%; full-year adj EBITDA guidance lowered; Blue Water closed",2026-10-29T00:05:36.766Z
+e026,no,no,other,neutral,primary,True,Conference slides; 1Q/FY2021 guidance reaffirmed unchanged (not new outlook per rubric),2026-10-29T00:06:41.709Z
+e027,no,no,other,neutral,primary,True,Barclays conference deck; restates 2Q/FY24 guidance with no stated change,2026-10-29T00:07:25.101Z
+e028,no,no,other,neutral,primary,False,New President/COO and CFO; reaffirms 2025 outlook unchanged,2026-10-29T00:08:17.917Z
+e029,yes,yes,earnings,negative,primary,False,"Q1 FY26 in line/better op. income, but FY26 revenue/comp/EPS guidance cut for tariffs",2026-10-29T00:08:56.355Z
+e030,no,yes,guidance,neutral,primary,False,Q4 2022 EPS guidance well below Q3 actual on Sinton startup costs; buyback noted,2026-10-29T00:12:53.619Z
+e031,yes,yes,earnings,negative,primary,False,Q3 21 results; FY21 EPS guidance cut for COVID headwind,2026-10-29T00:13:34.913Z
+e032,no,yes,other,negative,primary,True,"$17-20B impairment, capex plan reset, bonus suspended",2026-10-29T00:14:26.866Z
+e033,no,no,guidance,neutral,primary,True,Reaffirms 2020 membership and 2019 EPS guidance; PDP decline estimate larger (non-financial metric),2026-10-29T00:15:32.987Z
+e034,yes,yes,guidance,negative,primary,False,Cut Sept/3Q/Oct revenue estimates on Delta-variant cancellations; August actuals included (rubric tie-break would say earnings),2026-10-29T00:17:00.013Z
+e035,no,no,other,neutral,primary,True,REIT conference deck; 2020 expectations appear to restate existing guidance,2026-10-29T00:18:01.510Z
+e036,yes,yes,earnings,positive,primary,False,Q1 2026 AFFO +6.6%; raised 2026 AFFO and investment guidance,2026-10-29T00:18:34.369Z
+e037,no,yes,guidance,positive,primary,False,Investor deck: high end of 2025 guidance; new 2026 early outlook +6-8%,2026-10-29T00:22:52.013Z
+e038,yes,no,earnings,positive,primary,False,"Q2 2024 sales +3.5%, adj EPS +7%; FY24 guidance reaffirmed unchanged",2026-10-29T00:23:33.269Z
+e039,no,no,other,neutral,primary,True,Segment realignment and exec changes; Q3/FY23 expected in line with prior guidance (qualitative only),2026-10-29T00:24:13.803Z
+e040,yes,yes,earnings,neutral,primary,False,"Q3 19 solid revenue, higher costs; FY19 outlook narrowed (EBITDA top trimmed, FCF up)",2026-10-29T00:25:26.143Z
+e041,no,no,other,neutral,primary,True,3Q24 earnings-considerations factor table; explicitly not an earnings estimate; factor values not legible,2026-10-29T00:26:57.304Z
+e042,no,yes,guidance,negative,primary,False,Q1/FY25 adj EPS guidance lowered by $0.13 for acquired IPR&D expense,2026-10-29T00:27:42.505Z
+e043,yes,yes,earnings,negative,primary,False,Preliminary 2020 estimates; 2021 guidance framed as trough year for revenue/EBITDA/FCF,2026-10-29T00:59:48.657Z
+e044,no,yes,guidance,positive,primary,True,"Investor Day: new medium-term outlook (8-9% growth, 11-13% EPS growth); FY22 goals achieved",2026-10-29T01:00:37.011Z
+e045,no,no,guidance,neutral,primary,True,AGA forum deck; reaffirms 2019 operating EPS guidance,2026-10-29T01:02:40.415Z
+e046,yes,yes,earnings,positive,primary,False,Q3 21 revenue +15%; raises FY21 EPS guidance,2026-10-29T01:03:10.681Z
+e047,no,yes,guidance,negative,primary,True,Fiscal Q2 revenue to come in below guidance (slow tax season); FY22 revenue guidance reiterated,2026-10-29T01:04:56.699Z
+e048,no,no,guidance,neutral,primary,True,Reiterates 2018/2019 FFO guidance ahead of investor meetings,2026-10-29T01:06:57.015Z
+e049,no,yes,other,negative,primary,True,"Oil-price response: capex cut 20%, Permian/production guidance lowered, buybacks suspended",2026-10-29T01:07:49.051Z
+e050,yes,yes,earnings,neutral,primary,False,Preliminary strong Q1 20; withdraws 2020 targets; buybacks suspended,2026-10-29T01:08:40.235Z
+e051,yes,no,earnings,negative,primary,False,"Q1 25 revenue -1%, op. income -8%, EPS $1.17 vs $1.22",2026-10-29T20:38:51.610Z
+e052,yes,yes,earnings,negative,primary,False,Preliminary Q3 23 loss; FY23 sales/earnings guidance cut on Brazil,2026-10-29T20:39:34.401Z
+e053,yes,no,earnings,positive,primary,False,"Q1 21 revenue +4%, volumes up, recovery commentary; no outlook",2026-10-29T20:41:30.845Z
+e054,yes,yes,earnings,positive,primary,False,"Q2 19 adj. EPS +32%, bookings up; raises FY19 EPS guidance",2026-10-29T20:42:05.520Z
+e055,no,yes,guidance,positive,primary,False,"Raises 2021-22 expectations, extends growth outlook to 2023; 4-for-1 split",2026-10-29T20:42:43.180Z
+e056,no,yes,guidance,neutral,primary,True,"Updated 2019 guidance: occupancy range lowered for pending San Diego acquisition, interest items changed",2026-10-29T20:43:33.457Z
+e057,yes,yes,earnings,negative,primary,True,Preliminary Apr/May 2020 revenue down 85-95%; updated trend guidance; credit facility terminated after notes,2026-10-29T20:54:29.032Z
+e058,yes,yes,earnings,positive,primary,False,Q2 FY23 comps +8%; FY23 outlook raised,2026-10-29T20:55:02.686Z
+e059,yes,yes,earnings,positive,primary,False,Q2 2025 results; FY25 Real Estate FFO guidance midpoint raised; dividend increased,2026-10-29T20:55:38.493Z
+e060,no,yes,guidance,neutral,primary,True,Analyst meeting: FY20 EPS/FCF outlook; restructuring (7-9k jobs); dividend +10%; $5B buyback,2026-10-29T20:56:24.926Z
+e061,no,yes,guidance,negative,primary,False,COVID update: FQ3 revenue expected down ~20% LFL; FY20 guidance withdrawn; dividend may be paid in kind,2026-10-29T20:57:36.914Z
+e062,yes,yes,earnings,positive,primary,False,Q4 FY19 adj EPS +37%; initiated FY20 adj EPS guidance up 28-33%,2026-10-29T20:58:12.743Z
+e063,yes,yes,earnings,negative,primary,False,"FQ3 2020 within guidance; FQ4 revenue outlook $480-540M, below Q3's $562M on COVID constraints",2026-10-29T20:59:15.148Z
+e064,yes,yes,earnings,positive,primary,False,Q1 26 sales +9.9%; raises 2026 guidance; dividend up; product approvals,2026-10-29T20:59:57.962Z
+e065,no,no,other,neutral,primary,True,Business-update deck: restates 2024 EPS guidance; 5-yr utility capex raised $2B,2026-10-29T21:32:18.533Z
+e066,yes,no,earnings,negative,primary,False,"Sept/Q3 22: quarterly net loss $1.17/sh, combined ratio 116.2",2026-10-29T21:34:18.988Z
+e067,no,yes,guidance,positive,primary,True,Expects FY22 EPS at high end and revenue above range; reaffirms 2023 guidance,2026-10-29T21:35:25.614Z
+e068,yes,no,earnings,neutral,primary,False,Q1 2025 in line (GAAP net loss); 2025 guidance and long-term targets reaffirmed unchanged,2026-10-29T21:36:08.346Z
+e069,yes,no,earnings,positive,primary,False,"Q1 23 organic +9.7%, adj. EBITDAC +15%; estimates only in separate CFO commentary",2026-10-29T21:36:58.436Z
+e070,yes,no,earnings,negative,primary,False,Q1 20 net loss $2.0B (COVID); liquidity draws; dividend suspended,2026-10-29T21:37:32.546Z
+e071,no,yes,guidance,positive,primary,False,Issues 2020 guidance and updates 2019 guidance; WellCare deal pending,2026-10-29T21:39:11.070Z
+e072,no,yes,guidance,neutral,primary,True,Q4 2019 guidance mostly maintained; capacity trimmed slightly,2026-10-29T21:40:00.481Z
+e073,no,yes,guidance,positive,primary,False,Updates 2020 outlook; initial 2021 EPS outlook above 2020 despite $1.80 COVID allowance,2026-10-29T21:40:52.174Z
+e074,no,no,other,neutral,primary,True,Nareit conference deck; restates 2024 Core FFO guidance midpoint,2026-10-29T21:41:28.929Z
+e075,no,no,guidance,neutral,primary,True,Continues to expect Q2 margin 11-13% and FY19 EPS $10-12 (reaffirmation),2026-10-29T21:42:15.886Z
+e076,no,yes,guidance,negative,primary,False,New Q3 EBIT range $1.4-1.7B on parts shortages and $1B extra supplier costs; FY reaffirmed,2026-10-29T21:42:47.491Z
+e077,no,yes,other,negative,primary,True,"COVID liquidity actions: full revolver draw, dividend suspended, capex cut; FY20 guidance withdrawn",2026-10-29T21:46:12.440Z
+e078,yes,yes,earnings,neutral,primary,True,Q4 FY22 strong comps; FY23 EPS outlook weighed by $1.45/sh investment spend,2026-10-29T21:46:54.902Z
+e079,yes,yes,earnings,neutral,primary,True,"Q3 20 revenue -17%, GAAP loss, but FCF positive and Q4 FCF >= $2.5B expected",2026-10-29T21:47:32.374Z
+e080,yes,no,earnings,positive,primary,False,"Q1 26 revenue +8%, EBITDA +10% op.; reaffirms 2026 guidance",2026-10-29T21:48:08.747Z
+e081,yes,no,earnings,positive,primary,False,FY23 at high end of guidance; reaffirms 2024 operating EPS guidance,2026-10-29T21:48:43.100Z
+e082,yes,yes,earnings,positive,primary,True,July sales beat estimate (-7% YoY); raises Q3 2020 volume and margin outlook,2026-10-29T23:10:20.970Z
+e083,no,yes,guidance,positive,primary,False,"Investor event: 20% op-margin target, Display price hikes and 2025 net income target; Q3 reaffirmed",2026-10-29T23:15:28.847Z
+e084,yes,no,earnings,neutral,primary,True,Q1 19 adj. EPS $1.39 with $0.07 weather drag; segments mixed; reaffirms FY EPS range,2026-10-29T23:16:04.305Z
+e085,no,yes,other,negative,primary,True,"COVID: curbside-only operations, revolver draw, buybacks suspended, FY21 guidance withdrawn",2026-10-29T23:16:37.529Z
+e086,yes,yes,earnings,positive,primary,False,"Q2 21 revenue +43%, above guidance; Q3 guidance +26% YoY",2026-10-29T23:17:07.545Z
+e087,yes,yes,earnings,positive,primary,False,"Q1 FY26 ARR +8.4%, FCF +13%; FY26 guidance updated; large buyback target",2026-10-29T23:17:57.631Z
+e088,yes,no,earnings,neutral,primary,False,"Q2 19 results; OppenheimerFunds acquisition closed, integration on track",2026-10-29T23:18:33.230Z
+e089,no,yes,guidance,positive,primary,False,Raises Q2 and FY21 Core FFO and same-property guidance on improving markets,2026-10-29T23:19:12.077Z
+e090,yes,no,earnings,neutral,primary,False,"Q3 23: AUM -3.3% QoQ, return to net inflows, org-change costs",2026-10-29T23:20:37.669Z
+e091,yes,no,earnings,positive,primary,True,Strong Q1 19 (record cash flow) in tough market; reaffirms FY19 outlook; CEO transition,2026-10-29T23:21:22.001Z
+e092,yes,yes,earnings,neutral,primary,False,"Q3 FY26 sales flat, gross margin down; FY26 sales, margin and EPS outlook cut (GOJO deal included)",2026-10-29T23:22:04.025Z
+e093,no,no,legal_regulatory,neutral,primary,True,CPUC final cost-of-capital decision for SCE 2026; reaffirms guidance,2026-10-29T23:22:47.332Z
+e094,yes,yes,earnings,positive,primary,False,"Q4 FY21 net income +70%, sales +16%; FY22 net income forecast $6.5-7.0B",2026-10-29T23:23:16.347Z
+e095,no,no,other,negative,primary,False,COVID risk update tied to notes offering; prior 2020 outlook excludes COVID impacts,2026-10-29T23:23:46.899Z
+e096,yes,yes,earnings,positive,primary,False,"Q2 FY19 comps +3%, EPS +13%; updates some FY19 guidance items upward, reiterates rest",2026-10-29T23:24:18.029Z
+e097,no,yes,guidance,positive,primary,True,Raises FY22/Q1 GAAP EPS guidance after Vertiv distribution; adjusted EPS unchanged,2026-10-29T23:25:13.267Z
+e098,yes,no,earnings,positive,primary,True,"Q2 22 revenue +19%, streaming growth; formal outlook not visible",2026-10-29T23:25:51.754Z
+e099,yes,no,earnings,neutral,primary,False,"Q1 20 core EPS flat, GAAP EPS down; reaffirms 2020 guidance",2026-10-29T23:26:34.803Z
+e100,no,no,guidance,neutral,primary,True,Investor deck; reaffirms 2019 operating EPS guidance,2026-10-29T23:27:07.629Z

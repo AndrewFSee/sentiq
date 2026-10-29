@@ -974,3 +974,22 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   pre-open filings; our polls had seen every entry. Our own failures are caught by `stalled` /
   `poll_failing`; `silent_feed` only backstops a frozen SEC feed, for which 2 h is enough.
   Monitoring only — no effect on data, timing or coverage.
+- 2026-10-29 RESULT 8-K label check (pre-registered 10-20; `scripts/label_agreement_8k.py`;
+  labels exported to `data/labeling/edgar_8k_sample_v1_labels.csv`, committed; one labeller,
+  37 of 100 marked unsure, so every readout is also given on the 63 confident ones). (1)
+  Precision: model earnings → hand earnings 40/40 (1.00, CI [0.91, 1.00]); model guidance →
+  hand guidance 28/60 = 0.47 [0.35, 0.59] (confident 16/32 = 0.50). The other model-guidance
+  filings: 17 hand earnings (results + outlook, which the rubric assigns to earnings) and 14
+  "other" — conference decks restating *unchanged* guidance (ESS, DD, USB, AIV, DTE, MAA, CI
+  with exec changes) and crisis updates whose main event is something else (XOM impairment, CVX
+  capex cut, GPS/BBY COVID liquidity actions with guidance withdrawn), mostly marked unsure. (2)
+  Model-guidance filings with reported results 18/60 = 0.30; outlook-only 26/60 = 0.43
+  [0.32, 0.56] (confident 15/32 = 0.47) → by the pre-registered rule (< half outlook-only) H2 is
+  described as "8-Ks the model labels guidance: outlook-only releases about as often as results
+  + outlook, plus reaffirmation decks and crisis updates", not as guidance-only releases. On
+  the confident labels it is close to an even split. H2's definition stays frozen. (3) Sentiment:
+  Haiku vs hand direction Spearman +0.863 (confident +0.889), AUC pos vs neg 0.998 — 8-K tone
+  is read as well as news tone. Student full_v1 (never trained on these filings) +0.764, AUC
+  0.975. Not pre-registered, noted only: on event type the student matches the hand label more
+  often than Haiku (87% vs 68%), but the sample was drawn by Haiku's own labels (60 "guidance"),
+  which selects Haiku's errors, so that comparison is biased in the student's favour.
