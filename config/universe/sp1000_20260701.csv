@@ -1,0 +1,1001 @@
+ticker,cik,name,start,end,sector,index,note
+AA,1675149,Alcoa,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AAL,6201,American Airlines Group,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AAON,824142,AAON,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ACI,1646972,Albertsons,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ACM,868857,AECOM,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ADC,917251,Agree Realty,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AEIS,927003,Advanced Energy,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AFG,1042046,American Financial Group,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AGCO,880266,AGCO,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AHR,1632970,American Healthcare REIT,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AIT,109563,Applied Industrial Technologies,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ALGM,866291,Allegro MicroSystems,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ALK,766421,Alaska Air Group,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ALLY,40729,Ally Financial,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ALV,1034670,Autoliv,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AM,1623925,Antero Midstream,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AMG,1004434,Affiliated Managers Group,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AMH,1562401,American Homes 4 Rent,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AMKR,1047127,Amkor Technology,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AN,350698,AutoNation,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ANF,1018840,Abercrombie & Fitch,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+APG,1796209,APi Group,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+APPF,1433195,AppFolio,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AR,1433270,Antero Resources,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ARMK,1584509,Aramark,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ARW,7536,Arrow Electronics,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ARWR,879407,Arrowhead Pharmaceuticals,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ASB,7789,Associated Bank,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ASH,1674862,Ashland Global,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ATI,1018963,ATI Inc.,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ATR,896622,AptarGroup,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AVAV,1368622,AeroVironment,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AVNT,1122976,Avient,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AVT,8858,Avnet,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AVTR,1722482,Avantor,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AXTA,1616862,Axalta,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AYI,1144215,Acuity Brands,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BAH,1443646,Booz Allen Hamilton,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BBWI,701985,"Bath & Body Works, Inc.",2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BC,14930,Brunswick,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BCO,78890,Brink's,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BDC,913142,Belden Inc.,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BHF,1685040,Brighthouse Financial,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BILL,1786352,Bill Holdings,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BIO,12208,Bio-Rad Laboratories,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BJ,1531152,BJ's Wholesale Club,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BKH,1130464,Black Hills Corporation,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BLD,1633931,TopBuild Corp.,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BMRN,1048477,BioMarin Pharmaceutical,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BRKR,1109354,Bruker,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BROS,1866581,Dutch Bros Inc.,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BRX,1581068,Brixmor Property Group,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BSY,1031308,Bentley Systems,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BURL,1579298,Burlington Stores,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BWA,908255,BorgWarner,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BWXT,1486957,BWX Technologies,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+BYD,906553,Boyd Gaming,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CACI,16058,CACI International,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CAR,723612,Avis Budget Group,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CART,1579091,Maplebear Inc.,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CAVA,1639438,Cava Group,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CBSH,22356,Commerce Bancshares,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CBT,16040,Cabot Corp,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CCK,1219601,Crown Holdings,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CDE,215466,Coeur Mining,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CDP,860546,COPT Defense Properties,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CELH,1341766,Celsius Holdings,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CFR,39263,Frost Bank,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CG,1527166,Carlyle Group (The),2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CGNX,851205,Cognex,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CHDN,20212,Churchill Downs Inc.,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CHE,19584,Chemed Corp.,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CHH,1046311,Choice Hotels,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CHRD,1486159,Chord Energy,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CHWY,1766502,Chewy,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CLF,764065,Cleveland-Cliffs,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CLH,822818,Clean Harbors,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CMC,22444,Commercial Metals,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CNH,1567094,CNH Industrial,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CNM,1856525,Core & Main,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CNO,1224608,CNO Financial Group,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CNX,1070412,CNX Resources,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+COKE,317540,Coca-Cola Consolidated,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+COLB,887343,Columbia Banking System,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+COLM,1050797,Columbia Sportswear,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CPRI,1530721,Capri Holdings,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CR,1944013,Crane,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CRBG,1889539,Corebridge Financial,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CROX,1334036,Crocs,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CRS,17843,Carpenter Technology,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CRUS,772406,Cirrus Logic,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CSL,790051,Carlisle Companies,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CTRE,1590717,CareTrust REIT,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CUBE,1298675,CubeSmart,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CUZ,25232,Cousins Properties,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CVLT,1169561,CommVault Systems,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CW,26324,Curtiss-Wright,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CXT,25445,Crane NXT,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+CYTK,1061983,Cytokinetics,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DAR,916540,Darling Ingredients,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DBX,1467623,Dropbox,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DCI,29644,Donaldson Company,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DINO,1915657,HF Sinclair,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DKS,1089063,Dick's Sporting Goods,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DLB,1308547,Dolby,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DOCN,1582961,DigitalOcean,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DOCS,1516513,Doximity,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DOCU,1261333,Docusign,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DT,1773383,Dynatrace,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DTM,1842022,DT Midstream,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DUOL,1562088,Duolingo,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+DY,67215,Dycom Industries,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EEFT,1029199,Euronet Worldwide,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EGP,49600,EastGroup Properties,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EHC,785161,Encompass Health,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ELAN,1739104,Elanco,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ELF,1600033,e.l.f. Beauty,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ELS,895417,Equity Lifestyle Properties,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ENS,1289308,EnerSys,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ENSG,1125376,Ensign Group,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ENTG,1101302,Entegris,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EPR,1045450,EPR Properties,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EQH,1333986,Equitable Holdings,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ESAB,1877322,ESAB,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ESNT,1448893,Essent Group Ltd.,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EVR,1360901,Evercore,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EWBC,1069157,East West Bancorp,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EXEL,939767,Exelixis,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EXLS,1297989,EXL Service,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EXP,918646,Eagle Materials,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+EXPO,851520,"Exponent, Inc.",2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FAF,1472787,First American Financial Corporation,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FBIN,1519751,Fortune Brands Innovations,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FCFS,840489,FirstCash,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FCN,887936,FTI Consulting,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FFIN,36029,First Financial Bankshares,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FHI,1056288,Federated Hermes,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FHN,36966,First Horizon,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FIVE,1177609,Five Below,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FLG,910073,Flagstar Bank,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FLR,1124198,Fluor,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FLS,30625,Flowserve,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FN,1408710,Fabrinet,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FNB,37808,FNB Corporation,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FND,1507079,Floor & Decor,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FNF,1331875,Fidelity National Financial,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FOUR,1794669,Shift4,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FR,921825,First Industrial Realty Trust,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+FTI,1681459,TechnipFMC,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+G,1398659,Genpact,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GAP,39911,Gap Inc.,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GATX,40211,GATX,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GBCI,868671,Glacier Bancorp,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GEF,43920,"Greif, Inc.",2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GGG,42888,Graco Inc.,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GHC,104889,Graham Holdings,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GLPI,1575965,Gaming and Leisure Properties,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GME,1326380,GameStop,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GMED,1237831,Globus Medical,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GNTX,355811,Gentex,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GPK,1408075,Graphic Packaging,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GT,42582,Goodyear Tire & Rubber,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GTLS,892553,Chart Industries,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GWRE,1528396,Guidewire Software,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+GXO,1852244,GXO Logistics,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+H,1468174,Hyatt,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HAE,313143,Haemonetics,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HALO,1159036,Halozyme,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HGV,1674168,Hilton Grand Vacations,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HIMS,1773751,Hims & Hers Health,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HL,719413,Hecla Mining,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HLI,1302215,Houlihan Lokey,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HLNE,1433642,Hamilton Lane,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HOG,793952,Harley-Davidson,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HOMB,1331520,Home BancShares,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HQY,1428336,HealthEquity,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HR,1360604,Healthcare Realty Trust,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HRB,12659,H&R Block,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HWC,750577,Hancock Whitney,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+HXL,717605,Hexcel,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+IBOC,315709,Intl Bancshares Corp,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+IDA,1057877,Idacorp,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+IDCC,1405495,InterDigital,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ILMN,1110803,"Illumina, Inc.",2026-07-01,2026-10-01,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+INGR,1046257,Ingredion,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+IPGP,1111928,IPG Photonics,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+IRT,1466085,IRT Living,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ITT,216228,ITT Inc.,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+JAZZ,1232524,Jazz Pharmaceuticals,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+JEF,96223,Jefferies,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+JHG,1274173,Janus Henderson,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+JLL,1037976,Jones Lang LaSalle,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KBH,795266,KB Home,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KBR,1357615,"KBR, Inc.",2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KD,1867072,Kyndryl,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KEX,56047,Kirby Corporation,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KNF,1955520,Knife River Corporation,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KNSL,1669162,Kinsale Capital Group,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KNX,1492691,Knight-Swift,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KRC,1025996,Kilroy Realty Corp,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KRG,1286043,Kite Realty Group Trust,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+KTOS,1069258,Kratos Defense & Security Solutions,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LAD,1023128,Lithia Motors,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LAMR,1090425,Lamar Advertising Company,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LEA,842162,Lear,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LECO,59527,Lincoln Electric,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LFUS,889331,Littelfuse,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LIVN,1639691,LivaNova,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LNTH,1521036,Lantheus Holdings,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LOPE,1434588,Grand Canyon Education,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LPX,60519,Louisiana-Pacific,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LSCC,855658,Lattice Semiconductor,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+LSTR,853816,Landstar System,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+M,794367,Macy's,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MANH,1056696,Manhattan Associates,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MAT,63276,Mattel,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MEDP,1668397,Medpace,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MIDD,769520,Middleby,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MKSI,1049502,MKS Instruments,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MLI,89439,Mueller Industries,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MMS,1032220,Maximus Inc.,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MOG-A,67887,Moog Inc.,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MORN,1289419,"Morningstar, Inc.",2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MP,1801368,MP Materials,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MSA,66570,MSA Safety,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MSM,1003078,MSC Industrial Direct,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MTDR,1520006,Matador Resources,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MTG,876437,MGIC Investment Corporation,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MTN,812011,Vail Resorts,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MTSI,1493594,MACOM Technology Solutions,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MTZ,15615,MasTec,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MUR,717423,Murphy Oil,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MUSA,1573516,Murphy USA,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+MZTI,57515,The Marzetti Company,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NBIX,914475,Neurocrine Biosciences,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NEU,1282637,NewMarket Corporation,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NFG,70145,National Fuel Gas,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NJR,356309,New Jersey Resources,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NLY,1043219,Annaly Capital Management,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NNN,751364,NNN Reit,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NOV,1021860,NOV Inc.,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NOVT,1076930,Novanta,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NSA,1618563,National Storage Affiliates Trust,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NTNX,1618732,Nutanix,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NVST,1757073,Envista Holdings,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NVT,1720635,nVent Electric plc,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NWE,1993004,NorthWestern Energy,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NXST,1142417,Nexstar Media Group,2026-07-01,,Communication Services,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NXT,1852131,Nextpower,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+NYT,71691,New York Times Company,2026-07-01,,Communication Services,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OC,1370946,Owens Corning,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OGE,1021635,OGE Energy,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OGS,1587732,One Gas,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OHI,888491,Omega Healthcare Investors,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OKTA,1660134,"Okta, Inc.",2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OLED,1005284,Universal Display,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OLLI,1639300,Ollie's Bargain Outlet,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OLN,74303,Olin Corporation,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ONB,707179,Old National Bank,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ONTO,704532,Onto Innovation,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OPCH,1014739,Option Care Health,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ORA,1296445,Ormat Technologies,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ORI,74260,Old Republic International,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OSK,775158,Oshkosh,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OVV,1792580,Ovintiv,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+OZK,1569650,Bank OZK,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+P,1474432,Everpure,2026-07-01,2026-10-01,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PAG,1019849,Penske Automotive Group,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PATH,1734722,UiPath,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PB,1068851,Prosperity Bancshares,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PBF,1534504,PBF Energy,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PCTY,1591698,Paylocity,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PEGA,1013857,Pegasystems,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PEN,1321732,"Penumbra, Inc.",2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PFGC,1618673,Performance Food Group,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PII,931015,Polaris,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PINS,1506293,Pinterest,2026-07-01,,Communication Services,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PK,1617406,Park Hotels & Resorts,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PLNT,1637207,Planet Fitness,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PNFP,2082866,Pinnacle Financial Partners,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+POR,784977,Portland General Electric,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+POST,1530950,Post Holdings,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PPC,802481,Pilgrim's Pride,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PR,1658566,Permian Resources,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PRI,1475922,Primerica,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PSN,275880,Parsons Corporation,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+PVH,78239,PVH Corp.,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+QLYS,1107843,Qualys,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+R,85961,Ryder,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RBA,1046102,RB Global,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RBC,1324948,RBC Bearings,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+REXR,1571283,Rexford Industrial Realty,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RGA,898174,Reinsurance Group of America,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RGEN,730272,Repligen,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RGLD,85535,Royal Gold,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RH,1528849,RH,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RLI,84246,RLI Corp.,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RMBS,917273,Rambus,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RNR,913144,RenaissanceRe,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ROIV,1635088,Roivant Sciences,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ROKU,1428439,"Roku, Inc.",2026-07-01,,Communication Services,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RPM,110621,RPM International,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RRC,315852,Range Resources,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RRX,82811,Regal Rexnord,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RS,861884,"Reliance, Inc.",2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RYAN,1849253,Ryan Specialty,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+RYN,52827,Rayonier,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SAIA,1177702,Saia,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SAIC,1571123,Science Applications Intl Corp,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SAM,949870,Boston Beer Company,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SANM,897723,Sanmina Corporation,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SARO,2025410,StandardAero,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SBRA,1492298,Sabra Health Care REIT,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SCI,89089,Service Corp Intl,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SEIC,350894,SEI Investments Company,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SF,720672,Stifel,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SFM,1575515,Sprouts Farmers Market,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SGI,1206264,Somnigroup International,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SHC,1822479,Sotera Health,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SIGI,230557,Selective Insurance Group,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SIRI,908937,SiriusXM,2026-07-01,,Communication Services,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SITM,1451809,SiTime,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SLAB,1038074,Silicon Labs,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SLGN,849869,Silgan Holdings,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SLM,1032033,SLM Corp,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SMG,825542,Scotts Miracle-Gro Company,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SMTC,88941,Semtech,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SN,1957132,SharkNinja,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SNX,1177394,TD Synnex,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SOLS,2064953,Solstice Advanced Materials,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SON,91767,Sonoco,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SPXC,88205,SPX Technologies,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SR,1126956,Spire,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SSB,764038,South State Bank,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SSD,920371,Simpson Manufacturing,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ST,1477294,Sensata Technologies,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+STAG,1479094,STAG Industrial,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+STRL,874238,Sterling Infrastructure,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+STWD,1465128,Starwood Property Trust,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SWX,1692115,Southwest Gas Corp,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+SYNA,817720,Synaptics,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TCBI,1077428,Texas Capital Bancshares,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TEX,97216,Terex,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+THC,70318,Tenet Health,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+THG,944695,Hanover Insurance,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+THO,730263,Thor Industries,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TKR,98362,Timken,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TLN,1622536,Talen Energy,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TMHC,1562476,Taylor Morrison,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TNL,1361658,Travel + Leisure Co.,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TOL,794170,Toll Brothers,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TREX,1069878,Trex,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TRU,1552033,TransUnion,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TTC,737758,Toro,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TTEK,831641,Tetra Tech,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TTMI,1116942,TTM Technologies,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TWLO,1447669,Twilio,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TXNM,1108426,TXNM Energy,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+TXRH,1289460,Texas Roadhouse,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+UBSI,729986,United Bankshares,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+UFPI,912767,UFP Industries,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+UGI,884614,UGI Corp,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ULS,1901440,UL Solutions,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+UMBF,101382,UMB Financial Corp.,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+UNM,5513,Unum,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+USFD,1665918,US Foods,2026-07-01,,Consumer Staples,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+UTHR,1082554,United Therapeutics,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VAL,314808,Valaris,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VC,1111335,Visteon,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VFC,103379,VF Corporation,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VIAV,912093,Viavi Solutions,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VICR,751978,Vicor Corporation,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VLY,714310,Valley Bank,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VMI,102729,Valmont Industries,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VNO,899689,Vornado Realty Trust,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VNOM,1602065,Viper Energy,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VNT,1786842,Vontier,2026-07-01,,Information Technology,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VOYA,1535929,Voya Financial,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+VVV,1674910,Valvoline,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WAL,1212545,Western Alliance Bancorporation,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WBS,801337,Webster Bank,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WCC,929008,WESCO International,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WEX,1309108,WEX Inc.,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WFRD,1603923,Weatherford International,2026-07-01,,Energy,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WH,1722684,Wyndham Hotels & Resorts,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WHR,106640,Whirlpool Corporation,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WING,1636222,Wingstop,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WLK,1262823,Westlake Corporation,2026-07-01,,Materials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WMG,1319161,Warner Music Group,2026-07-01,,Communication Services,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WMS,1604028,Advanced Drainage Systems,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WPC,1025378,W. P. Carey,2026-07-01,,Real Estate,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WSO,105016,Watsco,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WTFC,1015328,Wintrust Financial,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WTRG,78128,Essential Utilities,2026-07-01,,Utilities,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WTS,795403,Watts Water Technologies,2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+WWD,108312,"Woodward, Inc.",2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+XPO,1166003,"XPO, Inc.",2026-07-01,,Industrials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+XRAY,818479,Dentsply Sirona,2026-07-01,,Health Care,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+YETI,1670592,Yeti Holdings,2026-07-01,,Consumer Discretionary,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+ZION,109380,Zions Bancorporation,2026-07-01,,Financials,sp400,wiki rev 1360492269 2026-06-21T20:21:57Z
+AAMI,1748824,Acadian Asset Management Inc.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AAP,1158449,"Advance Auto Parts, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AAT,1500217,American Assets Trust,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ABCB,351569,Ameris Bancorp,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ABG,1144980,Asbury Automotive Group,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ABM,771497,"ABM Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ABR,1253986,Arbor Realty Trust,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ACA,1739445,"Arcosa, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ACAD,1070494,Acadia Pharmaceuticals,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ACHC,1520697,Acadia Healthcare,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ACIW,935036,ACI Worldwide,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ACLS,1113232,"Axcelis Technologies, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ACMR,1680062,"ACM Research, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ACT,1823529,"Enact Holdings, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ADAM,1273685,"Adamas Trust, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ADEA,1803696,"Adeia, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ADMA,1368514,"ADMA Biologics, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ADNT,1670541,Adient,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ADT,1703056,ADT Inc.,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ADUS,1468328,Addus HomeCare Corp.,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AEO,919012,American Eagle Outfitters,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AESI,1984060,"Atlas Energy Solutions, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AGNT,1495932,"eXp World Holdings, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AGO,1273813,Assured Guaranty Ltd.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AGX,100591,"Argan, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AGYS,78749,"Agilysys, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AHCO,1725255,AdaptHealth Corp.,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AIN,819793,Albany International Corp.,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AIR,1750,AAR CORP .,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AKR,899629,Acadia Realty Trust,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ALG,897077,Alamo Group,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ALGT,1362468,Allegiant Travel Company,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ALHC,1832466,"Alignment Healthcare, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ALKS,1520262,Alkermes plc,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ALRM,1459200,"Alarm.Com, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AMN,1142750,"Amn Healthcare Services, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AMPH,1297184,"Amphstar Pharmaceuticals, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AMR,1704715,"Alpha Metallurgical Resources, Inc.",2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AMRX,1723128,Amneal Pharmaceuticals,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AMSF,1018979,"Amerisafe, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AMTM,2011286,Amentum,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ANDE,821026,"The Andersons, Inc.",2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ANIP,1023024,"ANI Pharmaceuticals, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AORT,784199,Artivion,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AOSL,1387467,"Alpha and Omega Semiconductor, Ltd.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+APAM,1517302,"Artisan Partners Asset Management, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+APLE,1418121,"Apple Hospitality REIT, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+APOG,6845,"Apogee Enterprises, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ARCB,894405,ArcBest Corp.,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ARI,1467760,Apollo Commercial Real Estate Finance,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ARLO,1736946,Arlo Technologies,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AROC,1389050,"Archrock, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ARR,1428205,Armour Residential REIT,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ASO,1817358,Academy Sports + Outdoors,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ASTE,792987,"Astec Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ASTH,1083446,"Astrana Health, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ATEN,1580808,"A10 Networks, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ATMU,1921963,Atmus Filtration Technologies Inc.,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AUB,883948,"Atlantic Union Bankshares, Corp.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AVA,104918,Avista Corporation,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AVNS,1606498,"Avanos Medical, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AWI,7431,"Armstrong World Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AWR,1056903,American States Water Company,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AX,1299709,"Axos Financial, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AZTA,933974,"Azenta, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+AZZ,8947,"AZZ, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BANC,1169770,"Banc Of California, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BANF,760498,Bancfirst Corp,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BANR,946673,Banner Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BBT,1108134,Beacon Financial Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BCC,1328581,Boise Cascade,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BCPC,9326,Balchem Corporation,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BFAM,1437578,Bright Horizons Family Solutions Inc.,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BFH,1101215,"Bread Financial Holdings, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BFS,907254,"Saul Centers, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BGC,1094831,"BGC Group, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BHE,863436,"Benchmark Electronics, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BJRI,1013488,"BJ's Restaurants, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BKE,885245,"The Buckle, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BKU,1504008,"BankUnited, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BL,1666134,"BlackLine Systems, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BLFS,834365,"BioLife Solutions, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BMI,9092,"Badger Meter, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BNL,1424182,"Broadstone Net Lease, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BOH,46195,Bank of Hawaii,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BOOT,1610250,"Boot Barn Holdings, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BOX,1372612,"Box, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BRC,746598,Brady Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BTSG,1865782,"BrightSpring Health Services, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BTU,1064728,"Peabody Energy, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+BXMT,1061630,"Blackstone Mortgage Trust, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CABO,1632127,Cable One,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CAKE,887596,"The Cheesecake Factory, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CALM,16160,"Cal-Maine Foods, Inc.",2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CALX,1406666,Calix,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CALY,837465,Callaway Golf Company,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CARG,1494259,CarGurus,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CASH,907471,"Pathward Financial, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CATY,861842,Cathay General Bancorp,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CBRL,1067294,Cracker Barrel,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CBU,723188,"Community Bank System, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CC,1627223,Chemours,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CCOI,1158324,"Cogent Communications Holdings, Inc.",2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CCS,1576940,"Century Communities, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CE,1306830,Celanese,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CENT,887733,Central Garden & Pet Company,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CENTA,887733,Central Garden & Pet Company (Class A),2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CENX,949157,Century Aluminum Company,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CERT,1827090,"Certara, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CFFN,1490906,Capitol Federal Savings Bank,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CHCO,726854,City Holding Company,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CHEF,1517175,"Chefs' Warehouse, Inc.",2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CLB,1958086,Core Laboratories,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CLSK,827876,"CleanSpark, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CNK,1385280,"Cinemark Holdings, Inc.",2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CNMD,816956,CONMED Corporation,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CNR,1710366,"Core Natural Resources, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CNS,1284812,"Cohen & Steers, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CNXN,1050377,"PC Connection, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+COCO,1482981,The Vita Coco Company,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+COHU,21535,"Cohu, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+COLL,1267565,"Collegium Pharmaceutical, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CON,2014596,"Concentra Group Holdings Parent, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CORT,1088856,Corcept Therapeutics Incorporated,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CPF,701347,Central Pacific Financial Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CPK,19745,Chesapeake Utilities Corp.,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CPRX,1369568,"Catalyst Pharmaceuticals Partners, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CRC,1609253,California Resources Corporation,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CRGY,1866175,Crescent Energy Company,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CRI,1060822,"Carter's, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CRK,23194,"Comstock Resources, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CRSR,1743759,Corsair Gaming,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CRVL,874866,CorVel Corporation,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CSR,798359,Centerspace Trust,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CSW,1624794,"CSW Industrials, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CTKB,1831915,"Cytek Biosciences, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CTS,26058,CTS Corporation,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CUBI,1488813,"Customers Bancorp, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CURB,2027317,Curbline Properties Corp.,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CVBF,354647,CVB Financial Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CVCO,278166,"Cavco Industries, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CVI,1376139,"CVR Energy, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CVSA,730464,Covista Inc.,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CWEN,1567683,"Clearway Energy, Inc. (Class C)",2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CWEN-A,1567683,"Clearway Energy, Inc. (Class A)",2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CWK,1628369,Cushman & Wakefield plc,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CWST,911177,"Casella Waste Systems, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CWT,1035201,California Water Service Group,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CXM,1569345,"Sprinklr, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CXW,1070985,CoreCivic,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+CZR,1590895,Caesars Entertainment,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DAN,26780,Dana Incorporated,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DAVE,1841408,"Dave, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DBD,28823,Diebold Nixdorf,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DCH,1062231,Dauch Corporation,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DCOM,846617,"Dime Community Bancshares, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DEA,1622194,"Easterly Government Properties, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DEI,1364250,Douglas Emmett,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DFH,1825088,"Dream Finders Homes, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DFIN,1669811,"Donnelley Financial Solutions, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DGII,854775,Digi International Inc.,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DIOD,29002,Diodes Incorporated,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DLX,27996,Deluxe Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DNOW,1599617,NOW Inc,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DORM,868780,"Dorman Products, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DRH,1298946,DiamondRock Hospitality Company,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DV,1819928,"DoubleVerify Holdings, Inc.",2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DXC,1688568,DXC Technology,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+DXPE,1020710,"DXP Enterprises, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EAT,703351,"Brinker International, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ECG,2015845,"Everus Construction Group, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ECPG,1084961,"Encore Capital Group, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EFC,1411342,"Ellington Financial, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EFOR,890564,Everforth Inc.,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EGBN,1050441,Eagle Bancorp Inc,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EIG,1379041,"Employers Holdings, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EMBC,1872789,Embecta Corp.,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EMN,915389,Eastman Chemical Company,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ENOV,1420800,Enovis,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ENPH,1463101,Enphase Energy,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ENR,1632790,Energizer,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ENVA,1529864,"Enova International, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EPAC,6955,Enerpac Tool Group,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EPAM,1352010,EPAM Systems,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EPC,1096752,Edgewell Personal Care,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EPRT,1728951,"Essential Properties Realty Trust, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ESE,866706,ESCO Technologies Inc.,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ESI,1590714,Element Solutions,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ETD,896156,"Ethan Allen Interiors, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ETSY,1370637,Etsy,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EVTC,1559865,"EVERTEC, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EXTR,1078271,"Extreme Networks, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EYE,1710155,National Vision Holdings,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+EZPW,876523,"EZCORP, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FA,1649749,First Advantage Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FBK,1649749,FB Financial Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FBNC,811589,First Bancorp (Southern Pines NC),2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FBP,1057706,First BanCorp (Puerto Rico),2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FBRT,1562528,"Franklin BSP Realty Trust, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FCF,712537,"First Commonwealth Financial, Corp.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FCPT,1650132,"Four Corners Property Trust, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FDP,1047340,"Fresh Del Monte Produce, Inc.",2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FELE,38725,Franklin Electric,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FFBC,708955,First Financial Bancorp,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FG,1934850,"F&G Annuities & Life, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FHB,36377,"First Hawaiian, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FIBK,860413,"First Interstate BancSystem, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FIZZ,69891,National Beverage Corp.,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FLO,1128928,Flowers Foods,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FMC,37785,FMC Corporation,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FORM,1039399,"FormFactor, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FOXF,1424929,Fox Factory,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FRPT,1611647,Freshpet,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FSS,277509,Federal Signal Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FTDR,1727263,"Frontdoor, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FTRE,1965040,Fortrea,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FUL,39368,H.B. Fuller Company,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FULT,700564,Fulton Financial Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FUN,1999001,Six Flags,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+FWRD,912728,Forward Air Corp.,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GBX,923120,"The Greenbrier Companies, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GDYN,1743725,"Grid Dynamics Holdings, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GEO,923796,"GEO Group, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GFF,50725,Griffon Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GIII,821002,"G-III Apparel Group, Ltd.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GKOS,1192448,Glaukos Corp.,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GNL,1526113,"Global Net Lease, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GNW,1276520,"Genworth Financial, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GO,1771515,Grocery Outlet,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GOGO,1537054,"Gogo, Inc.",2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GOLF,1672013,Acushnet Company,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GPI,1031203,"Group 1 Automotive, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GRBK,1373670,"Green Brick Partners, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GSHD,1726978,"Goosehead Insurance, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GTES,1718512,Gates Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GTM,1794515,ZoomInfo,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GTY,1052752,Getty Realty Corp.,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+GVA,861459,"Granite Construction, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HAFC,1109242,Hanmi Financial Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HASI,1561894,"Hannon Armstrong Sustainable Infrastructure Capital, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HAYW,1834622,"Hayward Holdings, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HCC,1691303,"Warrior Met Coal, Inc.",2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HCI,1400810,"HCI Group, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HCSG,731012,"Healthcare Services Group, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HE,354707,"Hawaiian Electric Industries, Inc.",2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HFWA,1046025,Heritage Financial Corporation,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HIW,921082,Highwoods Properties,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HLIT,851310,Harmonic Inc.,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HLX,866829,"Helix Energy Solutions Group, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HMN,850141,Horace Mann Educators Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HNI,48287,HNI Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HOPE,1128361,"Hope Bancorp, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HP,46765,"Helmerich & Payne, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HRMY,1802665,"Harmony Biosciences Holdings, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HSTM,1095565,"HealthStream, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HTH,1265131,Hilltop Holdings Inc.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HTLD,799233,"Heartland Express, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HTO,766829,H2O America,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HTZ,1657853,Hertz,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HUBG,940942,"Hub Group, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HWKN,46250,"Hawkins, Inc.",2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+HZO,1057060,"MarineMax, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+IART,917520,Integra Lifesciences Holdings,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+IBP,1580905,"Installed Building Products, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ICHR,1652535,"Ichor Holdings, Ltd.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ICUI,883984,ICU Medical,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+IIIN,764401,"Insteel Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+IIPR,1677576,"Innovative Industrial Properties, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+INDB,776901,Independent Bank Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+INDV,1625297,Indivior,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+INSP,1609550,"Inspire Medical Systems, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+INSW,1679049,"International Seaways, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+INVA,1080014,"Innoviva, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+INVX,1042893,"Innovex International, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+IOSP,1054905,"Innospec, Inc.",2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+IPAR,822663,"Inter Parfums, Inc.",2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+IRDM,1418819,Iridium Communications,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ITGR,1114483,Integer Holdings Corporation,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ITRI,780571,"Itron, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+JBGS,1689796,JBG Smith,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+JBLU,1158463,JetBlue,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+JBSS,880117,"John B. Sanfilippo & Son, Inc.",2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+JBTM,1433660,JBT Marel Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+JJSF,785956,J&J Snack Foods Corp.,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+JOE,745308,St. Joe Company,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+JXN,1822993,"Jackson Financial, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KAI,886346,Kadant Inc.,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KALU,811596,Kaiser Aluminum Corporation,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KFY,56679,Korn/Ferry International,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KGS,1767042,"Kodiak Gas Services, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KLIC,56978,"Kulicke and Soffa Industries, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KMPR,860748,Kemper Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KMT,55242,Kennametal,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KMX,1170010,"CarMax, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KN,1587523,Knowles Corporation,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KNTK,1692787,"Kinetik Holdings, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KOP,1315257,"Koppers Holdings, Inc.",2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KRYS,1711279,"Krystal Biotech, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KSS,885639,Kohl's Corp.,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KTB,1760965,Kontoor Brands,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+KWR,81362,Quaker Chemical Corporation,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LAUR,912766,"Laureate Education, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LBRT,1694028,"Liberty Energy, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LCII,763744,LCI Industries,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LEG,58492,Leggett & Platt,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LFST,1845257,Lifestance Health,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LGIH,1580670,LGI Homes,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LGND,886163,"Ligand Pharmaceuticals, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LIF,1581760,Life360,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LKFN,721994,Lakeland Financial,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LKQ,1065696,LKQ Corporation,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LMAT,1158895,LeMaitre Vascular,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LNC,59558,Lincoln Financial,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LNN,836157,Lindsay Corporation,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LPG,1596993,Dorian LPG Ltd.,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LQDT,1235468,"Liquidity Services, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LRN,1157408,"Stride, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LTC,887905,"LTC Properties, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LTH,1869198,"Life Time Group Holdings, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LUMN,18926,Lumen Technologies,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LW,1679273,Lamb Weston,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LXP,910108,Lexington Realty Trust,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LYFT,1759509,"Lyft, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LZ,1286139,"LegalZoom.com, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+LZB,57131,"La-Z-Boy, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MAC,912242,Macerich,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MAN,871763,ManpowerGroup,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MARA,1507605,"MARA Holdings, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MATW,63296,Matthews International Corporation,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MATX,3453,"Matson, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MBC,1941365,"MasterBrand, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MBIN,1629019,Merchants Bancorp,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MC,1596967,Moelis & Company,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MCRI,907242,"Monarch Casino & Resort, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MCY,64996,Mercury General,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MD,893949,Pediatrix Medical Group,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MDU,67716,"MDU Resources Group, Inc.",2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MGEE,1161728,"MGE Energy, Inc.",2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MGY,1698990,"Magnolia Oil & Gas, Corp.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MHK,851968,Mohawk Industries,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MHO,799292,"M/I Homes, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MIR,1809987,"Mirion Technologies, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MKTX,1278021,MarketAxess,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MLKN,66382,"MillerKnoll, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MMI,1578732,"Marcus & Millichap, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MMSI,856982,"Merit Medical Systems, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MNRO,876427,"Monro, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MOH,1179929,Molina Healthcare,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MPT,1287865,Medical Properties Trust,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MRCY,1049521,Mercury Systems,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MRP,2017206,"Millrose Properties, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MRTN,799167,"Marten Transport, Ltd.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MSEX,66004,Middlesex Water Company,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MSGS,1636519,Madison Square Garden Sports Corp.,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MTCH,891103,Match Group,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MTH,833079,Meritage Homes Corporation,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MTRN,1104657,Materion Corp.,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MTUS,1598428,Metallus Inc,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MTX,891014,Minerals Technologies,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MWA,1350593,Mueller Water Products,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MXL,1288469,"MaxLinear, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+MYRG,700923,"MYR Group, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NABL,1834488,"N-able, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NATL,1974138,NCR Atleos,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NAVI,1593538,Navient,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NBHC,1475841,National Bank Holdings Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NBTB,790359,"NBT Bancorp, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NE,72207,Noble Corporation,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NEO,1077183,"NeoGenomics Laboratories, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NEOG,711377,Neogen,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NGVT,1653477,"Ingevity, Corp.",2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NHC,1047335,"National Healthcare, Corp.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NMIH,1547903,"NMI Holdings, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NOG,1104485,"Northern Oil and Gas, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NPK,80172,"National Presto Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NPO,1164863,"EnPro Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NSIT,932696,"Insight Enterprises, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NSP,1000753,Insperity,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NSSC,69633,Napco Security Technologies,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NTCT,1078075,"NETSCOUT Systems, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NTST,1798100,NETSTREIT Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NWBI,1471265,"Northwest Bancshares, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NWL,814453,Newell Brands,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NWN,1733998,NW Natural,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NX,1423221,Quanex Building Products Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+NXRT,1620393,"NexPoint Residential Trust, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OFG,1030469,OFG Bancorp,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OGN,1821825,Organon & Co.,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OI,812074,"O-I Glass, Inc.",2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OII,73756,"Oceaneering International, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OMCL,926326,Omnicell,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OPLN,1395942,"OPENLANE, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OSIS,1039065,"OSI Systems, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OSW,1758488,OneSpaWorld Holdings Limited,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OTTR,1466593,Otter Tail Corporation,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OUT,1579877,Outfront Media,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+OXM,75288,"Oxford Industries, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PAHC,1069899,Phibro Animal Health,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PARR,821483,"Par Pacific Holdings, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PATK,76605,"Patrick Industries, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PAYC,1590955,Paycom,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PAYO,1845815,Payoneer Global Inc.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PBH,1295947,Prestige Consumer Healthcare,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PBI,78814,"Pitney Bowes, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PCRX,1396814,"Pacira BioSciences, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PDFS,1120914,"PDF Solutions, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PEB,1474098,Pebblebrook Hotel Trust,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PECO,1476204,Phillips Edison & Company,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PENG,1616533,"Penguin Solutions, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PENN,921738,Penn Entertainment,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PFBC,1492165,Preferred Bank,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PFS,1178970,"Provident Financial Services, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PGNY,1551306,Progyny,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PHIN,1968915,"PHINIA, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PI,1114995,"Impinj, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PIPR,1230245,Piper Sandler Companies,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PJT,1626115,"PJT Partners, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PLAB,810136,"Photronics, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PLMR,1761312,"Palomar Holdings, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PLUS,1022408,"ePlus, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PLXS,785786,Plexus Corp.,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PMT,1464423,PennyMac Mortgage Investment Trust,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+POWI,833640,Power Integrations,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+POWL,80420,"Powell Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PPLI,1800227,People Inc.,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRAA,1185348,"PRA Group, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRDO,1046568,Perdoceo Education Corp.,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRG,1808834,"PROG Holdings, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRGO,1585364,Perrigo,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRGS,876167,Progress Software Corporation,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRIM,1361538,Primoris Services Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRK,805676,Park National Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRKS,1564902,United Parks & Resorts,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRLB,1443669,Protolabs,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRSU,884219,"Pursuit Attractions & Hospitality, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PRVA,1759655,"Privia Health Group, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PSMT,1041803,PriceSmart,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PTCT,1070081,"PTC Therapeutics, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PTEN,889900,"Patterson-UTI Energy, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PTGX,1377121,"Protagonist Therapeutics, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PTON,1639825,"Peloton Interactive, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+PZZA,901491,Papa John's Pizza,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+QDEL,1906324,QuidelOrtho,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+QNST,1117297,"QuinStreet, Inc.",2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+QRVO,1604778,Qorvo,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+QTWO,1410384,"Q2 Holdings, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RAL,2041385,Ralliant Corp,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RAMP,733269,"LiveRamp Holdings, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RCUS,1724521,"Arcus Biosciences, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RDN,890926,"Radian Group, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RDNT,790526,"RadNet, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RELY,1782170,Remitly,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RES,742278,"RPC, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+REX,744187,REX American Resources Corporation,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+REYN,1786431,Reynolds Consumer Products,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+REZI,1740332,"Resideo Technologies, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RHI,315213,Robert Half,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RHP,1040829,Ryman Hospitality Properties,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RITM,1556593,Rithm Capital,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RNG,1384905,"RingCentral, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RNST,715072,Renasant Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ROCK,912562,"Gibraltar Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ROG,84748,Rogers Corporation,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RRR,1653653,"Red Rock Resorts, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RUN,1469367,Sunrun,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RUSHA,1012019,Rush Enterprises,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RWT,930236,"Redwood Trust, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+RXO,1929561,"RXO, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SABR,1597033,Sabre,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SAFE,1095651,"Safehold, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SAFT,1172052,"Safety Insurance Group, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SAH,1043509,"Sonic Automotive, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SBCF,730708,Seacoast Banking Corporation of Florida,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SBH,1368458,"Sally Beauty Holdings, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SBSI,705432,"Southside Bancshares, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SCHL,866729,Scholastic Corporation,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SCL,94049,Stepan Company,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SCSC,918965,"ScanSource, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SDGR,1490978,"Schrödinger, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SEDG,1419612,SolarEdge,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SEM,1320414,"Select Medical Holdings, Corp.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SEZL,1662991,Sezzle,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SFBS,1430723,"ServisFirst Bancshares, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SFNC,90498,Simmons First National Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SHAK,1620533,"Shake Shack, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SHEN,354963,Shenandoah Telecommunications Co,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SHO,1295810,"Sunstone Hotel Investors, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SHOO,913241,"Steven Madden, Ltd.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SIG,832988,Signet Jewelers,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SKT,899715,"Tanger Factory Outlet Centers, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SKY,90896,"Champion Homes, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SKYW,793733,"SkyWest, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SLG,1040971,SL Green Realty,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SLVM,1856485,Sylvamo Corp.,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SM,893538,SM Energy Company,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SMP,93389,"Standard Motor Products, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SMPL,1702744,Simply Good Foods Company,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SNDR,1692063,Schneider National,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SNEX,913760,StoneX Group Inc.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SONO,1314727,"Sonos, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SPHR,1795250,Sphere Entertainment,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SPNT,1576018,SiriusPoint Ltd.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SPSC,1092699,"SPS Commerce, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SRPT,873303,Sarepta Therapeutics,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+STAA,718937,STAAR Surgical Company,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+STBA,719220,"S&T Bancorp, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+STC,94344,Stewart Information Services Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+STEL,1473844,"Stellar Bancorp, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+STEP,1796022,StepStone Group,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+STRA,1013934,"Strategic Education, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SUPN,1356576,"Supernus Pharmaceuticals, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SXI,310354,Standex International Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+SXT,310142,Sensient Technologies,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TALO,1724965,"Talos Energy, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TBBK,1295401,"The Bancorp, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TDC,816761,Teradata,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TDS,1051512,"Telephone and Data Systems, Inc.",2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TDW,98222,"Tidewater, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TFIN,1539638,"Triumph Bancorp, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TFX,96943,Teleflex,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TGTX,1001316,"TG Therapeutics, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+THRM,903129,Gentherm Incorporated,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TILE,715787,"Interface, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TMDX,1756262,"TransMedics Group, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TMP,1005817,Tompkins Financial Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TNC,97134,Tennant Company,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TNDM,1438133,Tandem Diabetes Care,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TR,98677,"Tootsie Roll Industries, Inc.",2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TRIP,1526520,TripAdvisor,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TRMK,36146,Trustmark Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TRN,99780,"Trinity Industries, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TRNO,1476150,Terreno Realty Corporation,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TRST,357301,TrustCo Bank Corp NY,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TRUP,1371285,Trupanion,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+TWO,1465740,Two Harbors Investment Corp.,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UA,1336917,Under Armour (Class C),2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UAA,1336917,Under Armour (Class A),2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UCB,857855,"United Community Banks, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UCTT,1275014,"Ultra Clean Holdings, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UE,1611547,Urban Edge Properties,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UFCS,101199,"United Fire Group, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UFPT,914156,"UFP Technologies, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UHT,798783,Universal Health Realty Income Trust,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UNF,717954,UniFirst Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UNFI,1020859,United Natural Foods Inc,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UNIT,2020795,Uniti Group,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UPBD,933036,"Upbound Group, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UPWK,1627475,"Upwork, Inc.",2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+URBN,912615,"Urban Outfitters, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+USPH,885978,"U.S. Physical Therapy, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UTI,1261654,Universal Technical Institute,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UTL,755001,Unitil Corporation,2026-07-01,,Utilities,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+UVV,102037,Universal Corporation,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VAC,1524358,Marriott Vacations Worldwide,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VCEL,887359,Vericel,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VCTR,1570827,"Victory Capital Holdings, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VCYT,1384101,"Veracyte, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VECO,103145,Veeco Instruments Inc.,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VGNT,2078008,Versigent PLC,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VIR,1706431,"Vir Biotechnology, Inc.",2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VIRT,1592386,"Virtu Financial, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VITL,1579733,"Vital Farms, Inc.",2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VRRM,1682745,Verra Mobility Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VRTS,883237,"Virtus Investment Partners, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VSAT,797721,"Viasat, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VSEC,102752,VSE Corporation,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VSH,103730,Vishay Intertechnology,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VSNT,2067876,"Versant Media Group, Inc.",2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VSTS,1967649,Vestis,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VSXY,1856437,Victoria's Secret,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VTOL,1525221,Bristow Group Inc.,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+VYX,70866,NCR Voyix,2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WABC,311094,Westamerica Bank,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WAFD,936528,"WaFd, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WAY,1990354,Waystar Holding Corp,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WD,1497770,"Walker & Dunlop, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WDFC,105132,WD-40 Company,2026-07-01,,Consumer Staples,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WEN,105668,The Wendy's Company,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WERN,793074,Werner Enterprises,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WGO,107687,"Winnebago Industries, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WHD,1699136,"Cactus, Inc.",2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WINA,908315,Winmark,2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WKC,789460,World Kinect Corporation,2026-07-01,,Energy,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WLY,107140,John Wiley & Sons,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WOR,108516,Worthington Enterprises,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WRLD,108385,World Acceptance Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WS,1968487,Worthington Steel,2026-07-01,,Materials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WSC,1647088,WillScot Holdings Corp.,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WSFS,828944,WSFS Financial Corporation,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WSR,1175535,Whitestone REIT,2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WT,880631,"WisdomTree Investments, Inc.",2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WU,1365135,Western Union,2026-07-01,,Financials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+WWW,110471,"Wolverine World Wide, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+XHR,1616000,"Xenia Hotels & Resorts, Inc.",2026-07-01,,Real Estate,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+XNCR,1326732,Xencor Inc,2026-07-01,,Health Care,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+XPEL,1767258,"XPEL, Inc.",2026-07-01,,Consumer Discretionary,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+YELP,1345016,"Yelp, Inc.",2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+YOU,1856314,"Clear Secure, Inc.",2026-07-01,,Information Technology,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ZD,1084048,Ziff Davis,2026-07-01,,Communication Services,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z
+ZWS,1439288,Zurn Elkay Water Solutions Corp.,2026-07-01,,Industrials,sp600,wiki rev 1361863284 2026-06-30T14:55:17Z

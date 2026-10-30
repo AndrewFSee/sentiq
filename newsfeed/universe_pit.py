@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -78,6 +79,128 @@ def parse_wiki_table(html: str) -> list[dict[str, str]]:
         if len(td) > max(ix.values()):
             rows.append({k: td[i] for k, i in ix.items()})
     return rows
+
+
+INDEX_PAGES = {"sp400": "List_of_S&P_400_companies", "sp600": "List_of_S&P_600_companies"}
+
+
+def wiki_revision_html(title: str, at: date, client: httpx.Client) -> tuple[int, str, str]:
+    """(revid, timestamp, html) of the last revision of ``title`` before ``at`` 00:00 UTC."""
+    r = client.get(
+        WIKI_API,
+        params={
+            "action": "query",
+            "prop": "revisions",
+            "titles": title,
+            "rvlimit": 1,
+            "rvstart": f"{at.isoformat()}T00:00:00Z",
+            "rvdir": "older",
+            "rvprop": "ids|timestamp",
+            "format": "json",
+        },
+    ).json()
+    rev = next(iter(r["query"]["pages"].values()))["revisions"][0]
+    html = client.get("https://en.wikipedia.org/w/index.php", params={"oldid": rev["revid"]}).text
+    return int(rev["revid"]), rev["timestamp"], html
+
+
+def parse_index_table(html: str) -> list[dict[str, object]]:
+    """Constituents of an S&P 400 / 600 page: ticker, name, sector, cik (from a CIK column, or
+    a numeric CIK in the SEC link; None when the page only links by ticker)."""
+    soup = BeautifulSoup(html, "lxml")
+    t = soup.find("table", {"id": "constituents"}) or soup.find("table", class_="wikitable")
+    if t is None:
+        raise ValueError("constituents table not found")
+    hdr = [th.get_text(" ", strip=True).lower() for th in t.find("tr").find_all("th")]
+
+    def col(*names: str) -> int | None:
+        return next((i for i, h in enumerate(hdr) if any(n in h for n in names)), None)
+
+    i_t, i_n, i_s, i_c = col("symbol", "ticker"), col("security"), col("gics sector"), col("cik")
+    if i_t is None or i_n is None or i_s is None:
+        raise ValueError(f"unexpected header {hdr}")
+    rows = []
+    for tr in t.find_all("tr")[1:]:
+        cells = tr.find_all("td")
+        if len(cells) <= max(i_t, i_n, i_s):
+            continue
+        cik = None
+        if i_c is not None and len(cells) > i_c:
+            digits = re.sub(r"\D", "", cells[i_c].get_text())
+            cik = int(digits) if digits else None
+        if cik is None:
+            m = re.search(
+                r"CIK=0*(\d+)(?:&|$)", " ".join(a.get("href", "") for a in tr.find_all("a"))
+            )
+            cik = int(m.group(1)) if m else None
+        rows.append(
+            {
+                "ticker": normalize_ticker(cells[i_t].get_text(" ", strip=True)),
+                "name": cells[i_n].get_text(" ", strip=True),
+                "sector": cells[i_s].get_text(" ", strip=True),
+                "cik": cik,
+            }
+        )
+    return rows
+
+
+def freeze_index_members(
+    rows: list[dict[str, object]],
+    index: str,
+    as_of: date,
+    ticker_to_cik: dict[str, int],
+    sp500: pl.DataFrame,
+    exclude_ciks: set[int] | None = None,
+    note: str = "",
+) -> tuple[pl.DataFrame, list[str], list[str]]:
+    """Frozen extra-member rows (ticker, cik, name, start = as_of, end, sector, index, note) for
+    one index snapshot. Missing CIKs come from ``ticker_to_cik`` (SEC's *current* map, so a
+    ticker changed since ``as_of`` stays unmapped and is reported, never guessed). Companies in
+    the S&P 500 on ``as_of`` (``sp500`` spells: ticker, cik, start, end) or in ``exclude_ciks``
+    are excluded; one that joins the S&P 500 later keeps its row with ``end`` = the first such
+    join date, so its spells never overlap. Returns (frame, unmapped tickers, excluded)."""
+    far = date(9999, 1, 1)
+    spells = sp500.with_columns(pl.col("end").fill_null(far))
+    by_cik: dict[int, list[tuple[date, date]]] = {}
+    by_ticker: dict[str, list[tuple[date, date]]] = {}
+    for r in spells.iter_rows(named=True):
+        by_cik.setdefault(int(r["cik"]), []).append((r["start"], r["end"]))
+        by_ticker.setdefault(r["ticker"], []).append((r["start"], r["end"]))
+    out, unmapped, excluded = [], [], []
+    for r in rows:
+        ticker = str(r["ticker"])
+        cik = r["cik"] if r["cik"] is not None else ticker_to_cik.get(ticker)
+        if cik is None:
+            unmapped.append(ticker)
+            continue
+        own = by_cik.get(int(cik), []) + by_ticker.get(ticker, [])
+        if int(cik) in (exclude_ciks or set()) or any(s <= as_of < e for s, e in own):
+            excluded.append(ticker)
+            continue
+        later = [s for s, _ in own if s > as_of]
+        out.append(
+            {
+                "ticker": ticker,
+                "cik": int(cik),
+                "name": r["name"],
+                "start": as_of,
+                "end": min(later) if later else None,
+                "sector": r["sector"],
+                "index": index,
+                "note": note,
+            }
+        )
+    schema = {
+        "ticker": pl.String,
+        "cik": pl.Int64,
+        "name": pl.String,
+        "start": pl.Date,
+        "end": pl.Date,
+        "sector": pl.String,
+        "index": pl.String,
+        "note": pl.String,
+    }
+    return pl.DataFrame(out, schema=schema), unmapped, excluded
 
 
 def fetch_wiki_monthly(
@@ -244,27 +367,38 @@ class PitUniverse:
 
     @classmethod
     def load_for(cls, ucfg: UniverseConfig) -> PitUniverse:
-        """The configured universe: the stored S&P 500 tables plus ``extra_members`` (added in
-        memory only; the stored tables, and so their content hash, never include extras)."""
-        return cls.load(ucfg.pit_dir).with_extras(ucfg.extra_members)
+        """The configured universe: the stored S&P 500 tables plus ``extra_members`` and the
+        members of ``extra_members_file`` (added in memory only; the stored tables, and so their
+        content hash, never include extras)."""
+        return cls.load(ucfg.pit_dir).with_extras(ucfg.all_extra_members())
 
     def with_extras(self, extras: list[ExtraMember]) -> PitUniverse:
-        """Add non-PIT extra members (open spells from ``start``, sector valid from ``start``).
-        A ticker or CIK that is already in the S&P 500 tables is rejected: the extras are
-        meant to be companies the index never held, so no spell can overlap."""
+        """Add extra members (open spells from ``start``, sector valid from ``start``). An extra
+        must not overlap in time with an S&P 500 spell of the same ticker or CIK (it may follow
+        one: a company dropped from the S&P 500 into the MidCap 400, for example)."""
         if not extras:
             return self
-        known_t, known_c = set(self.members["ticker"]), set(self.members["cik"])
+        far = date(9999, 1, 1)
+        spells = self.members.with_columns(pl.col("end").fill_null(far))
+        by_t: dict[str, list[tuple[date, date]]] = {}
+        by_c: dict[int, list[tuple[date, date]]] = {}
+        for r in spells.iter_rows(named=True):
+            by_t.setdefault(r["ticker"], []).append((r["start"], r["end"]))
+            by_c.setdefault(int(r["cik"]), []).append((r["start"], r["end"]))
         for e in extras:
-            if e.ticker in known_t or e.cik in known_c:
-                raise ValueError(f"extra member {e.ticker} (CIK {e.cik}) is already in the S&P 500")
+            for s, end in by_t.get(e.ticker, []) + by_c.get(e.cik, []):
+                if end > e.start and s < (e.end or far):  # [e.start, e.end) meets [s, end)
+                    raise ValueError(
+                        f"extra member {e.ticker} (CIK {e.cik}) overlaps an S&P 500 spell "
+                        f"{s} -> {'open' if end == far else end}"
+                    )
         if len({e.ticker for e in extras}) != len(extras):
             raise ValueError("duplicate ticker in extra_members")
         members = pl.concat(
             [
                 self.members,
                 pl.DataFrame(
-                    [(e.ticker, e.cik, e.name, e.start, None) for e in extras],
+                    [(e.ticker, e.cik, e.name, e.start, e.end) for e in extras],
                     schema=self.members.schema,
                     orient="row",
                 ),

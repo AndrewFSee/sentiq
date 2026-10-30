@@ -1002,3 +1002,24 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   Motivated by the 37 unsure labels, where reaffirmations (5 guidance vs 6 other),
   pre-announcements and operating guidance had been labelled both ways. For future labelling
   and any new prompt version only; `score_v1` (frozen), existing scores, H1 and H2 unchanged.
+- 2026-10-29 PRE-REGISTERED **H3** (user decisions: S&P 1000; two-stage look; own α), written
+  before any S&P 1000 data was collected. An independent replication of H1 on other companies.
+  **Universe:** S&P MidCap 400 + SmallCap 600 constituents as of 2026-07-01 (Wikipedia page
+  revisions at or before that date), frozen: every company stays in the sample until the end of
+  the test (acquired/delisted names stop filing and are priced as delisted); no overlap with the
+  S&P 500 or the Nasdaq extras. **Data:** 8-Ks from 2026-07-01 (backfill rule, published + 60 s
+  → session, until live collection of these companies starts; live rule afterwards), scored
+  unmasked with Haiku 5.5 prompt 6108c555090fa4b3 (if retired: re-planned, not switched);
+  features as H1 (`sp500_noemb` feature settings, link policy) on the frozen universe.
+  **Test:** H1's definition — earnings sample (`sample_event_types: [earnings]`),
+  `1d_llm_sent_cwmean`, close entry, h = 2, market-adjusted (SPY), pooled rank IC, circular
+  block bootstrap over sessions, ≥ 10,000 reps; pass = IC > 0 with one-sided p below the
+  stage threshold. **Two-stage look** (Lan-DeMets O'Brien-Fleming spending, overall one-sided
+  α = 0.025, information fraction ≈ 0.8 at stage 1; thresholds fixed now): stage 1 on/after
+  **2027-05-31** (after the Q1-2027 season), pass if one-sided p < **0.012** → stop; else stage
+  2 on/after **2027-08-31**, pass if one-sided p < **0.023**. Only rows whose label ends before
+  the look date count. **α:** H3 is its own family (one-sided 0.025 overall); H1 and H2 keep
+  their thresholds. Planning numbers (assumed, not tested): ~1,000 earnings events per season
+  → ~4,000 at stage 1, ~5,000 at stage 2; power ≈ 63% overall at IC 0.03 (≈ 45% to stop at
+  stage 1), ≈ 35% at IC 0.02 (S&P 500 small caps showed IC ≈ 0.01–0.02). Other cells reported
+  as exploratory; sector-adjusted reported (SPY is a large-cap benchmark for small caps).

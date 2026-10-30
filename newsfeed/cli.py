@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
+import httpx
 import numpy as np
 import polars as pl
 import typer
@@ -851,6 +852,76 @@ def universe_cmd(
     )
     for e in uc.extra_members:
         typer.echo(f"  + extra ({e.index}, not PIT): {e.ticker} {e.name} from {e.start}")
+
+
+@app.command("universe-freeze")
+def universe_freeze_cmd(
+    as_of: Annotated[str, typer.Option(help="Freeze date (members of the last revision before)")],
+    out: Annotated[str, typer.Option(help="CSV to write (versioned, e.g. config/universe/...)")],
+    indices: Annotated[str, typer.Option(help="Comma-separated: sp400, sp600")] = "sp400,sp600",
+    cik_overrides: Annotated[
+        str | None,
+        typer.Option(
+            help="TICKER=CIK,... for members whose ticker is gone from SEC's current map "
+            "(acquired / delisted after the freeze date; verify each against its filings)"
+        ),
+    ] = None,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Freeze S&P 400 / 600 membership as of a date into an extra-members CSV (H3, 2026-10-29):
+    Wikipedia revisions before ``as_of``, CIKs from the page or SEC's ticker map, companies in
+    the S&P 500 on that date or in ``universe.extra_members`` excluded."""
+    from newsfeed.universe_pit import (
+        INDEX_PAGES,
+        freeze_index_members,
+        parse_index_table,
+        wiki_revision_html,
+    )
+    from newsfeed.universe_pit import UA as WIKI_UA
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    day = date.fromisoformat(as_of)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        sp500 = PitUniverse.load(cfg.universe.pit_dir).members
+        nasdaq = {e.cik for e in cfg.universe.extra_members}
+        # manual CIKs only fill tickers the current SEC map lacks (never override a mapping)
+        manual = {
+            t.strip().upper(): int(c) for t, c in (p.split("=") for p in _split(cik_overrides))
+        }
+        t2c = {**manual, **ctx.tmap.ticker_to_cik}
+        client = httpx.Client(headers={"User-Agent": WIKI_UA}, timeout=120, follow_redirects=True)
+        frames = []
+        for idx in _split(indices):
+            revid, ts, html = wiki_revision_html(INDEX_PAGES[idx], day, client)
+            rows = parse_index_table(html)
+            df, unmapped, excluded = freeze_index_members(
+                rows, idx, day, t2c, sp500, nasdaq, note=f"wiki rev {revid} {ts}"
+            )
+            typer.echo(
+                f"{idx}: revision {revid} ({ts}): {len(rows)} rows -> {df.height} kept, "
+                f"{len(excluded)} excluded (S&P 500 / extras) {excluded}, "
+                f"{len(unmapped)} without CIK {unmapped}; "
+                f"{df.filter(pl.col('end').is_not_null()).height} later joined the S&P 500"
+            )
+            frames.append(df)
+        frozen = pl.concat(frames)
+        dup = frozen.group_by("ticker").len().filter(pl.col("len") > 1)
+        if dup.height:
+            typer.echo(
+                f"WARNING: tickers in both indices, keeping the first: {dup['ticker'].to_list()}"
+            )
+            frozen = frozen.unique("ticker", keep="first", maintain_order=True)
+        path = Path(out)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        frozen.sort("index", "ticker").write_csv(path)
+        stats["written"] = frozen.height
+        typer.echo(f"{frozen.height} companies -> {path}")
+
+    params = {"as_of": as_of, "out": out, "indices": indices, "cik_overrides": cik_overrides}
+    _run("universe-freeze", cfg, params, body)
 
 
 @app.command("coverage")

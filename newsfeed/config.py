@@ -48,6 +48,9 @@ class ExtraMember(_Strict):
     cik: int
     name: str
     start: date  # later of the study start and the listing date
+    # exclusive; set when the company later joins the S&P 500 (that spell takes over), so the
+    # two never overlap. A frozen sample (H3) still selects the company by the list itself.
+    end: date | None = None
     sector: str  # GICS sector name as in the S&P sector table (sector-adjusted returns)
     index: str = "nasdaq100"
     note: str = ""
@@ -81,12 +84,37 @@ class UniverseConfig(_Strict):
     # sp500_pit only: companies added on top of the S&P 500 membership (not PIT, see
     # ExtraMember). Empty = the S&P 500 alone; ids/hashes then match configs without the field.
     extra_members: list[ExtraMember] = Field(default_factory=list)
+    # a CSV of further extras (columns as ExtraMember: ticker, cik, name, start, sector, index,
+    # note), e.g. the frozen S&P 1000 list of H3; relative paths resolve against the project root
+    extra_members_file: Path | None = None
+
+    def file_extra_members(self) -> list[ExtraMember]:
+        if self.extra_members_file is None:
+            return []
+        import csv
+
+        with self.extra_members_file.open(encoding="utf-8", newline="") as f:
+            return [
+                ExtraMember(**{k: v for k, v in row.items() if v not in (None, "")})
+                for row in csv.DictReader(f)
+            ]
+
+    def all_extra_members(self) -> list[ExtraMember]:
+        return [*self.extra_members, *self.file_extra_members()]
 
     def hashable(self) -> dict:
-        """model_dump for content hashes: drops pit_dir (a path) and an empty extra_members,
-        so configs written before the field existed keep their feature-set ids."""
-        exclude = {"pit_dir"} | (set() if self.extra_members else {"extra_members"})
-        return self.model_dump(mode="json", exclude=exclude)
+        """model_dump for content hashes: drops pit_dir (a path), an empty extra_members and the
+        extras file's path (its *content* is hashed instead), so configs written before these
+        fields existed keep their feature-set ids."""
+        exclude = {"pit_dir", "extra_members_file"} | (
+            set() if self.extra_members else {"extra_members"}
+        )
+        out = self.model_dump(mode="json", exclude=exclude)
+        if self.extra_members_file is not None:
+            out["extra_members_file_sha256"] = hashlib.sha256(
+                self.extra_members_file.read_bytes()
+            ).hexdigest()
+        return out
 
     @field_validator("tickers")
     @classmethod
@@ -479,6 +507,9 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
     uni = cfg.universe
     if not uni.pit_dir.is_absolute():
         uni = uni.model_copy(update={"pit_dir": (root or PROJECT_ROOT) / uni.pit_dir})
+    if uni.extra_members_file is not None and not uni.extra_members_file.is_absolute():
+        # a versioned list that ships with the code (config/universe/): resolve vs. project
+        uni = uni.model_copy(update={"extra_members_file": PROJECT_ROOT / uni.extra_members_file})
     for key in ("lm_dictionary", "embedding_cache"):  # reference data lives with the project
         if not getattr(feats, key).is_absolute():
             feats = feats.model_copy(update={key: PROJECT_ROOT / getattr(feats, key)})

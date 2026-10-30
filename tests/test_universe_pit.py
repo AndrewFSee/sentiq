@@ -14,7 +14,9 @@ from newsfeed.universe_pit import (
     PitUniverse,
     _cik_segments,
     build_tables,
+    freeze_index_members,
     membership_intervals,
+    parse_index_table,
     parse_wiki_table,
 )
 
@@ -146,10 +148,91 @@ def test_extra_members_join_from_their_start_and_never_overlap_the_index():
     assert w[99] == (date(2023, 12, 21), date(2026, 1, 1))
     etf = u.sector_etf_frame({"Information Technology": "XLK"}).filter(pl.col("ticker") == "XTRA")
     assert etf["etf"].to_list() == ["XLK"]
-    with pytest.raises(ValueError, match="already in the S&P 500"):
+    with pytest.raises(ValueError, match="overlaps"):
         base.with_extras([x.model_copy(update={"ticker": "META"})])
-    with pytest.raises(ValueError, match="already in the S&P 500"):
+    with pytest.raises(ValueError, match="overlaps"):
         base.with_extras([x.model_copy(update={"cik": 2})])
+
+
+SP400_HTML = """<table class="wikitable" id="constituents"><tr><th>Symbol</th><th>Security</th>
+<th>GICS Sector</th><th>GICS Sub-Industry</th><th>Headquarters Location</th>
+<th>SEC filings</th></tr>
+<tr><td>AA</td><td>Alcoa</td><td>Materials</td><td>x</td><td>y</td>
+<td><a href="https://www.sec.gov/cgi-bin/browse-edgar?CIK=AA&action=getcompany">r</a></td></tr>
+<tr><td>BRK.B</td><td>Num</td><td>Financials</td><td>x</td><td>y</td>
+<td><a href="https://www.sec.gov/cgi-bin/browse-edgar?CIK=0000012345&action=getcompany">r</a></td></tr>
+</table>"""
+SP600_HTML = """<table class="wikitable" id="constituents"><tr><th>Symbol</th><th>Security</th>
+<th>GICS Sector</th><th>GICS Sub-Industry</th><th>Headquarters Location</th><th>SEC filings</th>
+<th>CIK</th></tr><tr><td>AAMI</td><td>Acadian</td><td>Financials</td><td>x</td><td>y</td>
+<td>r</td><td>0001748824</td></tr></table>"""
+
+
+def test_parse_index_table_takes_cik_from_column_or_numeric_link_only():
+    a, b = parse_index_table(SP400_HTML)
+    assert (a["ticker"], a["cik"]) == ("AA", None)  # the link names a ticker, not a CIK
+    assert (b["ticker"], b["cik"]) == ("BRK-B", 12345)  # normalised ticker, numeric CIK in link
+    (c,) = parse_index_table(SP600_HTML)
+    assert (c["ticker"], c["cik"], c["sector"]) == ("AAMI", 1748824, "Financials")
+
+
+def test_freeze_excludes_current_sp500_members_and_ends_at_a_later_promotion():
+    day = date(2026, 7, 1)
+    sp500 = pl.DataFrame(
+        {"ticker": ["IN", "UP", "OLD"], "cik": [1, 2, 3],
+         "start": [date(2019, 1, 1), date(2026, 10, 1), date(2019, 1, 1)],
+         "end": [None, None, date(2024, 6, 24)]},
+        schema={"ticker": pl.String, "cik": pl.Int64, "start": pl.Date, "end": pl.Date},
+    )  # fmt: skip
+    rows = [
+        {"ticker": t, "name": t, "sector": "Industrials", "cik": c}
+        for t, c in [("IN", 1), ("UP", 2), ("OLD", 3), ("NEW", None), ("GONE", None), ("NQ", 9)]
+    ]
+    df, unmapped, excluded = freeze_index_members(
+        rows, "sp400", day, {"NEW": 7}, sp500, exclude_ciks={9}
+    )
+    assert excluded == ["IN", "NQ"] and unmapped == ["GONE"]  # in the S&P 500 / an extra
+    got = {r["ticker"]: r for r in df.to_dicts()}
+    assert got["UP"]["end"] == date(2026, 10, 1)  # promoted later: stops where that spell starts
+    assert got["OLD"]["end"] is None  # left the S&P 500 before the freeze: a plain member
+    assert got["NEW"]["cik"] == 7 and all(r["start"] == day for r in got.values())
+    # the frozen rows load into the universe without any overlapping spell
+    members, sectors, _ = build_tables(FJA, WIKI, date(2019, 1, 1))
+    PitUniverse(sp500.with_columns(pl.col("ticker").alias("name")).select(members.columns),
+                sectors.head(0)).with_extras(
+        [ExtraMember(**{k: v for k, v in r.items() if v is not None}) for r in got.values()]
+    )  # fmt: skip
+
+
+def test_extra_members_may_follow_but_not_overlap_an_sp500_spell():
+    members, sectors, _ = build_tables(FJA, WIKI, date(2019, 1, 1))
+    base = PitUniverse(members, sectors)
+    old = dict(ticker="OLD", cik=3, name="Old", sector="Industrials")  # left 2020-03-02
+    base.with_extras([ExtraMember(**old, start=date(2021, 1, 1))])
+    with pytest.raises(ValueError, match="overlaps"):
+        base.with_extras([ExtraMember(**old, start=date(2020, 1, 1))])
+    # a spell that ends before an S&P 500 spell starts is fine
+    new = dict(ticker="NEW", cik=5, name="New", sector="Industrials")  # joined 2022-08-01
+    base.with_extras([ExtraMember(**new, start=date(2021, 1, 1), end=date(2022, 8, 1))])
+    with pytest.raises(ValueError, match="overlaps"):
+        base.with_extras([ExtraMember(**new, start=date(2021, 1, 1))])
+
+
+def test_extra_members_file_loads_and_its_content_is_hashed(tmp_path):
+    f = tmp_path / "extras.csv"
+    f.write_text(
+        "ticker,cik,name,start,end,sector,index,note\n"
+        "AAA9,999,A Co,2026-07-01,,Industrials,sp400,x\n"
+        "BBB9,998,B Co,2026-07-01,2026-10-01,Financials,sp600,y\n",
+        encoding="utf-8",
+    )
+    u = UniverseConfig(mode="sp500_pit", extra_members_file=f)
+    a, b = u.all_extra_members()
+    assert (a.cik, a.end, b.end) == (999, None, date(2026, 10, 1))
+    h1 = u.hashable()
+    assert "extra_members_file" not in h1 and "extra_members_file_sha256" in h1
+    f.write_text(f.read_text(encoding="utf-8").replace("A Co", "A Corp"), encoding="utf-8")
+    assert u.hashable() != h1  # a changed list changes the ids; a moved file would not
 
 
 def test_empty_extras_leave_universe_hashes_unchanged():
