@@ -27,6 +27,7 @@ from newsfeed.ingest.base import RawItem
 from newsfeed.ingest.runner import build_row
 from newsfeed.scoring.runner import plan_targets
 from newsfeed.storage import Store
+from newsfeed.tickers import TickerHolders
 
 from .fake_llm import FakeLLM, default_output, user_text
 from .news_env import (
@@ -186,6 +187,32 @@ def test_member_spans_restrict_rows_without_changing_values(env):
     ]
     keyed = full.join(df.select("ticker", "as_of"), on=["ticker", "as_of"], how="semi")
     assert_frame_equal(df, keyed.sort("as_of", "ticker"))
+
+
+def test_shared_ticker_gets_only_its_holders_events(env):
+    """A ticker another company once held (IR: Ingersoll-Rand plc -> Trane, which stayed a
+    member as TT): a static CIK -> tickers map sends that company's events to it as well;
+    ``holders`` keeps them out while the ticker belongs to someone else."""
+    times = [utc(2026, 7, 31, 19, 50)]
+    t2c = {t: c for c, ts in env.c2t.items() for t in ts}
+    aapl, msft = t2c["AAPL"], t2c["MSFT"]
+    shared = {c: [*ts, "AAPL"] if c == msft else ts for c, ts in env.c2t.items()}
+    holders = TickerHolders.from_spells(
+        [
+            ("AAPL", msft, date(2010, 1, 1), date(2020, 1, 1)),
+            ("MSFT", msft, date(2010, 1, 1), None),
+            ("AAPL", aapl, date(2020, 1, 1), None),
+        ]
+    )
+    base = feats(env, times, tickers=["AAPL"])
+    leaky = build_features(env.store, env.cfg, times, shared, env.sources(), tickers=["AAPL"])
+    fixed = build_features(
+        env.store, env.cfg, times, shared, env.sources(), tickers=["AAPL"], holders=holders
+    )
+    assert (
+        row(leaky, "AAPL", times[0])["5d_n_stories"] > row(base, "AAPL", times[0])["5d_n_stories"]
+    )
+    assert_frame_equal(fixed, base)
 
 
 def test_window_boundaries_exact(env):

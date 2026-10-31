@@ -33,7 +33,7 @@ import polars as pl
 from bs4 import BeautifulSoup
 
 from newsfeed.config import ExtraMember, UniverseConfig
-from newsfeed.tickers import Universe, normalize_ticker
+from newsfeed.tickers import TickerHolders, Universe, normalize_ticker
 
 log = logging.getLogger(__name__)
 
@@ -434,6 +434,12 @@ class PitUniverse:
         for r in m.select("cik", "ticker").unique().to_dicts():
             c2t.setdefault(int(r["cik"]), []).append(r["ticker"])
         return Universe({k: sorted(v) for k, v in c2t.items()})
+
+    def holders(self) -> TickerHolders:
+        """Who held each shared ticker when (see ``TickerHolders``)."""
+        return TickerHolders.from_spells(
+            self.members.select("ticker", "cik", "start", "end").rows()
+        )
 
     def titles(self) -> dict[int, str]:
         return {

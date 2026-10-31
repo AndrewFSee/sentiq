@@ -124,7 +124,8 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   and "on Facebook/LinkedIn…" boilerplate are stripped before name matching.
 - A name mention links all share classes of the CIK (GOOG + GOOGL); `cik` is stored so M3 can
   score per entity.
-- `linker_id` = LINKER_VERSION + hash(universe, aliases, titles); a change triggers a relink.
+- `linker_id` = LINKER_VERSION + hash(universe, aliases, titles, shared-ticker spells); a change
+  triggers a relink.
   The `item_tickers` view keeps the newest batch per item; a NULL-ticker row marks "linked,
   nothing found".
 
@@ -253,6 +254,16 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   decision date (`build_features(member_spans=...)`).
 - `PitUniverse.as_universe()` maps each CIK to *all* tickers it ever had (FB and META); the
   membership filter decides which ticker carries a row on a given day.
+- Shared tickers (`tickers.TickerHolders`, linker v4, FEATURE_VERSION 2): a ticker two CIKs
+  held (IR: Ingersoll-Rand plc/Trane → Gardner Denver 2020-04; BBT: BB&T/Truist → Beacon
+  2026-07) is resolved by date. Linking: source tags use the item's own CIK (`meta.cik`: EDGAR
+  filer, transcript company), other tags the holder on the publication date (nearest spell
+  outside membership), name mentions their own CIK. Fan-out (`load_events`,
+  `Context.fan_out` for event studies): CIK c's event on date d reaches shared ticker t only
+  if c holds t on d, or c is a member under no ticker on d and c and the holder are never
+  members together from d on (re-registrations and Wikipedia's CIK lag: DIS 2019, VIAC
+  filed by CBS's CIK, FOX/FOXA 2019–20). Event studies take the event's CIK from the current
+  link whose canonical ticker the score is stored under, not the score's own `cik`.
 
 ## Prices (M6, `eval/prices.py`)
 - `route_prices`: SEC's current map still gives the ticker to one of its CIKs → Tradier
@@ -1023,3 +1034,31 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   → ~4,000 at stage 1, ~5,000 at stage 2; power ≈ 63% overall at IC 0.03 (≈ 45% to stop at
   stage 1), ≈ 35% at IC 0.02 (S&P 500 small caps showed IC ≈ 0.01–0.02). Other cells reported
   as exploratory; sector-adjusted reported (SPY is a large-cap benchmark for small caps).
+- 2026-10-30 (user decision) SHARED-TICKER FIX (found by duplicate-pair warnings while planning
+  the S&P 1000 scoring). Links resolved a ticker held by two CIKs to an arbitrary one of them,
+  and features / event studies fanned each CIK out to every ticker it ever had, filtered only
+  by the ticker's membership. Different companies were mixed: IR ← Trane (Trane kept
+  Ingersoll-Rand plc's CIK; from 2020-04 IR is Gardner Denver): 66 Trane 8-Ks, 27 10-K/Qs,
+  54 news, 22 calls landed on IR, and Gardner Denver's 74 8-Ks / 26 10-K/Qs on TT, which were
+  also scored with Trane named as the target; BBT ↔ Truist/Beacon (H3 extra); 15 CBS 8-Ks on
+  VIAB in 2019 (VIAC ambiguity); 27 Truist 10-K/Qs missed TFC. Fix (`TickerHolders`, linker
+  v4, FEATURE_VERSION 2; rules under "Universe" above; tests in test_linking/test_features):
+  source tags use the item's own CIK, other tags the holder by date, fan-out date-aware.
+  Re-registrations (DIS, MDT, CI, AVGO, XOM, APA, …) and Wikipedia's CIK lag (Fox Corp
+  2019–20, ViacomCBS filing as CBS) are unchanged. Full relink run 20261030T122659Z-59047f
+  (173,455 items, ~55 min, run alone; collector kept polling). Consequences: (1) H1/H2
+  definitions unchanged; their holdout rows for IR/TT (and VIAB 2019, pre-holdout) are now
+  correct — rows computed differently from the pre-holdout tests 1–10, which ran with the bug
+  on ~2 of ~500 tickers (not re-run). (2) Not fixed: scores are keyed (item, canonical
+  ticker) and Trane's and Gardner Denver's canonical tickers are both IR, so Gardner Denver
+  items keep their cached scores from the Trane-named prompt (~100 8-K/10-K/Q, sentiment
+  read from the filing itself), and an item linking both companies gets one score for both
+  (same for BBT with Truist/Beacon). Changing canonical tickers would re-key all of Trane's
+  scores; left as is. (3) S&P 1000 history scored only after the relink, so Beacon's filings
+  are scored under Beacon's name.
+- 2026-10-30 H3 data so far: S&P 1000 8-K backfill 2026-04-01 → 10-29 (run
+  20261030T031317Z-71f854; 6,433 filings, 0 failures; history before 2026-07-01 only feeds the
+  volume / novelty baselines), live collection of the 1,000 CIKs since 10-29. Scored after the
+  shared-ticker relink: batch msgbatch_01SXLKXtDCRczbTiTSCjgXGc, 3,634 requests from
+  tradable 2026-06-20 (3,629 ok, 5 max_tokens), $1.14; the live hook had already scored 454
+  recent S&P 1000 filings ($0.52) on 10-29/30.

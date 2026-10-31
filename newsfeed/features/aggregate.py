@@ -43,9 +43,10 @@ from newsfeed.features.embeddings import max_prior_similarity
 from newsfeed.scoring.schema import EVENT_TYPES
 from newsfeed.scoring.targets import canonical_tickers
 from newsfeed.storage import Store
+from newsfeed.tickers import TickerHolders
 from newsfeed.timeutil import MarketCalendar, ensure_utc
 
-FEATURE_VERSION = 1
+FEATURE_VERSION = 2  # 2: events reach a shared ticker (IR, BBT) only while their CIK holds it
 RELEVANCE_RANK = {"passing": 0, "secondary": 1, "primary": 2}
 _US = 1_000_000  # microseconds per second
 
@@ -118,8 +119,11 @@ def load_events(
     as_of_max: datetime,
     cik_to_tickers: dict[int, list[str]],
     src: FeatureSources,
+    holders: TickerHolders | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """(volume rows, founder event rows), one row per (item, ticker), times in UTC micros."""
+    """(volume rows, founder event rows), one row per (item, ticker), times in UTC micros.
+    With ``holders``, an event reaches a ticker two CIKs held only while its company held it
+    (by the New York date of ``tradable_at``)."""
     items = store.items_as_of(
         as_of_max,
         columns="item_id, source, publisher, title, tradable_at, ingest_mode, text_hash",
@@ -150,10 +154,18 @@ def load_events(
         .join(stories, on="item_id", how="left")
         .join(fan, on="cik")
         .join(canon_df, on="cik")
-        .with_columns(
-            pl.col("tradable_at").dt.epoch("us").alias("t_trad"),
-            pl.coalesce("story_id", "item_id").alias("story_id"),
-        )
+    )
+    if holders is not None:
+        base = holders.restrict(
+            base.with_columns(
+                pl.col("tradable_at").dt.convert_time_zone("America/New_York").dt.date().alias("_d")
+            ),
+            "cik",
+            "_d",
+        ).drop("_d")
+    base = base.with_columns(
+        pl.col("tradable_at").dt.epoch("us").alias("t_trad"),
+        pl.coalesce("story_id", "item_id").alias("story_id"),
     )
     volume = base.select("ticker", "item_id", "story_id", "publisher", "t_trad")
 
@@ -234,17 +246,18 @@ def build_features(
     src: FeatureSources,
     tickers: Sequence[str] | None = None,
     member_spans: dict[str, list[tuple[date, date | None]]] | None = None,
+    holders: TickerHolders | None = None,
 ) -> pl.DataFrame:
     """Wide feature table: one row per (ticker, as_of); columns ``<window>_<feature>``.
 
     With ``member_spans`` (ticker -> [(start, end exclusive | None)] on the decision date in New
     York), rows are produced only while the ticker is a universe member; a ticker without
-    spans gets none. Rows are built one ticker at a time (memory stays per ticker) and
-    returned sorted by (as_of, ticker)."""
+    spans gets none. ``holders``: see ``load_events``. Rows are built one ticker at a time
+    (memory stays per ticker) and returned sorted by (as_of, ticker)."""
     as_of = sorted(ensure_utc(t, name="as_of") for t in as_of)
     if not as_of:
         return pl.DataFrame()
-    volume, events = load_events(store, cfg, as_of[-1], cik_to_tickers, src)
+    volume, events = load_events(store, cfg, as_of[-1], cik_to_tickers, src, holders)
     all_tickers = sorted({t for ts in cik_to_tickers.values() for t in ts})
     tickers = sorted(tickers) if tickers is not None else all_tickers
     fc = cfg.features

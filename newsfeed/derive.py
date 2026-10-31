@@ -14,6 +14,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from newsfeed.config import AppConfig
 from newsfeed.dedupe import rebuild_stories
@@ -22,6 +23,8 @@ from newsfeed.features.embeddings import Embedder, FastEmbedder, compute_embeddi
 from newsfeed.storage import FileLock, Store
 from newsfeed.tickers import TickerLinker
 from newsfeed.timeutil import utcnow
+
+NY = ZoneInfo("America/New_York")
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ def relink(
         {"lid": linker.linker_id, "force": list(force_sources or [])},
     )["item_id"].to_list()
     total = 0
-    cols = "item_id, source, title, body_text, tickers, text_hash, meta"
+    cols = "item_id, source, title, body_text, tickers, text_hash, meta, published_at"
     for s in range(0, len(ids), batch_size):
         pending = store.items_by_id(ids[s : s + batch_size], columns=cols).to_dicts()
         if pending:
@@ -82,7 +85,8 @@ def _link_batch(
             body=r["body_text"],
             source_tickers=r["tickers"],
             source=r["source"],
-            source_cik=_meta_cik(r) if r["source"] in linker.source_only_sources else None,
+            source_cik=_meta_cik(r),  # EDGAR filer / transcript company; news has none
+            on=r["published_at"].astimezone(NY).date() if r["published_at"] else None,
         )
         base = {
             "item_id": r["item_id"],

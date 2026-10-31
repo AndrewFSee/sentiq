@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections import Counter
 from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import UTC, date, datetime, timedelta
@@ -75,7 +76,7 @@ from newsfeed.scoring.mask import MaskLexicon
 from newsfeed.scoring.prompt import load_prompt
 from newsfeed.scoring.runner import ScoringJob, estimate_cost, plan_targets
 from newsfeed.storage import FileLock, Store
-from newsfeed.tickers import TickerLinker, TickerMap, Universe, load_ticker_map
+from newsfeed.tickers import TickerHolders, TickerLinker, TickerMap, Universe, load_ticker_map
 from newsfeed.timeutil import MarketCalendar, get_calendar, utcnow
 from newsfeed.universe_pit import PitUniverse
 
@@ -183,8 +184,33 @@ class Context:
         u = self.universe(full=True)  # linking always uses the whole configured universe
         titles = None if self.cfg.universe.name_linking == "aliases_only" else self.titles(u)
         return TickerLinker(
-            u, self.cfg.universe.aliases, titles, self.cfg.universe.source_only_linking
+            u,
+            self.cfg.universe.aliases,
+            titles,
+            self.cfg.universe.source_only_linking,
+            holders=self.holders(),
         )
+
+    def holders(self) -> TickerHolders | None:
+        """sp500_pit: who held each shared ticker when (None in static mode)."""
+        return self.pit.holders() if self.cfg.universe.mode == "sp500_pit" else None
+
+    def fan_out(
+        self, df: pl.DataFrame, cik_col: str = "cik", date_col: str = "date"
+    ) -> pl.DataFrame:
+        """Company events -> one row per ticker: every ticker the CIK ever had, minus shared
+        tickers held by another company on ``date_col`` (New York date), and, in PIT mode,
+        only tickers that are index members on that date."""
+        c2t = self.universe(full=True).cik_to_tickers
+        fan = pl.DataFrame(
+            [{cik_col: c, "ticker": t} for c, ts in c2t.items() for t in ts],
+            schema={cik_col: pl.Int64, "ticker": pl.Utf8},
+        )
+        out = df.with_columns(pl.col(cik_col).cast(pl.Int64)).join(fan, on=cik_col)
+        if self.cfg.universe.mode != "sp500_pit":
+            return out
+        out = self.pit.holders().restrict(out, cik_col, date_col)
+        return out.filter(self.pit.is_member(out.select("ticker", pl.col(date_col).alias("date"))))
 
     def universe_sig(self) -> str:
         """Content hash of the PIT membership table ("" in static mode)."""
@@ -194,8 +220,11 @@ class Context:
 
         p = self.cfg.universe.pit_dir / "sp500_members.parquet"
         h = hashlib.sha256(p.read_bytes())
+        uh = self.cfg.universe.hashable()
         if self.cfg.universe.extra_members:  # absent -> same signature as before extras existed
-            h.update(json.dumps(self.cfg.universe.hashable()["extra_members"]).encode())
+            h.update(json.dumps(uh["extra_members"]).encode())
+        if "extra_members_file_sha256" in uh:
+            h.update(uh["extra_members_file_sha256"].encode())
         return h.hexdigest()[:16]
 
     def cik_windows(
@@ -788,6 +817,7 @@ def features(
             src,
             tickers=[t.upper() for t in _split(tickers)] or None,
             member_spans=spans,
+            holders=ctx.holders(),
         )
         with ctx.store.ops() as con:
             con.execute(
@@ -852,6 +882,12 @@ def universe_cmd(
     )
     for e in uc.extra_members:
         typer.echo(f"  + extra ({e.index}, not PIT): {e.ticker} {e.name} from {e.start}")
+    if uc.extra_members_file is not None:
+        by_index = Counter(e.index for e in uc.file_extra_members())
+        typer.echo(
+            f"  + {uc.extra_members_file.name}: "
+            + ", ".join(f"{k} {v}" for k, v in sorted(by_index.items()))
+        )
 
 
 @app.command("universe-freeze")
@@ -1431,16 +1467,8 @@ def cluster_explore_cmd(
         ev = ev.with_columns(
             pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
         )
-        # canonical ticker -> every ticker of that company, kept only where it is a member
-        c2t = ctx.universe(full=True).cik_to_tickers
-        canon_cik = {t: c for c, ts in c2t.items() for t in ts}
-        fan = pl.DataFrame(
-            [{"canon": t, "ticker": x} for t, c in canon_cik.items() for x in c2t[c]],
-            schema={"canon": pl.Utf8, "ticker": pl.Utf8},
-        )
-        ev = ev.join(fan, on="canon")
-        if cfg.universe.mode == "sp500_pit":
-            ev = ev.filter(ctx.pit.is_member(ev.select("ticker", "date")))
+        # scored company -> its tickers, kept only where it is a member
+        ev = ctx.fan_out(ev.join(_canon_ciks(ctx, cfg), on=["item_id", "canon"]))
         feats = ev.select("ticker", "as_of").unique()
         inp, _ = _eval_inputs(ctx, cfg, feats)
         res = pl.DataFrame(
@@ -1571,6 +1599,22 @@ def partial_ic_cmd(
     _run("partial-ic", cfg, {"feature_set": feature_set, "control_set": control_set}, body)
 
 
+def _canon_ciks(ctx: Context, cfg: AppConfig) -> pl.DataFrame:
+    """(item_id, canon, cik): the item's qualified links with the canonical ticker their score
+    is stored under -- as the features join them, so a score follows the item's *current* link
+    (a stored score's own ``cik`` can predate a relink)."""
+    from newsfeed.features.aggregate import _qualified_links
+    from newsfeed.scoring.targets import canonical_tickers
+
+    canon = canonical_tickers(cfg, ctx.universe(full=True).cik_to_tickers)
+    canon_df = pl.DataFrame(
+        {"cik": list(canon), "canon": list(canon.values())},
+        schema={"cik": pl.Int64, "canon": pl.Utf8},
+    )
+    links = _qualified_links(ctx.store, cfg).with_columns(pl.col("cik").cast(pl.Int64))
+    return links.join(canon_df, on="cik")
+
+
 def _llm_events(
     ctx: Context,
     cfg: AppConfig,
@@ -1578,10 +1622,10 @@ def _llm_events(
     event_types: list[str],
     *,
     masked: bool | None = None,
-) -> tuple[pl.DataFrame, list[datetime], pl.DataFrame]:
+) -> tuple[pl.DataFrame, list[datetime]]:
     """Scored story-founder events of one source at relevance >= ``features.min_relevance``:
-    (events with canon ticker, score fields and t_use = tradable_at, or max(tradable_at,
-    scored_at) for live items; the decision grid; canon -> ticker fan-out)."""
+    (events with canon ticker, cik, score fields and t_use = tradable_at, or max(tradable_at,
+    scored_at) for live items; the decision grid)."""
     from newsfeed.features.aggregate import RELEVANCE_RANK
 
     store, fc = ctx.store, cfg.features
@@ -1606,9 +1650,13 @@ def _llm_events(
             "h": src.llm_prompt_hash,
         },
     )
-    ev = items.join(scores, on="item_id").filter(
-        pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1)
-        >= RELEVANCE_RANK[fc.min_relevance]
+    ev = (
+        items.join(scores, on="item_id")
+        .filter(
+            pl.col("relevance").replace_strict(RELEVANCE_RANK, default=-1)
+            >= RELEVANCE_RANK[fc.min_relevance]
+        )
+        .join(_canon_ciks(ctx, cfg), on=["item_id", "canon"])
     )
     if event_types:
         ev = ev.filter(pl.col("event_type").is_in(event_types))
@@ -1622,26 +1670,18 @@ def _llm_events(
     grid = as_of_grid(
         ctx.calendar, ev["t_use"].min().date(), now.date(), fc.grid, fc.decision_lag_minutes
     )
-    c2t = ctx.universe(full=True).cik_to_tickers
-    canon_cik = {t: c for c, ts in c2t.items() for t in ts}
-    fan = pl.DataFrame(
-        [{"canon": t, "ticker": x} for t, c in canon_cik.items() for x in c2t[c]],
-        schema={"canon": pl.Utf8, "ticker": pl.Utf8},
-    )
-    return ev, grid, fan
+    return ev, grid
 
 
 def _dated_events(
     ctx: Context,
-    cfg: AppConfig,
     ev: pl.DataFrame,
     grid: list[datetime],
-    fan: pl.DataFrame,
     *,
     delay: int = 0,
 ) -> pl.DataFrame:
-    """Events (t_use, canon) -> as_of = first decision >= t_use (+ ``delay`` sessions), date in
-    New York, fanned out to the canon ticker's share classes that are members on that date."""
+    """Events (t_use, cik) -> as_of = first decision >= t_use (+ ``delay`` sessions), date in
+    New York, fanned out to the company's tickers that are members on that date."""
     from newsfeed.eval.clusters import decision_times
 
     e = ev.with_columns(
@@ -1651,12 +1691,11 @@ def _dated_events(
             dtype=pl.Datetime("us", "UTC"),
         )
     ).drop_nulls("as_of")
-    e = e.with_columns(
-        pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
-    ).join(fan, on="canon")
-    if cfg.universe.mode == "sp500_pit":
-        e = e.filter(ctx.pit.is_member(e.select("ticker", "date")))
-    return e
+    return ctx.fan_out(
+        e.with_columns(
+            pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+        )
+    )
 
 
 @app.command("delay-sensitivity")
@@ -1676,7 +1715,7 @@ def delay_sensitivity_cmd(
 ) -> None:
     """Event-level rank IC of LLM sentiment when every event becomes usable N sessions later
     than its tradable time: how fast does the signal decay if the data arrives late?"""
-    from newsfeed.eval.clusters import cluster_ic, decision_times
+    from newsfeed.eval.clusters import cluster_ic
 
     _setup_logging(verbose)
     cfg = load_config(config)
@@ -1685,30 +1724,16 @@ def delay_sensitivity_cmd(
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         fc = cfg.features
-        ev, grid, fan = _llm_events(ctx, cfg, source, _split(event_types))
+        ev, grid = _llm_events(ctx, cfg, source, _split(event_types))
         rows = []
         inp_cache = None
         for d in delay_list:
-            e = _dated_events(ctx, cfg, ev, grid, fan, delay=d)
+            e = _dated_events(ctx, ev, grid, delay=d)
             if inp_cache is None:  # prices/targets once, over the widest set of decisions
-                wide = ev.with_columns(
-                    pl.Series(
-                        "as_of",
-                        decision_times(ev["t_use"].to_list(), grid, delay=max(delay_list)),
-                        dtype=pl.Datetime("us", "UTC"),
-                    )
-                ).drop_nulls("as_of")
-                feats = (
-                    pl.concat(
-                        [
-                            e.select("canon", "as_of"),
-                            wide.select("canon", "as_of"),
-                        ]
-                    )
-                    .join(fan, on="canon")
-                    .select("ticker", "as_of")
-                    .unique()
-                )
+                wide = _dated_events(ctx, ev, grid, delay=max(delay_list))
+                feats = pl.concat(
+                    [e.select("ticker", "as_of"), wide.select("ticker", "as_of")]
+                ).unique()
                 inp_cache, _ = _eval_inputs(ctx, cfg, feats)
             for r in cluster_ic(
                 e.select("ticker", "date", "cluster", "sentiment"),
@@ -1876,7 +1901,7 @@ def event_ic_cmd(
     cell_list = _cells(cells)
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
-        ev, grid, fan = _llm_events(ctx, cfg, source, _split(event_types), masked=masked)
+        ev, grid = _llm_events(ctx, cfg, source, _split(event_types), masked=masked)
         if by == "materiality":
             ev = ev.filter(pl.col("materiality").is_not_null()).with_columns(
                 pl.when(pl.col("materiality") == "high")
@@ -1886,7 +1911,7 @@ def event_ic_cmd(
             )
         elif by:
             raise typer.BadParameter(f"unknown --by {by!r}")
-        e = _dated_events(ctx, cfg, ev, grid, fan)
+        e = _dated_events(ctx, ev, grid)
         inp, _ = _eval_inputs(ctx, cfg, e.select("ticker", "as_of").unique())
         cols = ["ticker", "date", "cluster", value] + ([control] if control else [])
         res = pl.DataFrame(
@@ -1966,7 +1991,7 @@ def recall_check_cmd(
     t0, t1 = _parse_day(start), _parse_day(end)
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
-        if cfg.universe.extra_members:
+        if cfg.universe.all_extra_members():
             raise typer.BadParameter("use an S&P 500-only config (the pre-registered universe)")
         d = cfg.paths.data_dir / "distill" / "runs"
         preds = pl.concat(
@@ -1995,13 +2020,13 @@ def recall_check_cmd(
         ]
         frames = []
         for etype in ("earnings", "guidance"):
-            ev, grid, fan = _llm_events(ctx, cfg, "edgar", [etype], masked=False)
+            ev, grid = _llm_events(ctx, cfg, "edgar", [etype], masked=False)
             ev = ev.filter((pl.col("t_use") >= t0) & (pl.col("t_use") < t1))
             n_ev = ev.height
             ev = ev.join(preds, on=["item_id", "canon"], how="inner")
             stats[f"{etype}_events"] = n_ev
             stats[f"{etype}_with_student"] = ev.height
-            e = _dated_events(ctx, cfg, ev, grid, fan)
+            e = _dated_events(ctx, ev, grid)
             inp, _ = _eval_inputs(ctx, cfg, e.select("ticker", "as_of").unique())
             res = pl.DataFrame(
                 paired_event_ic(
@@ -2178,12 +2203,7 @@ def item_study_cmd(
             fc.grid,
             fc.decision_lag_minutes,
         )
-        c2t = ctx.universe(full=True).cik_to_tickers
-        fan = pl.DataFrame(
-            [{"cik": c, "ticker": t} for c, ts in c2t.items() for t in ts],
-            schema={"cik": pl.Int64, "ticker": pl.Utf8},
-        )
-        ev = (
+        ev = ctx.fan_out(
             items.with_columns(
                 pl.Series(
                     "as_of",
@@ -2195,10 +2215,7 @@ def item_study_cmd(
             .with_columns(
                 pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
             )
-            .join(fan, on="cik")
         )
-        if cfg.universe.mode == "sp500_pit":
-            ev = ev.filter(ctx.pit.is_member(ev.select("ticker", "date")))
         members = ctx.store.features(feature_set).select("ticker", "as_of")
         inp, _ = _eval_inputs(ctx, cfg, members)
         members = members.select(
@@ -2341,12 +2358,7 @@ def doc_change_cmd(
             ctx.calendar, sim["tradable_at"].min().date(), now.date(), fc.grid,
             fc.decision_lag_minutes,
         )  # fmt: skip
-        c2t = ctx.universe(full=True).cik_to_tickers
-        fan = pl.DataFrame(
-            [{"cik": c, "ticker": t} for c, ts in c2t.items() for t in ts],
-            schema={"cik": pl.Int64, "ticker": pl.Utf8},
-        )
-        ev = (
+        ev = ctx.fan_out(
             sim.with_columns(
                 pl.Series(
                     "as_of",
@@ -2358,10 +2370,7 @@ def doc_change_cmd(
             .with_columns(
                 pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
             )
-            .join(fan, on="cik")
         )
-        if cfg.universe.mode == "sp500_pit":
-            ev = ev.filter(ctx.pit.is_member(ev.select("ticker", "date")))
         inp, _ = _eval_inputs(ctx, cfg, ev.select("ticker", "as_of").unique())
         ev = ev.join(inp.caps.select("ticker", "date", "mcap"), on=["ticker", "date"], how="left")
         # NaN (section missing in one filing) -> null, so it counts as absent, not as a value
