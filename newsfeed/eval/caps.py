@@ -20,6 +20,7 @@ import httpx
 import polars as pl
 
 from newsfeed.ingest.http import HttpClient
+from newsfeed.tickers import TickerHolders
 
 TAGS = [
     ("dei", "EntityCommonStockSharesOutstanding"),
@@ -78,13 +79,18 @@ def market_caps(
     panel: pl.DataFrame,
     shares: dict[str, pl.DataFrame],
     splits: dict[str, pl.DataFrame] | None = None,
+    holders: TickerHolders | None = None,
 ) -> pl.DataFrame:
     """ticker, date, mcap (shares known before date x previous close), size_bucket.
 
     Closes are split-adjusted to today but filed share counts are as reported, so each count
     is scaled by the product of split factors with ex_date after its filing date:
     mcap = adj_prev_close x shares x prod(factor, ex_date >= available_from). Without the
-    ``splits`` of a ticker, pre-split caps would be understated by the split ratio."""
+    ``splits`` of a ticker, pre-split caps would be understated by the split ratio.
+
+    A ticker's history may come from several CIKs (``cik`` column). With ``holders``, a CIK's
+    counts are used on a date only if that company carries the ticker then (IR after 2020-04:
+    Gardner Denver's, not Trane's); the latest usable filing wins, as for a single CIK."""
     splits = splits or {}
     prev_close = (
         panel.sort("symbol", "date")
@@ -102,7 +108,35 @@ def market_caps(
                     for a in sh["available_from"].to_list()
                 ]
                 sh = sh.with_columns(pl.col("shares") * pl.Series(f))
-            d = d.join_asof(sh, left_on="date", right_on="available_from", strategy="backward")
+            if "cik" not in sh.columns:
+                sh = sh.with_columns(pl.lit(0, pl.Int64).alias("cik"))
+            ciks = sh.select(pl.col("cik").cast(pl.Int64)).unique()
+            d = (
+                d.join(ciks, how="cross")
+                .sort("date")
+                .join_asof(
+                    sh.with_columns(pl.col("cik").cast(pl.Int64)).sort("available_from"),
+                    left_on="date",
+                    right_on="available_from",
+                    by="cik",
+                    strategy="backward",
+                    check_sortedness=False,  # both sides sorted on the key above
+                )
+                .filter(pl.col("shares").is_not_null())
+            )
+            if holders is not None:
+                d = holders.restrict(d, "cik", "date")
+            d = (
+                decisions.filter(pl.col("ticker") == tk)
+                .select("ticker", "date")
+                .join(
+                    d.sort("available_from")
+                    .group_by("ticker", "date")
+                    .agg(pl.col("shares").last()),
+                    on=["ticker", "date"],
+                    how="left",
+                )
+            )
         else:
             d = d.with_columns(pl.lit(None, pl.Float64).alias("shares"))
         frames.append(d.select("ticker", "date", "shares"))

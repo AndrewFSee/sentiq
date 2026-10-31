@@ -997,11 +997,36 @@ def coverage_cmd(
                 typer.echo(f"  {tk:6s} {spans}")
 
 
+def _sample_companies(ctx: Context, cfg: AppConfig, feats: pl.DataFrame) -> pl.DataFrame:
+    """``eval.sample_companies_file``: keep ticker-days whose ticker belongs to a listed CIK on
+    that date (New York date of ``as_of``), whatever index the company is in by then."""
+    ciks = cfg.eval.sample_ciks()
+    if ciks is None:
+        return feats
+    if cfg.universe.mode != "sp500_pit":
+        raise typer.BadParameter("eval.sample_companies_file needs universe.mode sp500_pit")
+    spans = ctx.pit.members.filter(pl.col("cik").is_in(sorted(ciks))).select(
+        "ticker", "start", "end"
+    )
+    keyed = feats.select(
+        "ticker", pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("_d")
+    ).with_row_index("_r")
+    hit = keyed.join(spans, on="ticker").filter(
+        (pl.col("start") <= pl.col("_d"))
+        & (pl.col("end").is_null() | (pl.col("_d") < pl.col("end")))
+    )["_r"]
+    return feats.with_row_index("_r").filter(pl.col("_r").is_in(hit.implode())).drop("_r")
+
+
 def _eval_inputs(
     ctx: Context, cfg: AppConfig, feats: pl.DataFrame, *, refresh_prices: bool = False
 ) -> tuple[EvalInputs, list[dict]]:
-    """Prices (routed, cached), targets, controls and PIT size for a feature table."""
+    """Prices (routed, cached), targets, controls and PIT size for a feature table (restricted
+    to ``eval.sample_companies_file`` first, so sizes are ranked within that sample)."""
     ec = cfg.eval
+    feats = _sample_companies(ctx, cfg, feats)
+    if feats.height == 0:
+        raise typer.BadParameter("no feature rows left in the sample")
     dates = decision_dates(feats)
     secrets = load_secrets()
     caches = {
@@ -1062,13 +1087,18 @@ def _eval_inputs(
         else {t: [c] for c, tks in ctx.universe(full=True).cik_to_tickers.items() for t in tks}
     )
     for t, ciks in sorted(t2c.items()):
-        hist = [load_shares(ctx.http(), c, cfg.paths.ref_dir / "sec_shares") for c in ciks]
+        hist = [
+            load_shares(ctx.http(), c, cfg.paths.ref_dir / "sec_shares").with_columns(
+                pl.lit(c, pl.Int64).alias("cik")
+            )
+            for c in ciks
+        ]
         shares[t] = pl.concat(hist).sort("available_from") if hist else pl.DataFrame()
     decisions = feats.select(
         "ticker",
         pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
     )
-    caps = market_caps(decisions, panel, shares, splits)
+    caps = market_caps(decisions, panel, shares, splits, ctx.holders())
     vol = volatility_targets(panel, [5, 20]).filter(pl.col("ticker").is_in(tickers))
     return EvalInputs(feats, ctl, targets, caps, sessions, vol), price_report
 
@@ -2100,7 +2130,7 @@ def vol_test_cmd(
         drop = ("feature_set_id", "build_run_id", "built_at")
         feats = ctx.store.features(feature_set).drop(*drop, strict=False)
         inp, _ = _eval_inputs(ctx, cfg, feats.select("ticker", "as_of"))
-        inp.features = feats
+        inp.features = _sample_companies(ctx, cfg, feats)
         base = assemble(inp, cfg).join(inp.vol_targets, on=["ticker", "date"], how="left")
         base = base.with_columns(
             pl.col("ctl_gap").abs().alias("abs_gap"),

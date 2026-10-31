@@ -497,7 +497,7 @@ def p_floor_note(reps: int | None, n_tests: int, q: float) -> list[str]:
 
 def eval_config_id(cfg: AppConfig, feature_set_id: str, univariate: list[str]) -> str:
     blob = json.dumps(
-        [EVAL_VERSION, cfg.eval.model_dump(mode="json"), feature_set_id, univariate],
+        [EVAL_VERSION, cfg.eval.hashable(), feature_set_id, univariate],
         sort_keys=True,
     )
     return hashlib.sha256(blob.encode()).hexdigest()[:12]

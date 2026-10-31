@@ -428,11 +428,33 @@ class EvalConfig(_Strict):
     )
     # exploratory per-type analysis: rows whose LLM events in the window are ALL of this type
     sample_pure_event_type: str | None = None
+    # optional company subset: a CSV with a `cik` column (e.g. the frozen H3 list); keeps
+    # ticker-days whose ticker belongs to a listed CIK on that date (sp500_pit membership
+    # spells), so a company stays in when its index changes
+    sample_companies_file: Path | None = None
     cv: CVConfig = Field(default_factory=CVConfig)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
     fdr_q: float = Field(0.10, gt=0, lt=1)  # Benjamini-Hochberg level across the grid
     bootstrap_reps: int = Field(1000, ge=100)
     seed: int = 7
+
+    def hashable(self) -> dict:
+        """model_dump for eval ids: an unset ``sample_companies_file`` is left out (ids of
+        earlier configs stay), a set one is hashed by content, not path."""
+        out = self.model_dump(mode="json", exclude={"sample_companies_file"})
+        if self.sample_companies_file is not None:
+            out["sample_companies_sha256"] = hashlib.sha256(
+                self.sample_companies_file.read_bytes()
+            ).hexdigest()
+        return out
+
+    def sample_ciks(self) -> set[int] | None:
+        if self.sample_companies_file is None:
+            return None
+        import csv
+
+        with self.sample_companies_file.open(encoding="utf-8", newline="") as f:
+            return {int(r["cik"]) for r in csv.DictReader(f)}
 
 
 class Secrets(BaseSettings):
@@ -513,8 +535,19 @@ def load_config(path: Path | str | None = None, root: Path | None = None) -> App
     for key in ("lm_dictionary", "embedding_cache"):  # reference data lives with the project
         if not getattr(feats, key).is_absolute():
             feats = feats.model_copy(update={key: PROJECT_ROOT / getattr(feats, key)})
+    ev = cfg.eval
+    if ev.sample_companies_file is not None and not ev.sample_companies_file.is_absolute():
+        ev = ev.model_copy(
+            update={"sample_companies_file": PROJECT_ROOT / ev.sample_companies_file}
+        )
     return cfg.model_copy(
-        update={"paths": paths, "sources": sources, "features": feats, "universe": uni}
+        update={
+            "paths": paths,
+            "sources": sources,
+            "features": feats,
+            "universe": uni,
+            "eval": ev,
+        }
     )
 
 

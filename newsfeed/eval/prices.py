@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.parse import quote
 
 import httpx
@@ -251,6 +251,18 @@ def price_panel(
     return pl.concat(frames).sort("symbol", "date") if frames else pl.DataFrame()
 
 
+class TiingoLimitError(RuntimeError):
+    """Tiingo refused for quota reasons (HTTP 200 with only ``{"detail": ...}``, e.g. the free
+    tier's 500 symbols per month). Never cached as "no data": the run stops instead."""
+
+
+def _tiingo_json(resp: httpx.Response) -> Any:
+    data = resp.json()
+    if isinstance(data, dict) and set(data) == {"detail"}:
+        raise TiingoLimitError(f"tiingo: {data['detail']}")
+    return data
+
+
 class TiingoPrices:
     """Tiingo EOD prices: includes delisted securities (fallback for names Tradier lacks).
 
@@ -279,7 +291,9 @@ class TiingoPrices:
             f"&endDate={end}"
         )
         try:
-            rows = self.http.get(url).json() or []
+            rows = _tiingo_json(self.http.get(url)) or []
+        except TiingoLimitError:
+            raise
         except Exception as exc:  # unknown ticker -> 404
             log.info("tiingo: no data for %s (%r)", symbol, exc)
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
@@ -319,7 +333,9 @@ class TiingoPrices:
         """Tiingo ticker search (finds securities filed under a later ticker)."""
         url = f"https://api.tiingo.com/tiingo/utilities/search?query={quote(query)}"
         try:
-            hits = [r for r in self.http.get(url).json() or [] if isinstance(r, dict)]
+            hits = [r for r in _tiingo_json(self.http.get(url)) or [] if isinstance(r, dict)]
+        except TiingoLimitError:
+            raise
         except Exception as exc:
             log.info("tiingo: search %r failed (%r)", query, exc)
             self.last_search_ok = False

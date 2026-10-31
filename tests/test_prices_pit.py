@@ -16,6 +16,7 @@ from newsfeed.eval.prices import (
     SPLIT_SCHEMA,
     CachedPrices,
     PriceRoute,
+    TiingoLimitError,
     TiingoPrices,
     TradierPrices,
     build_panel,
@@ -365,3 +366,17 @@ def test_tiingo_404_and_search_are_cached(tmp_path):
     assert len(list((tmp_path / "search").glob("*.json"))) == 1
     src.http = mock_http(lambda req: httpx.Response(200, json=[{"ticker": "Z"}]))
     assert cache.search("other") == [{"ticker": "Z"}]
+
+
+def test_tiingo_quota_answer_raises_and_is_never_cached(tmp_path):
+    """Tiingo answers an exhausted free tier with HTTP 200 + {"detail": ...}; caching that as
+    "no data" would leave a symbol unpriced for good (found 2026-10-30)."""
+    quota = {"detail": "You have run over your 500 symbol look up for this month."}
+    src = TiingoPrices("tok")
+    src.http = mock_http(lambda req: httpx.Response(200, json=quota))
+    cache = CachedPrices(src, tmp_path)
+    with pytest.raises(TiingoLimitError):
+        cache.daily_bars("AVNS", date(2026, 7, 1), date(2026, 10, 1))
+    with pytest.raises(TiingoLimitError):
+        cache.search("avanos medical")
+    assert not any(tmp_path.rglob("*.*"))

@@ -226,6 +226,9 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   is not observable with daily bars (not a leak; just an uncontrolled factor).
 - Size buckets: PIT market cap = SEC shares (filed date + 1 day) × previous close; terciles
   within the universe; Berkshire = unknown (custom share tag).
+  A shared ticker's shares come only from the CIK that carries it on the date (`market_caps(
+  holders=)`). `eval.sample_companies_file` (CSV with `cik`) keeps ticker-days of listed
+  companies before prices / sizes are built, so terciles are ranked within that sample.
 - CV (`eval/cv.py`): walk-forward (train labels end before the test block) or blocked with
   purge + embargo. Holdout: rows whose decision or label end ≥ `eval.holdout_start` are dropped
   unless `--use-holdout`; holdout looks are counted in `experiments` and warned about.
@@ -1062,3 +1065,29 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   shared-ticker relink: batch msgbatch_01SXLKXtDCRczbTiTSCjgXGc, 3,634 requests from
   tradable 2026-06-20 (3,629 ok, 5 max_tokens), $1.14; the live hook had already scored 454
   recent S&P 1000 filings ($0.52) on 10-29/30.
+- 2026-10-30 Same bug in market caps: a ticker's share history concatenated every CIK that ever
+  had it, so IR's caps since 2020 used whichever of Trane / Gardner Denver filed last, and BBT's
+  (from 2026-07) Truist's or Beacon's. Now a CIK's filings size the ticker only on dates its
+  events reach it (`TickerHolders.restrict`); unshared tickers and re-registrations unchanged.
+  Affects size buckets only (test 2 and size breakdowns; not re-run).
+- 2026-10-30 H3 SETUP (no look; all H3 rows are holdout data). `config/variants/sp1000_h3.yaml` =
+  H1's `sp500_noemb_earnings.yaml` + `universe.extra_members_file` (frozen list) +
+  `eval.sample_companies_file` (same list: ticker-days whose ticker belongs to a listed CIK on
+  that date, so promoted companies stay in) + `bootstrap_reps: 10000`. SEC share counts for the
+  1,000 CIKs cached (8 without a share history → size 'unknown'). Feature set d70fcff284ea
+  (2026-07-01 → 10-29, 85 sessions, 1,507 tickers). Sample check without prices or returns:
+  85,000 H3 ticker-days (all 1,000 companies, no coverage gaps), 1,297 earnings ticker-days
+  (959 companies; Q2 season Jul–Sep ≈ 1,030, as planned; Q3 in progress), primary feature
+  never null. Price windows start at the membership start (2026-07-01), so 20-day controls
+  are short in July: affects the exploratory model cells, not the univariate primary. The
+  looks rebuild features with this config: stage 1 on/after 2027-05-31, stage 2 on/after
+  2027-08-31 (`eval --use-holdout --config config/variants/sp1000_h3.yaml`).
+- 2026-10-30 H3 prices: of the 1,000 routes 980 are Tradier `current`, 5 `renamed`, 15 `delisted`
+  → Tiingo (AVNS, BLD, CPRX, GTLS, JHG, LEG, NE, NSA, SEM, STEL, TMHC, VNOM, WBS, WEN, WSR: the
+  10-08 SEC ticker map no longer gives these tickers to their CIK; mostly 2026 acquisitions).
+  The prefetch stopped at Tiingo's monthly 500-symbol cap, which Tiingo answers with HTTP 200 +
+  `{"detail": ...}`; that body now raises `TiingoLimitError` and is never cached (before, a
+  search would have cached it as "no hits"; no cache file was written that way — the 10
+  empty searches of 10-15 are the documented unpriced names). Re-run
+  `scripts/prefetch_prices.py` after the reset (11-01); the looks fetch through the look date
+  anyway.

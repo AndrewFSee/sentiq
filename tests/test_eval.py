@@ -233,6 +233,34 @@ def test_market_caps_point_in_time_and_buckets():
     )
 
 
+def test_market_caps_shared_ticker_uses_its_holders_shares():
+    """IR shape: CIK 1 held X until days[2], then CIK 2 took X while CIK 1 stayed a member
+    under Y. CIK 1's later filings must not size X; without holders the latest filing of any
+    CIK wins."""
+    from newsfeed.tickers import TickerHolders
+
+    days = sessions(5)
+    p = panel("X", [10.0] * 5, days=days)
+    sh = {
+        "X": pl.DataFrame(
+            {
+                "available_from": [days[0], days[1], days[3]],
+                "shares": [1.0, 5.0, 100.0],
+                "cik": [1, 2, 1],  # CIK 1 keeps filing (as Y) after giving up X
+            }
+        )
+    }
+    holders = TickerHolders.from_spells(
+        [("X", 1, days[0], days[2]), ("Y", 1, days[2], None), ("X", 2, days[2], None)]
+    )
+    dec = pl.DataFrame({"ticker": ["X"] * 3, "date": [days[1], days[2], days[4]]})
+    get = {r["date"]: r["mcap"] for r in market_caps(dec, p, sh, holders=holders).to_dicts()}
+    assert get == {days[1]: pytest.approx(10.0), days[2]: pytest.approx(50.0),
+                   days[4]: pytest.approx(50.0)}  # fmt: skip
+    leaky = {r["date"]: r["mcap"] for r in market_caps(dec, p, sh).to_dicts()}
+    assert leaky[days[4]] == pytest.approx(1000.0)
+
+
 # ------------------------------------------------------------------ prices
 def test_tradier_parsing_and_cache(tmp_path):
     calls = []
