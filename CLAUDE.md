@@ -1091,3 +1091,10 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   empty searches of 10-15 are the documented unpriced names). Re-run
   `scripts/prefetch_prices.py` after the reset (11-01); the looks fetch through the look date
   anyway.
+- 2026-11-07 H3 prices prefetched after Tiingo's reset (77 min, `data/prices_prefetch_20261107.log`):
+  all 15 Tiingo names priced; BLD, JHG, SEM, STEL last traded 2026-06-30 (deals closed as the list
+  was frozen), CPRX/GTLS/WSR/NSA/TMHC/WBS/LEG in Jul-Aug, all held as cash afterwards; AVNS, NE,
+  VNOM, WEN still trade. MSGS was unpriced: CIK 1636519 spun off the Rangers (MSGR, 2026-10-26)
+  and became MSG Knickerbockers (MSGK); both vendors moved the history to MSGK, so
+  `price_overrides` MSGS -> tradier:MSGK (spin-adjusted history: the return through the
+  distribution includes the MSGR shares). Unpriced list unchanged otherwise.

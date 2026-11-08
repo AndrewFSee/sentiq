@@ -199,6 +199,8 @@ eval:
     DISCA: "tiingo:WBD"    # Tradier's WBD starts 2022-04; Tiingo's carries DISCA (checked)
     HCP: "tiingo:DOC"      # Healthpeak: HCP -> PEAK -> DOC; Tiingo's DOC has its history
     PEAK: "tiingo:DOC"     #   (2019-01-02 close 26.98, not Physicians Realty's old DOC)
+    MSGS: "tradier:MSGK"   # MSG Sports -> MSG Knickerbockers after the MSGR spin-off
+                           #   (2026-10-26); Tradier's MSGK has the spin-adjusted history
   # No free price history found (Tradier, Tiingo, successors), left unpriced: APC, NFX, SCG,
   # STI, INFO, VIAC (2019-12..2022-02), WRK -- ~13 of ~3700 member ticker-years. Also
   # FOX/FOXA before 2019-03-12: the tickers then belonged to 21st Century Fox (other CIK).
