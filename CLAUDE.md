@@ -1098,3 +1098,37 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   and became MSG Knickerbockers (MSGK); both vendors moved the history to MSGK, so
   `price_overrides` MSGS -> tradier:MSGK (spin-adjusted history: the return through the
   distribution includes the MSGR shares). Unpriced list unchanged otherwise.
+- 2026-11-09 PRE-REGISTERED test 11 (user-approved; MD&A tone with local scorers, no LLM cost;
+  written before any tone was computed). Documents: `edgar_periodic` 10-K / 10-Q originals, S&P 500
+  (`config/variants/sp500_noemb.yaml`, no Nasdaq extras); text = the MD&A section only (10-K item
+  7, 10-Q "I-2"; filings without a detected MD&A, ~9%, mostly banks, are left out). Pairing as in
+  test 10 (same CIK and form, period of report 300-430 days earlier, closest to 365). Measure: LM
+  tone (pos - neg) / (pos + neg) with the baseline negation rule. **Primary: dTone** = MD&A tone of
+  the filing minus that of its year-earlier pair (Feldman et al. 2010); no pair or no MD&A in either
+  -> no event. Events dated to the first 15:50 decision >= tradable_at, fanned out to the filer's
+  member tickers, pre-holdout (label end before 2026-07-01). Primary: event-level rank IC of dTone
+  > 0 at close entry, h in {20, 60}, market-adjusted, circular block bootstrap; nominal p per cell,
+  x2 for the two cells. Secondary (no BH family): tone level; LM negative-word share (level and
+  change); FinBERT on the same MD&As (400-word chunks averaged, `finbert_score`; level and change);
+  h in {1, 5, 10}; sector-adjusted; 10-K and 10-Q separately; semi-partial IC of dTone given the 8-K
+  `5d_llm_sent_cwmean` (feature set of `sp500_noemb`) on the same ticker / as_of; daily view
+  (sessions with >= 10 filings). Expectation: small positive IC at 20-60 days; LM tone was null or
+  negative on 8-Ks and news here, so a null is as plausible. The distilled student is not part of
+  this test (would need its own Haiku validation on MD&A and its own pre-registration).
+- 2026-11-10 RESULT test 11 (MD&A tone, run 7ca3df; config `config/variants/mdna_tone.yaml` =
+  sp500_noemb + the 60-session horizon; tones `data/reports/mdna-tone-<run>-tones.parquet`;
+  FinBERT fp32 on the GPU ~5 h). 18,535 filings, 16,941 with an MD&A, 14,450 with a year-earlier
+  pair that has one; 14.0k member-ticker events, 643 tickers. Primary FAILS: dTone close/market
+  IC h20 -0.016 (CI [-0.049, +0.015], p 0.37), h60 -0.017 (p 0.17) -- wrong sign, n.s.; 10-K and
+  10-Q alike. Secondary (~57 correlated cells, no BH): the sign is consistently the reverse of
+  Feldman et al. -- more positive tone change, slightly lower returns: change in negative-word
+  share h60 +0.031 (p 0.036), FinBERT change -0.024..-0.027 (10-K h20 -0.049, p 0.034), sector-
+  adjusted h60 -0.025 (p 0.040), given the 8-K release sentiment -0.023 (h60 p 0.060); levels
+  ~ 0; h1 +0.020 (p 0.064). Daily view (425 / 413 days): -0.008 / -0.005, Q5 - Q1 -26 / -21 bp,
+  n.s. A handful of nominal p < 0.05 among ~57 overlapping cells is chance level. Reading: no
+  support for MD&A tone change as a drift signal in the 2019-2026 S&P 500; dictionary tone again
+  leans the wrong way, as on 8-Ks (test 1) and transcripts. The paid Haiku rescoring is not
+  warranted by this result. Ops note: a launch mistake ran two identical copies from 17:07; the
+  first (run 6c688a, status stuck at 'running', no output) was killed at ~17:50 and is not a
+  second look; the earlier run 0f0956 died of OOM (`items_as_of(item_ids=)` deduped the whole
+  lake per call; the command now loads bodies with `items_by_id`).

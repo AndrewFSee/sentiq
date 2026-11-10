@@ -100,15 +100,19 @@ def lm_counts(text: str, lm: LMDictionary) -> dict[str, Any]:
 Classifier = Callable[[list[str]], list[dict[str, float]]]  # chunks -> [{label: prob}]
 
 
-def make_finbert(model: str) -> Classifier:  # pragma: no cover - heavy optional dependency
+def make_finbert(
+    model: str, *, device: int | None = None, batch_size: int = 1
+) -> Classifier:  # pragma: no cover - heavy optional dependency
+    """``device`` 0 = first GPU (None = the pipeline's default, CPU)."""
     try:
         from transformers import pipeline  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError("FinBERT needs `uv sync --extra finbert`") from exc
-    pipe = pipeline("text-classification", model=model, top_k=None, truncation=True)
+    pipe = pipeline("text-classification", model=model, top_k=None, truncation=True, device=device)
 
     def classify(chunks: list[str]) -> list[dict[str, float]]:
-        return [{d["label"].lower(): d["score"] for d in out} for out in pipe(chunks)]
+        out = pipe(chunks, batch_size=batch_size)
+        return [{d["label"].lower(): d["score"] for d in o} for o in out]
 
     return classify
 

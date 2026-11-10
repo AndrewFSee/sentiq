@@ -2490,5 +2490,187 @@ def doc_change_cmd(
     _run("doc-change", cfg, {"primary": primary_cells, "secondary": secondary_cells}, body)
 
 
+@app.command("mdna-tone")
+def mdna_tone_cmd(
+    primary_cells: Annotated[str, typer.Option(help="Pre-registered cells")] = (
+        "close/20/market,close/60/market"
+    ),
+    secondary_cells: Annotated[str, typer.Option(help="Reported, not primary")] = (
+        "close/1/market,close/5/market,close/10/market,close/20/sector,close/60/sector"
+    ),
+    release_set: Annotated[
+        str, typer.Option(help="8-K feature set holding the release sentiment control")
+    ] = "8990ee7a9775",
+    finbert: Annotated[bool, typer.Option(help="Also score the MD&As with FinBERT")] = True,
+    tones: Annotated[
+        Path | None, typer.Option(help="Reuse a tones parquet from an earlier run")
+    ] = None,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 11: does the change in MD&A tone from the year-earlier 10-K / 10-Q predict returns?
+    Event-level rank IC of the LM tone change (local scorers only), pre-holdout."""
+    from newsfeed.eval.clusters import cluster_ic, decision_times
+    from newsfeed.eval.cv import pre_holdout_mask
+    from newsfeed.eval.docchange import filing_meta, pair_filings
+    from newsfeed.eval.mdna import mdna_tones, tone_changes
+    from newsfeed.eval.report import ic_detail
+    from newsfeed.features.baselines import make_finbert
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    prim, sec = _cells(primary_cells), _cells(secondary_cells)
+    control = "rel_sent"
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        store, fc, src = ctx.store, cfg.features, "edgar_periodic"
+        now = utcnow()
+        f = filing_meta(store.items_as_of(now, source=src, columns="item_id, tradable_at, meta"))
+        pairs = pair_filings(f)
+        out_dir = cfg.paths.data_dir / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        if tones is not None:
+            tn = pl.read_parquet(tones)
+        else:
+
+            def load(ids: list[str]) -> dict[str, str]:
+                # ids come from the as-of read above; items_as_of(item_ids=) would dedupe the
+                # whole lake per call (out of memory on 16 GB)
+                b = store.items_by_id(ids, sources=[src], columns="item_id, body_text")
+                return dict(zip(b["item_id"].to_list(), b["body_text"].to_list(), strict=True))
+
+            classify = None
+            if finbert:
+                import torch  # type: ignore[import-not-found]
+
+                dev = 0 if torch.cuda.is_available() else None
+                classify = make_finbert(fc.finbert_model, device=dev, batch_size=32)
+            tn = mdna_tones(f, load, load_lm_dictionary(fc.lm_dictionary), classify=classify)
+            # written before any return is joined, so a re-run can reuse it (--tones)
+            tn.write_parquet(out_dir / f"mdna-tone-{run_id}-tones.parquet")
+        ch = tone_changes(f, tn, pairs)
+        log.info(
+            "mdna-tone: %d filings, %d with an MD&A, %d with a tone change",
+            f.height, tn.height, ch["d_lm_tone"].is_not_null().sum(),
+        )  # fmt: skip
+        grid = as_of_grid(
+            ctx.calendar, ch["tradable_at"].min().date(), now.date(), fc.grid,
+            fc.decision_lag_minutes,
+        )  # fmt: skip
+        ev = ctx.fan_out(
+            ch.with_columns(
+                pl.Series(
+                    "as_of",
+                    decision_times(ch["tradable_at"].to_list(), grid),
+                    dtype=pl.Datetime("us", "UTC"),
+                )
+            )
+            .drop_nulls("as_of")
+            .with_columns(
+                pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date")
+            )
+        )
+        inp, _ = _eval_inputs(ctx, cfg, ev.select("ticker", "as_of").unique())
+        rel = store.features(release_set)
+        if rel.height == 0:
+            raise typer.BadParameter(f"feature set {release_set} not found")
+        ev = ev.join(
+            rel.select("ticker", "as_of", pl.col("5d_llm_sent_cwmean").alias(control)),
+            on=["ticker", "as_of"],
+            how="left",
+        )
+        values = ["d_lm_tone", "lm_tone", "d_lm_neg_prop", "lm_neg_prop", "d_fb_tone", "fb_tone"]
+        ev = ev.with_columns(pl.col(c).fill_nan(None) for c in [*values, control])
+        stacked = pl.concat(
+            [
+                ev.with_columns(pl.lit("all").alias("cluster")),
+                ev.with_columns(pl.col("form").alias("cluster")),
+            ]
+        ).select("ticker", "date", "cluster", *values, control)
+        plan = [("primary", prim, "d_lm_tone", None)]
+        plan += [("secondary", prim, v, None) for v in values[1:]]
+        plan += [("secondary", prim, "d_lm_tone", control), ("secondary", sec, "d_lm_tone", None)]
+        rows = []
+        for tier, cells, value, ctl in plan:
+            if stacked[value].is_null().all():
+                continue  # e.g. FinBERT not run
+            for r in cluster_ic(
+                stacked, inp.targets, inp.sessions, cfg, cells, value=value, control=ctl
+            ):
+                rows.append({"tier": tier, "value": value, "control": ctl or "", **r})
+        res = pl.DataFrame(rows)
+        # descriptive daily view for the primary measure / cells, all filings
+        session_idx = {d: i for i, d in enumerate(inp.sessions)}
+        daily = []
+        rng = np.random.default_rng(cfg.eval.seed + 1)
+        for entry, h, adj in prim:
+            t = inp.targets.filter((pl.col("entry") == entry) & (pl.col("horizon") == h))
+            d = ev.join(t, on=["ticker", "date"]).filter(pl.col("d_lm_tone").is_not_null())
+            dec = d["date"].to_numpy().astype("datetime64[D]")
+            end = d["label_end"].to_numpy().astype("datetime64[D]")
+            d = d.filter(pl.Series(pre_holdout_mask(dec, end, cfg.eval.holdout_start)))
+            s = np.array([session_idx.get(x, -1) for x in d["date"].to_list()])
+            daily.append(
+                {"cell": f"{entry}/{h}/{adj}", **ic_detail(
+                    s, d["d_lm_tone"].to_numpy().astype(float),
+                    d[f"ret_{adj}"].to_numpy().astype(float),
+                    block=h + 1, reps=cfg.eval.bootstrap_reps, rng=rng,
+                )}
+            )  # fmt: skip
+        n_pre = ev.filter(
+            (pl.col("date") < cfg.eval.holdout_start) & pl.col("d_lm_tone").is_not_null()
+        )
+        med = {k: ch.filter(pl.col("form") == k)["lm_tone"].median() for k in ("10-K", "10-Q")}
+        lines = [
+            f"# MD&A tone change {run_id}",
+            "",
+            f"- {f.height} 10-K/10-Q filings, {tn.height} with an MD&A, "
+            f"{ch['d_lm_tone'].is_not_null().sum()} with a year-earlier pair that has one; "
+            f"{n_pre.height} member-ticker events with a tone change before the holdout "
+            f"({n_pre['ticker'].n_unique()} tickers).",
+            "- LM tone = (pos - neg) / (pos + neg) of the MD&A (negation rule); `d_` = minus the "
+            "year-earlier same-form filing's; `lm_neg_prop` = negative-word share (expected "
+            "sign negative); FinBERT `fb_tone` = p_pos - p_neg over 400-word chunks (each chunk "
+            "truncated at 512 tokens). Event dated to the first decision after tradable_at; "
+            "pre-holdout; block bootstrap over sessions.",
+            f"- median MD&A tone 10-K {_num(med['10-K'])}, 10-Q {_num(med['10-Q'])}; median MD&A "
+            f"words {tn['mda_words'].median():.0f}. Control `{control}` = 8-K "
+            f"`5d_llm_sent_cwmean` from feature set `{release_set}`.",
+            "",
+            "| tier | value | control | cell | group | n | IC | 95% CI | p |",
+            "|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['tier']} | {r['value']} | {r['control'] or '-'} | "
+                f"{r['entry']}/{r['horizon']}/{r['adjustment']} | {r['cluster']} | {r['n']} | "
+                f"{_num(r['ic'])} | [{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} |"
+            )
+        lines += [
+            "",
+            "Daily view of `d_lm_tone` (descriptive; sessions with >= 10 filings):",
+            "",
+            "| cell | days | daily IC | 95% CI | ICIR | Q5 - Q1 | 95% CI |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for d in daily:
+            lines.append(
+                f"| {d['cell']} | {d['days']} | {_num(d['ic_daily'])} | "
+                f"[{_num(d['ic_daily_ci_lo'])}, {_num(d['ic_daily_ci_hi'])}] | "
+                f"{_num(d['icir'])} | {bp(d['q_spread'])} | [{bp(d['q_spread_ci_lo'])}, "
+                f"{bp(d['q_spread_ci_hi'])}] |"
+            )
+        path = _write_report(cfg, f"mdna-tone-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), filings=f.height, tones=tn.height)
+
+    _run(
+        "mdna-tone",
+        cfg,
+        {"primary": primary_cells, "secondary": secondary_cells, "release_set": release_set},
+        body,
+    )
+
+
 if __name__ == "__main__":
     app()
