@@ -256,7 +256,7 @@ def rebuild_stories(
         keys, (cutoff[0] - window, datetime.min.replace(tzinfo=cutoff[0].tzinfo), "")
     )
     need_text = [r["item_id"] for r in meta[ctx_lo:]]
-    texts = _load_texts(store, need_text)
+    texts = _load_texts(store, need_text, sorted({r["source"] for r in meta[ctx_lo:]}))
 
     assigner = StoryAssigner(cfg)
     for i, r in enumerate(meta[:start]):
@@ -323,13 +323,14 @@ def _node(
     )
 
 
-def _load_texts(store: Store, item_ids: list[str]) -> dict[str, str]:
+def _load_texts(
+    store: Store, item_ids: list[str], sources: list[str] | None = None
+) -> dict[str, str]:
     if not item_ids:
         return {}
-    df = store.query(
-        "SELECT item_id, title, body_text FROM items WHERE item_id IN (SELECT unnest($ids))",
-        {"ids": item_ids},
-    )
+    # by id before the view's dedupe window: via the view, DuckDB reads every body in the lake
+    # (10-K/10-Q text incl.) before the id filter -- 16-18 GB per collect cycle with a new item
+    df = store.items_by_id(item_ids, sources=sources, columns="item_id, title, body_text")
     return {r["item_id"]: dedupe_text(r["title"], r["body_text"]) for r in df.iter_rows(named=True)}
 
 

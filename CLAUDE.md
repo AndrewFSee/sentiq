@@ -1132,3 +1132,14 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   first (run 6c688a, status stuck at 'running', no output) was killed at ~17:50 and is not a
   second look; the earlier run 0f0956 died of OOM (`items_as_of(item_ids=)` deduped the whole
   lake per call; the command now loads bodies with `items_by_id`).
+- 2026-11-16 COLLECTOR MEMORY (user: numerai-signals saw nf.py at ~15 GB; laptop now 32 GB RAM).
+  Sampled every 5 s for 2 h: cycles without new items peak ~3.6 GB, the two cycles that ingested
+  an 8-K peaked at 16.7 / 18.6 GB for ~30 s and ran 5-9 min (so the 6-min `stalled` check fired at
+  the end of such a cycle; next poll fine, no coverage gap). Cause: `dedupe._load_texts` (story
+  near-dup texts of the 72 h before a new item) selected title/body from the `items` view, so
+  DuckDB read every body in the lake (10-K/10-Q text incl.) before the id filter -- same trap as
+  10-23. Now `items_by_id` with the needed sources (same rows; 79 ids: 2.5 s, no memory rise).
+  DuckDB has no memory_limit set (default 80% of RAM, ~25 GB since the upgrade); not capped.
+  Also 11-13: a TickerLake buyback probe fetching 8-K text at 8 req/s plus the collector's
+  sweep exceeded SEC's ~10 req/s -> HTTP 429 for 22 min (bridged, no gap); run other SEC
+  fetchers at <= 2 req/s while the collector runs.
