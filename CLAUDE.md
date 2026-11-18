@@ -31,7 +31,8 @@ speed and polish.** It is not a trading system.
 ```
 # Smart App Control is OFF since 2026-10-26, so `uv run newsfeed …` / `uv run pytest` work again.
 # Fallback if it is ever back on (it blocked the venv's own .exe launchers): the base interpreter
-# + scripts/nf.py, as below; collect_window.cmd always uses this route (works either way).
+# + scripts/nf.py, as below; the collector (boot task \Sentiq\Collector + collect_window.cmd, both
+# via scripts/collect_service.py) always uses this route (works either way).
 # PY=%APPDATA%\uv\python\cpython-3.11.12-windows-x86_64-none\python.exe
 uv sync --extra finbert                   # install (Python >=3.11; extra = CUDA torch)
 "$PY" scripts/nf.py -m pytest              # no network: pytest-socket --disable-socket
@@ -1161,3 +1162,17 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   project's extraction) held 16 GB; quiet cycles went ~20 s → ~85 s, cycles with a new 8-K
   ~160 s → 650-1,240 s. Polls stayed ≤ 21 min apart (no coverage gap); `stalled` fired. Only the
   freshness of live first_seen / scored_at suffers. Run heavy batch jobs at below-normal priority.
+- 2026-11-18 (user decision) BOOT COLLECTOR: a Windows Update restart on 11-11 00:29 ET stopped
+  collection for 7.3 h (until login; the collector only started from the Startup folder), and
+  every gap > 60 min breaks live coverage, nulling 1d features for a day and 5d for a week. Now
+  the scheduled task `\Sentiq\Collector` (S4U = runs before/without login, no stored password;
+  boot trigger + 1 min, normal priority, restart on failure; registered by the admin-only
+  `scripts/install_boot_collector.ps1`, which also made `\MarketCompass\SentiqHourly` S4U) runs
+  `scripts/collect_service.py --mode boot`: the old cmd loop (collect --once, --check, 120 s) in
+  Python, holding `data/state/collector.lock` (OS byte-range lock, freed when the process dies).
+  `collect_window.cmd` runs the same loop: while the boot copy holds the lock the window stands by
+  (title shows the active copy's last result from `data/state/collector-status.json`) and takes
+  over within 30 s if it stops — never two collectors (SEC rate). Stopping all collection = close
+  the window AND `Stop-ScheduledTask -TaskPath \Sentiq\ -TaskName Collector` (admin). Service
+  events: `data/collector-service.log`. Windows Update: active hours 04-22, notify before
+  restart. Switched 11-18 18:11 UTC with no gap; boot-task polls verified (8-K + transcripts ok).
