@@ -1143,3 +1143,21 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   Also 11-13: a TickerLake buyback probe fetching 8-K text at 8 req/s plus the collector's
   sweep exceeded SEC's ~10 req/s -> HTTP 429 for 22 min (bridged, no gap); run other SEC
   fetchers at <= 2 req/s while the collector runs.
+- 2026-11-18 LIVE-SCORING OUTAGE (found while building the dashboard): every live scoring call
+  from 2026-11-09 to 11-12 00:00 UTC failed with HTTP 401 `invalid x-api-key` (~218 cache keys).
+  API errors aren't stored, so the collector retried them, but only inside
+  `scoring.live_lookback_hours` (48): 167 were scored 25-50 h late (their live features use
+  max(tradable_at, scored_at), so most miss their 1d window — fewer live holdout events, timing
+  still PIT), 51 fell out of the look-back and were scored by hand on 11-18
+  (`score --start 2026-11-01 --end 2026-11-19`, 51 ok, $0.04). `collect --check` does not watch
+  scoring errors; the dashboard shows unresolved ones.
+- 2026-11-18 DASHBOARD: `scripts/publish_news_to_hub.py` publishes scored 8-Ks / calls, collector
+  health, scoring errors, spend and holdout progress (event counts only) to the market-compass hub
+  (job `sentiq`, page "Filings & Calls"; nightly in HubRefresh, hourly on weekdays 04:35-19:35 ET
+  via `\MarketCompass\SentiqHourly`). It shows **no prices or returns** (holdout stays unseen).
+  Read-only on the store; no SEC or model calls.
+- 2026-11-18 SLOW MORNINGS (recorded 08:30-11:00 ET): not the collector. Another project's
+  18-worker batch job pinned all 20 CPU threads, and a local Ollama model (busy with another
+  project's extraction) held 16 GB; quiet cycles went ~20 s → ~85 s, cycles with a new 8-K
+  ~160 s → 650-1,240 s. Polls stayed ≤ 21 min apart (no coverage gap); `stalled` fired. Only the
+  freshness of live first_seen / scored_at suffers. Run heavy batch jobs at below-normal priority.
