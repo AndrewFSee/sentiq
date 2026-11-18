@@ -1018,18 +1018,9 @@ def _sample_companies(ctx: Context, cfg: AppConfig, feats: pl.DataFrame) -> pl.D
     return feats.with_row_index("_r").filter(pl.col("_r").is_in(hit.implode())).drop("_r")
 
 
-def _eval_inputs(
-    ctx: Context, cfg: AppConfig, feats: pl.DataFrame, *, refresh_prices: bool = False
-) -> tuple[EvalInputs, list[dict]]:
-    """Prices (routed, cached), targets, controls and PIT size for a feature table (restricted
-    to ``eval.sample_companies_file`` first, so sizes are ranked within that sample)."""
-    ec = cfg.eval
-    feats = _sample_companies(ctx, cfg, feats)
-    if feats.height == 0:
-        raise typer.BadParameter("no feature rows left in the sample")
-    dates = decision_dates(feats)
-    secrets = load_secrets()
-    caches = {
+def _price_caches(cfg: AppConfig) -> dict[str, CachedPrices]:
+    ec, secrets = cfg.eval, load_secrets()
+    return {
         "tradier": CachedPrices(
             TradierPrices(
                 secrets.tradier_token, ec.tradier_base_url, ec.tradier_requests_per_second
@@ -1045,6 +1036,19 @@ def _eval_inputs(
             cfg.paths.ref_dir / "prices_tiingo",
         ),
     }
+
+
+def _eval_inputs(
+    ctx: Context, cfg: AppConfig, feats: pl.DataFrame, *, refresh_prices: bool = False
+) -> tuple[EvalInputs, list[dict]]:
+    """Prices (routed, cached), targets, controls and PIT size for a feature table (restricted
+    to ``eval.sample_companies_file`` first, so sizes are ranked within that sample)."""
+    ec = cfg.eval
+    feats = _sample_companies(ctx, cfg, feats)
+    if feats.height == 0:
+        raise typer.BadParameter("no feature rows left in the sample")
+    dates = decision_dates(feats)
+    caches = _price_caches(cfg)
     after_days, max_pad = horizon_days(max(ec.horizons))
     lo, end = dates[0], min(dates[-1] + timedelta(days=after_days), utcnow().date())
     tickers = sorted(feats["ticker"].unique().to_list())
@@ -2670,6 +2674,248 @@ def mdna_tone_cmd(
         {"primary": primary_cells, "secondary": secondary_cells, "release_set": release_set},
         body,
     )
+
+
+def _record_experiment(ctx: Context, kind: str, key: str, run_id: str, params: dict) -> None:
+    with ctx.store.ops() as con:
+        con.execute(
+            "INSERT INTO experiments VALUES (?, ?, ?, ?, ?)",
+            [kind, key, utcnow(), run_id, json.dumps(params, default=str)],
+        )
+
+
+@app.command("tone-market")
+def tone_market_cmd(
+    reps: Annotated[int, typer.Option(help="Bootstrap repetitions")] = 10_000,
+    min_pairs: Annotated[int, typer.Option(help="Months with fewer pairs are dropped")] = 10,
+    start: Annotated[str, typer.Option(help="First tone month")] = "2020-01-01",
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 12 (pre-registered 2026-11-18): does the month's same-company change in earnings-
+    release tone predict next month's SPY return? Monthly Spearman correlation, block bootstrap
+    over months, pre-holdout targets only."""
+    from newsfeed.eval.aggregate import (
+        corr_test,
+        month_index,
+        monthly_tone,
+        monthly_total_returns,
+        tone_market_table,
+    )
+    from newsfeed.eval.prices import price_panel
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    first = _parse_day(start).date()
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        if cfg.universe.all_extra_members():
+            raise typer.BadParameter("use an S&P 500-only config (the pre-registered universe)")
+        ev, grid = _llm_events(ctx, cfg, "edgar", ["earnings"], masked=False)
+        # member on the release's decision date; one release per (filing, company)
+        rel = (
+            _dated_events(ctx, ev, grid)
+            .unique(["item_id", "cik"])
+            .select("item_id", "cik", "t_use", "sentiment")
+        )
+        tone = monthly_tone(rel, min_pairs=min_pairs).filter(pl.col("month") >= first)
+        bars = price_panel(
+            _price_caches(cfg)["tradier"],
+            [cfg.eval.market_etf],
+            first - timedelta(days=10),
+            utcnow().date(),
+        )
+        tab = tone_market_table(tone, monthly_total_returns(bars), cfg.eval.holdout_start)
+        months = month_index(tab["month"].to_list())
+        rng = np.random.default_rng(cfg.eval.seed)
+        plan = [("primary", "yoy", "spy_next", 3)]
+        plan += [("secondary (a)", "yoy_3m", "spy_next3", 6)]
+        plan += [
+            ("secondary (b)", "yoy", "spy_same", 3),
+            ("secondary (b)", "yoy_3m", "spy_same", 3),
+        ]
+        for m in ("level", "raw"):
+            plan += [
+                (f"secondary ({'c' if m == 'level' else 'd'})", m, "spy_next", 3),
+                (f"secondary ({'c' if m == 'level' else 'd'})", f"{m}_3m", "spy_next3", 6),
+                (f"secondary ({'c' if m == 'level' else 'd'})", m, "spy_same", 3),
+            ]
+        rows = []
+        for tier, x, y, block in plan:
+            r = corr_test(
+                tab[x].cast(pl.Float64).fill_null(np.nan).to_numpy(),
+                tab[y].cast(pl.Float64).fill_null(np.nan).to_numpy(),
+                months,
+                block=block,
+                reps=reps,
+                rng=rng,
+            )
+            rows.append({"tier": tier, "measure": x, "target": y, "block": block, **r})
+            log.info("tone-market %s %s vs %s: %s", tier, x, y, r)
+        res = pl.DataFrame(rows)
+        used = tab.filter(pl.col("spy_next").is_not_null() & pl.col("yoy").is_not_null())
+        lines = [
+            f"# Aggregate earnings tone vs the market {run_id}",
+            "",
+            f"- releases: S&P 500 earnings 8-Ks (test 1 definition), {rel.height} in total; month "
+            "= New York month of t_use. `yoy` = mean of (sentiment - same company's release "
+            f"320-410 days earlier), months with < {min_pairs} pairs dropped; `level` = mean "
+            "sentiment minus the company's mean over earlier releases; `raw` = mean sentiment; "
+            "`_3m` = mean of months m-2..m.",
+            "- targets: SPY total return in month m + 1 (`spy_next`), m + 1..m + 3 "
+            "(`spy_next3`), month m (`spy_same`, contemporaneous, not tradable); only targets "
+            f"ending before {cfg.eval.holdout_start}. Spearman correlation across months, "
+            f"circular block bootstrap over months, {reps} reps.",
+            f"- primary sample: {used.height} months, {used['month'].min()} .. "
+            f"{used['month'].max()}; median pairs per month {used['n_pairs'].median():.0f}.",
+            "",
+            "| tier | measure | target | months | corr | 95% CI | p |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['tier']} | {r['measure']} | {r['target']} | {r['n']} | "
+                f"{_num(r['corr'])} | [{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} |"
+            )
+        out = cfg.paths.data_dir / "reports" / f"tone-market-{run_id}-months.parquet"
+        tab.write_parquet(out)
+        path = _write_report(cfg, f"tone-market-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), months=used.height, releases=rel.height)
+        _record_experiment(
+            ctx, "tone_market", f"tone-market:{run_id}", run_id,
+            {"reps": reps, "min_pairs": min_pairs, "start": start},
+        )  # fmt: skip
+
+    _run("tone-market", cfg, {"reps": reps, "min_pairs": min_pairs, "start": start}, body)
+
+
+@app.command("materiality-impact")
+def materiality_impact_cmd(
+    reps: Annotated[int, typer.Option(help="Bootstrap repetitions")] = 10_000,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 13 (pre-registered 2026-11-18): does Haiku's materiality label (low < medium < high)
+    track the size of the price reaction to an 8-K? Partial rank correlation with
+    |market-adjusted return close[i-1] -> close[i]| given trailing volatility and liquidity;
+    secondary: realised volatility over the next 5 sessions. Pre-holdout."""
+    from newsfeed.eval.aggregate import MATERIALITY_RANK
+    from newsfeed.eval.report import partial_rank_corr
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        if cfg.universe.all_extra_members():
+            raise typer.BadParameter("use an S&P 500-only config (the pre-registered universe)")
+        ev, grid = _llm_events(ctx, cfg, "edgar", [], masked=False)
+        ev = ev.filter(pl.col("materiality").is_in(list(MATERIALITY_RANK)))
+        e = _dated_events(ctx, ev, grid).with_columns(
+            pl.col("materiality").replace_strict(MATERIALITY_RANK).cast(pl.Float64).alias("mat")
+        )
+        inp, _ = _eval_inputs(ctx, cfg, e.select("ticker", "as_of").unique())
+        sess = inp.sessions
+        prev = {sess[i]: sess[i - 1] for i in range(1, len(sess))}
+        session_idx = {d: i for i, d in enumerate(sess)}
+        hold = next((i for i, d in enumerate(sess) if d >= cfg.eval.holdout_start), len(sess))
+        r1 = inp.targets.filter((pl.col("entry") == "close") & (pl.col("horizon") == 1)).select(
+            "ticker", pl.col("date").alias("prev_date"), pl.col("ret_market").abs().alias("react")
+        )
+        d = (
+            e.with_columns(pl.col("date").replace_strict(prev, default=None).alias("prev_date"))
+            .join(r1, on=["ticker", "prev_date"], how="left")
+            .join(inp.controls, on=["ticker", "date"], how="left")
+            .join(inp.vol_targets, on=["ticker", "date"], how="left")
+            .with_columns(
+                pl.col("ctl_gap").abs().alias("abs_gap"),
+                pl.col("ctl_ret_1d").abs().alias("abs_ret_1d"),
+                (pl.col("event_type") == "earnings").alias("is_earn"),
+            )
+        )
+        s = np.array([session_idx.get(x, -1) for x in d["date"].to_list()])
+        x = d["mat"].to_numpy().astype(float)
+        earn = d["is_earn"].to_numpy()
+        rng = np.random.default_rng(cfg.eval.seed)
+
+        def arr(col: str) -> np.ndarray:
+            return d[col].cast(pl.Float64).fill_null(np.nan).to_numpy()
+
+        react_ctl = np.column_stack([arr("ctl_vol_20d"), arr("ctl_log_dvol_20d")])
+        vol_ctl = np.column_stack([arr(c) for c in VOL_CONTROLS])
+        targets = [
+            ("primary", "react", react_ctl, 2, (s >= 1) & (s < hold)),
+            ("secondary", "rv_5", vol_ctl, 6, (s >= 0) & (s + 5 < hold)),
+        ]
+        rows = []
+        for tier, tgt, ctl, block, pre in targets:
+            y = arr(tgt)
+            for subset, m in (
+                ("all", pre),
+                ("earnings", pre & earn),
+                ("non-earnings", pre & ~earn),
+            ):
+                tier_here = tier if subset == "all" else "secondary"
+                r = partial_rank_corr(x[m], y[m], ctl[m], s[m], block=block, reps=reps, rng=rng)
+                rows.append({"tier": tier_here, "target": tgt, "subset": subset, **r})
+                log.info("materiality-impact %s %s: %s", tgt, subset, r)
+        res = pl.DataFrame(rows)
+        pre_r = d.filter(pl.Series((s >= 1) & (s < hold)) & pl.col("react").is_not_null())
+        desc = (
+            pre_r.with_columns(
+                pl.when(pl.col("is_earn")).then(pl.lit("earnings")).otherwise(pl.lit("other"))
+                .alias("events")
+            )
+            .group_by("events", "materiality")
+            .agg(
+                pl.len().alias("n"),
+                (pl.col("react").mean() * 1e4).alias("mean_bp"),
+                (pl.col("react").median() * 1e4).alias("median_bp"),
+                ((pl.col("react") > 0.05).mean()).alias("share_gt_5pct"),
+            )
+            .sort("events", pl.col("materiality").replace_strict(MATERIALITY_RANK))
+        )  # fmt: skip
+        lines = [
+            f"# Materiality vs price impact {run_id}",
+            "",
+            f"- events: 8-K founders, all types, unmasked Haiku, relevance >= "
+            f"{cfg.features.min_relevance}, materiality present; {d.height} member-ticker events, "
+            f"{pre_r.height} with a pre-holdout reaction.",
+            "- react = |market-adjusted total return close[i-1] -> close[i]|, i = first decision "
+            "session; partial rank correlation of materiality rank (low 0 < medium 1 < high 2) "
+            "given ctl_vol_20d, ctl_log_dvol_20d (block 2). rv_5 = sd of daily log returns over "
+            f"i+1..i+5 given {', '.join(VOL_CONTROLS)} (block 6). {reps} reps.",
+            "",
+            "| tier | target | events | n | raw IC | partial IC | 95% CI | p |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['tier']} | {r['target']} | {r['subset']} | {r['n']} | {_num(r['ic'])} | "
+                f"{_num(r['partial_ic'])} | [{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.3f')} |"
+            )
+        lines += [
+            "",
+            "Size of the reaction by materiality (descriptive, pre-holdout):",
+            "",
+            "| events | materiality | n | mean abs. reaction | median | share > 5% |",
+            "|---|---|---|---|---|---|",
+        ]
+        for r in desc.iter_rows(named=True):
+            lines.append(
+                f"| {r['events']} | {r['materiality']} | {r['n']} | {r['mean_bp']:.0f} bp | "
+                f"{r['median_bp']:.0f} bp | {r['share_gt_5pct']:.1%} |"
+            )
+        out = cfg.paths.data_dir / "reports" / f"materiality-impact-{run_id}-levels.parquet"
+        desc.write_parquet(out)
+        path = _write_report(cfg, f"materiality-impact-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), events=d.height)
+        _record_experiment(
+            ctx, "materiality_impact", f"materiality-impact:{run_id}", run_id, {"reps": reps}
+        )
+
+    _run("materiality-impact", cfg, {"reps": reps}, body)
 
 
 if __name__ == "__main__":

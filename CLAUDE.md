@@ -1176,3 +1176,72 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   the window AND `Stop-ScheduledTask -TaskPath \Sentiq\ -TaskName Collector` (admin). Service
   events: `data/collector-service.log`. Windows Update: active hours 04-22, notify before
   restart. Switched 11-18 18:11 UTC with no gap; boot-task polls verified (8-K + transcripts ok).
+- 2026-11-18 Descriptive (no prices): earnings-release tone dips in weeks with few releases
+  (weekly mean 0.26 at <= 40 releases vs 0.33 in peak weeks), mostly composition — off-cycle
+  reporters' usual tone is lower (0.26-0.31 vs 0.33) and off-season "earnings" 8-Ks include
+  pre-announcements / updates without item 2.02 (tone 0.13). Same company vs its release ~1 year
+  earlier, Aug 1 - Nov 13: 2021 +0.32, 2022 -0.27, 2023 0.00, 2024 +0.01, 2025 +0.06, 2026
+  +0.05; 2026 by month +0.15 (Apr), +0.18 (May), +0.13 (Aug), +0.04 (Oct), -0.01 (Nov so far).
+- 2026-11-18 PRE-REGISTERED test 12 (user-approved; aggregate earnings tone vs the market; no LLM
+  cost; written before any market return was computed for it; the measure was chosen after the
+  descriptive tone look above, which used no prices). Releases: S&P 500 earnings 8-Ks as test 1
+  (story founders, unmasked Haiku 5.5 prompt 6108c555090fa4b3, event_type earnings, relevance >=
+  secondary, `config/variants/sp500_noemb.yaml` universe, member on the release date), each
+  dated by t_use in New York. **Measure** for calendar month m: mean over the month's releases
+  of (sentiment - sentiment of the same CIK's earnings release 320-410 days earlier, closest to
+  365); months with < 10 pairs are dropped. **Target**: SPY total return (dividends included,
+  Tradier bars) from the last close of month m to the last close of month m + 1. **Sample**:
+  m from 2020-01 (first month with year-earlier pairs) to 2026-05 (target ends before the
+  holdout, 2026-07-01); ~77 months. **Statistic**: Spearman correlation across months,
+  circular block bootstrap over months (block 3), 10,000 reps, two-sided p. **Primary**:
+  correlation > 0 with p < 0.05. Secondary (reported, not tested): (a) 3-month smoothing —
+  mean of months m-2..m vs SPY over m+1..m+3 (overlapping, block 6); (b) contemporaneous, month
+  m vs SPY in month m (not tradable; descriptive); (c) level measure = mean firm-demeaned
+  sentiment (each release minus the company's mean over *earlier* releases only); (d) raw mean
+  tone. Expectation (Kothari, Lewellen & Warner 2006): aggregate earnings news does not
+  predict market returns positively and is often negatively related contemporaneously, so a
+  null or negative result is the base case. Power is low (~77 months). The holdout months
+  (from 2026-07) are not used.
+- 2026-11-18 PRE-REGISTERED test 13 (user-approved; does Haiku's materiality label track price
+  impact? no LLM cost; written before any return was computed for it). Events: 8-K story
+  founders, all event types, unmasked Haiku 5.5 prompt 6108c555090fa4b3, relevance >=
+  secondary, materiality not null, dated to the first 15:50 decision >= t_use (session i),
+  fanned out to member tickers (`config/variants/sp500_noemb.yaml`), pre-holdout (label end
+  before 2026-07-01). Value: materiality as rank low 0 < medium 1 < high 2. **Primary target:
+  the reaction** = |market-adjusted total return close[i-1] -> close[i]| (covers the release:
+  after-close and pre-open releases through the next open, intraday ones from the previous
+  close; descriptive of impact, not a tradable signal). Statistic: partial rank correlation
+  given ctl_vol_20d and ctl_log_dvol_20d (known before the release), circular block bootstrap
+  over sessions (block 2). **Primary**: partial IC > 0 with two-sided p < 0.05. Secondary (no
+  BH family): rv_5 after the decision with test 7's controls; earnings vs non-earnings events
+  separately; mean |reaction| by materiality level (for the dashboard's explanation).
+- 2026-11-18 RESULT test 12 (run 5c8bca, 10,000 reps; 16,929 releases, 77 months 2020-01 ..
+  2026-05, median 192 pairs per month): primary FAILS — same-company tone change vs next month's
+  SPY return, Spearman -0.058 (CI [-0.233, +0.130], p 0.55). Secondary: 3-month smoothed -0.118
+  (p 0.45); contemporaneous -0.03 / -0.05 (n.s.); firm-demeaned level vs next month -0.211
+  (p 0.023); raw mean tone vs next month -0.250 (CI [-0.404, -0.072], p 0.009), raw 3-month vs
+  next 3 months -0.294 (p 0.087). Direction = Kothari-Lewellen-Warner (upbeat earnings months,
+  weaker market after), not the user's hypothesis. Not pre-registered, noted only: not
+  seasonality (calendar month explains 8% of raw tone's variance; deseasonalised raw -0.198,
+  p 0.040, yoy -0.070, p 0.46); split halves raw 2020-22 -0.318 (p 0.013, n 36), 2023-26 -0.104
+  (p 0.45, n 41) — the raw-tone result leans on 2020-22 (2021's euphoric releases before the 2022
+  drawdown); a persistent regressor in 77 months, so treat as a hint, not a finding.
+  Infra found on the way: Tradier now needs `BRK/B`-style class-share symbols (dotted symbols
+  answer HTTP 400 "symbol not found"; they used to return no bars, so class shares were always
+  priced from Tiingo, whose closes match). `vendor_symbol` maps `-` to `/`; a 400 "symbol not
+  found" is treated as no bars. Cached class-share series stay on Tiingo (Tradier's cached
+  series are empty, so an extension starts late and loses to Tiingo): earlier tests unaffected.
+- 2026-11-18 RESULT test 13 (run 2bf52e, 10,000 reps; 53,427 member-ticker 8-K events, 49,849
+  with a pre-holdout reaction and controls; a first launch crashed in price loading on the
+  Tradier class-share 400 above, before any statistic): primary PASSES — materiality rank vs
+  |market-adjusted reaction close[i-1] -> close[i]|, partial IC +0.413 (CI [+0.401, +0.425],
+  p < 0.001 at the bootstrap floor). Pooled across types it partly reflects event type (earnings
+  are mostly 'high' and move most); within type it holds: earnings +0.148, non-earnings +0.148
+  (both CI excluding 0). Mean |reaction| earnings low / medium / high 172 / 224 / 423 bp (share
+  > 5%: 6.6 / 10.0 / 30.9%; n 151 / 758 / 15,076); other 8-Ks 135 / 179 / 307 bp (2.9 / 6.2 /
+  17.0%; n 23.8k / 7.4k / 3.4k). After the decision, rv_5 given test 7's controls: +0.019
+  (p 0.064); earnings +0.033 (p 0.001); non-earnings +0.010 (n.s.). Reading: the label tracks
+  how much the news moved the stock on the day it became usable (size, not direction), and says
+  little about volatility afterwards. Not a return signal; the reaction mostly happens before
+  the first 15:50 decision. Caveat: pre-holdout, so the model may partly recall which filings
+  mattered.

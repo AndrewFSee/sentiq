@@ -141,6 +141,20 @@ RESEARCH = [
         "IC h20 -0.016 (p 0.37), h60 -0.017 (p 0.17)",
         "fail",
     ),
+    (
+        "12",
+        "2026-11-18",
+        "Aggregate earnings tone (same-company change) -> next month's S&P 500",
+        "monthly corr -0.058 (p 0.55)",
+        "fail; raw tone leans negative (-0.25, p 0.009, mostly 2020-22)",
+    ),
+    (
+        "13",
+        "2026-11-18",
+        "Materiality label -> size of the price reaction",
+        "partial corr +0.41 (p < 0.001); within type +0.15",
+        "pass: tracks move size, not direction",
+    ),
 ]
 HOLDOUT = [
     # id, test, look date(s), pass rule, planned n
@@ -243,6 +257,67 @@ def load_filings(store: Store, cfg) -> pl.DataFrame:
         .with_columns(pl.col("sector").fill_null("Unknown"))
     )
     return df.sort("tradable_at", descending=True)
+
+
+def usable_at() -> pl.Expr:
+    """When the *score* was usable: tradable_at, or max(tradable_at, scored_at) for live items
+    (the research's t_use)."""
+    return (
+        pl.when(pl.col("ingest_mode") == "live")
+        .then(pl.max_horizontal("tradable_at", "scored_at"))
+        .otherwise(pl.col("tradable_at"))
+    )
+
+
+def effect_window(df: pl.DataFrame, cfg) -> pl.DataFrame:
+    """Adds ``fades_by``: the close two sessions after the first 15:50 decision at or after the
+    score was usable -- the end of test 1's primary cell (close entry, h = 2), where the
+    pre-holdout signal of earnings releases and calls was concentrated (delay sensitivity:
+    mostly gone 2-5 sessions later). Only for earnings / guidance 8-Ks and earnings calls with
+    relevance >= secondary; null elsewhere (no signal was found for other documents)."""
+    import exchange_calendars as xcals
+    import numpy as np
+
+    cal = xcals.get_calendar(cfg.market.calendar, start="2018-01-01")
+    utc_closes = pd.to_datetime(cal.closes, utc=True).dt.tz_convert(None)  # naive UTC
+    closes = utc_closes.to_numpy().astype("datetime64[us]").astype(np.int64)
+    lag = cfg.features.decision_lag_minutes * 60 * 1_000_000
+    t_use = df.select(usable_at().dt.epoch("us").alias("t"))["t"].to_numpy()
+    idx = np.searchsorted(closes - lag, t_use, side="left") + 2
+    ok = idx < len(closes)
+    fades = np.where(ok, closes[np.minimum(idx, len(closes) - 1)], 0)
+    eligible = pl.col("relevance").is_in(["primary", "secondary"]) & (
+        (
+            pl.col("doc").is_in(["8-K", "8-K/A"])
+            & pl.col("event_type").is_in(["earnings", "guidance"])
+        )
+        | ((pl.col("doc") == "Earnings call") & (pl.col("event_type") == "earnings"))
+    )
+    f = pl.Series("_f", fades).cast(pl.Datetime("us")).dt.replace_time_zone("UTC")
+    return df.with_columns(
+        pl.when(eligible & pl.Series(ok)).then(f).otherwise(None).alias("fades_by")
+    )
+
+
+def tone_monthly(df: pl.DataFrame) -> pl.DataFrame:
+    """Per month: S&P 500 earnings 8-K tone vs the same companies' releases a year earlier
+    (test 12's measure; mean of sentiment minus the same CIK's release 320-410 days earlier),
+    plus the raw monthly mean. Tone only; no returns."""
+    from newsfeed.eval.aggregate import monthly_tone
+
+    rel = (
+        df.filter(
+            pl.col("doc").is_in(["8-K", "8-K/A"])
+            & (pl.col("event_type") == "earnings")
+            & (pl.col("group") == "S&P 500")
+            & pl.col("relevance").is_in(["primary", "secondary"])
+            & pl.col("sentiment").is_not_null()
+        )
+        .with_columns(usable_at().alias("t_use"))
+        .unique(["item_id", "cik"])
+        .select("item_id", "cik", "t_use", "sentiment")
+    )
+    return monthly_tone(rel, min_pairs=10).select("month", "yoy", "n_pairs", "raw", "n")
 
 
 def daily(df: pl.DataFrame) -> pl.DataFrame:
@@ -389,7 +464,7 @@ def main() -> int:
     cfg = load_config(None)
     now = datetime.now(UTC)
     with Store(cfg.paths) as store:
-        df = load_filings(store, cfg)
+        df = effect_window(load_filings(store, cfg), cfg)
         h = health(store, now)
     out = df.select(
         "item_id",
@@ -408,6 +483,7 @@ def main() -> int:
         "tradable_at",
         "ingest_mode",
         "scored_at",
+        "fades_by",
         "date",
         "relevance",
         "event_type",
@@ -420,6 +496,7 @@ def main() -> int:
     )
     hub.save_frame(MODULE, "filings", out.to_pandas())
     hub.save_frame(MODULE, "daily", daily(df).to_pandas())
+    hub.save_frame(MODULE, "tone_monthly", tone_monthly(df).to_pandas())
     hub.save_json(MODULE, "health", h)
     prog = holdout_progress(df)
     hub.save_frame(

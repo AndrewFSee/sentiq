@@ -508,3 +508,32 @@ def test_bootstrap_p_never_zero_and_floor_note():
     assert s["p"] == pytest.approx(2 / 1000)
     assert "no cell can pass BH" in p_floor_note(1000, 180, 0.10)[0]
     assert "no cell can pass" not in p_floor_note(10000, 180, 0.10)[0]
+
+
+def test_tradier_class_shares_use_slash_and_unknown_symbols_are_empty():
+    from newsfeed.eval.prices import vendor_symbol
+
+    assert vendor_symbol("BRK-B") == "BRK/B"
+    assert vendor_symbol("AAPL") == "AAPL"
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req.url.params["symbol"])
+        if req.url.params["symbol"] == "BF/B":
+            return httpx.Response(200, json={"history": {"day": [
+                {"date": "2026-11-17", "open": 30.0, "high": 31.0, "low": 29.0, "close": 30.5,
+                 "volume": 1e6}]}})  # fmt: skip
+        return httpx.Response(400, text="Invalid parameter, ZZZ: symbol not found.")
+
+    src = TradierPrices("tok", "https://api.tradier.test", 100)
+    src.http = HttpClient(
+        user_agent="t",
+        rate_per_sec=100,
+        limiter=RateLimiter(100, clock=lambda: 0.0, sleep=lambda s: None),
+        transport=httpx.MockTransport(handler),
+    )
+    assert src.daily_bars("BF-B", date(2026, 11, 17), date(2026, 11, 17))["close"].to_list() == [
+        30.5
+    ]
+    assert src.daily_bars("ZZZ", date(2026, 11, 17), date(2026, 11, 17)).height == 0
+    assert seen == ["BF/B", "ZZZ"]

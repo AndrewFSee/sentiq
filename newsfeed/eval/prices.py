@@ -64,7 +64,14 @@ DIV_SCHEMA = {"ex_date": pl.Date, "amount": pl.Float64}
 
 
 def vendor_symbol(ticker: str) -> str:
-    return ticker.replace("-", ".")  # BRK-B -> BRK.B
+    # Tradier's share-class notation is BRK/B (verified 2026-11-18: BRK.B / BF.B now answer HTTP
+    # 400 "symbol not found" on history and "Nothing was found" on fundamentals; before, the
+    # dotted form returned no bars, so class shares were always priced from Tiingo)
+    return ticker.replace("-", "/")
+
+
+def _symbol_not_found(exc: httpx.HTTPStatusError) -> bool:
+    return exc.response.status_code == 400 and "symbol not found" in exc.response.text.lower()
 
 
 def _records(tab: object) -> list[dict]:
@@ -92,7 +99,13 @@ class TradierPrices:
             f"{self.base}/v1/markets/history?symbol={vendor_symbol(symbol)}&interval=daily"
             f"&start={start.isoformat()}&end={end.isoformat()}"
         )
-        hist = (self.http.get(url).json() or {}).get("history") or {}
+        try:
+            hist = (self.http.get(url).json() or {}).get("history") or {}
+        except httpx.HTTPStatusError as exc:
+            if not _symbol_not_found(exc):
+                raise
+            log.info("tradier: %s not found (%s)", symbol, exc.response.text[:80])
+            hist = {}  # unknown symbol = no bars (the router falls back to Tiingo)
         days = hist.get("day") or []
         if isinstance(days, dict):  # a single bar comes back as an object
             days = [days]
