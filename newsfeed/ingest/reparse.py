@@ -45,7 +45,10 @@ def reparse_source(
     everything: bool = False,
 ) -> dict[str, Any]:
     where = "source = $s" if everything else "source = $s AND parser_version <> $v"
-    stored = store.query(f"SELECT * FROM items WHERE {where}", {"s": source, "v": parser_version})
+    # only this source's partitions (same rows as the items view; the view would read every body
+    # in the lake, 10-K text included, before filtering)
+    rel = store.items_relation([source])
+    stored = store.query(f"SELECT * FROM {rel} WHERE {where}", {"s": source, "v": parser_version})
     stats: dict[str, Any] = {
         "candidates": stored.height,
         "rewritten": 0,

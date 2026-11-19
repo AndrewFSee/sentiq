@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from newsfeed.config import AppConfig
+from newsfeed.config import MARKET_SOURCES, AppConfig
 from newsfeed.dedupe import rebuild_stories
 from newsfeed.features.baselines import compute_baselines, load_lm_dictionary, make_finbert
 from newsfeed.features.embeddings import Embedder, FastEmbedder, compute_embeddings
@@ -45,16 +45,21 @@ def relink(
     ids = store.query(
         """
         SELECT i.item_id FROM items i
-        WHERE list_contains($force, i.source) OR NOT EXISTS (
+        WHERE NOT list_contains($market, i.source)  -- market-level documents are never linked
+          AND (list_contains($force, i.source) OR NOT EXISTS (
             SELECT 1 FROM item_tickers_all t
             WHERE t.item_id = i.item_id AND t.linker_id = $lid AND t.text_hash = i.text_hash
               -- links must postdate the item row they describe: a re-parsed item can change
               -- its source tags without changing its text
               AND t.linked_at >= i.ingested_at
-        )
+        ))
         ORDER BY i.item_id
         """,
-        {"lid": linker.linker_id, "force": list(force_sources or [])},
+        {
+            "lid": linker.linker_id,
+            "force": list(force_sources or []),
+            "market": list(MARKET_SOURCES),
+        },
     )["item_id"].to_list()
     total = 0
     cols = "item_id, source, title, body_text, tickers, text_hash, meta, published_at"
@@ -147,7 +152,11 @@ def derive(
         log.info("derive skipped: lock held by another process")
         return {"skipped": True}
     try:
-        fp = lake_fingerprint(store, derive_inputs(cfg, linker), cfg.dedupe.excluded_sources)
+        fp = lake_fingerprint(
+            store,
+            derive_inputs(cfg, linker),
+            [*cfg.dedupe.excluded_sources, *MARKET_SOURCES],  # nothing to derive for these
+        )
         fp_path = store.state_dir / "derive-fingerprint.json"
         quick = if_changed and not full_stories and not relink_sources
         if quick and fp_path.exists() and json.loads(fp_path.read_text())["fingerprint"] == fp:

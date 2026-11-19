@@ -20,7 +20,7 @@ speed and polish.** It is not a trading system.
   leakage checks, pre-registered tests 1–9 (incl. earnings-call transcripts, partial IC vs the
   release, delay sensitivity, LLM surprise, attention → volatility, 8-K item event study,
   daily IC / quintile view) + exploratory per-type and text-cluster breakdowns (results in
-  the decisions log). Ongoing: live collection of 8-Ks and transcripts
+  the decisions log). Ongoing: live collection of 8-Ks, transcripts and Fed documents
   (`scripts\collect_window.cmd`) for the holdout; `transcripts-latency` once the Q3-2026
   season has data; the single pre-registered holdout look (H1 earnings, H2 guidance, ≥ 10,000
   bootstrap reps) is on/after 2027-08-31.
@@ -48,6 +48,9 @@ uv sync --extra finbert                   # install (Python >=3.11; extra = CUDA
 "$PY" scripts/nf.py score --replicates 2 --sample 100  # noise floor
 "$PY" scripts/nf.py score --model claude-sonnet-5-5 --sample 100   # validation
 "$PY" scripts/nf.py score-batches [--wait]    # collect submitted batches
+"$PY" scripts/nf.py score-fed --dry-run       # Fed documents (own prompt fed_v1 -> fed_scores)
+"$PY" scripts/nf.py backfill --source fed --start 2019-01-01 --end 2026-11-19
+"$PY" scripts/nf.py scripts/record_fed_fixtures.py     # re-record Fed test fixtures (network)
 "$PY" scripts/nf.py agreement --compare masked|model|replicates
 "$PY" scripts/nf.py cost                      # spend per run from the usage ledger
 "$PY" scripts/nf.py coverage [--rebuild-from-runs]   # collected ranges per source/ticker
@@ -176,6 +179,29 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
 - Timing caveat for M4: a score is a deterministic function of text available at `tradable_at`,
   but in live use it only exists at `scored_at`; features for the live/holdout period should use
   max(tradable_at, scored_at).
+
+## Fed documents (`ingest/fed.py`, `scoring/fed.py`, source `fed`)
+- federalreserve.gov, Board site only: FOMC statements ("Federal Reserve issues FOMC
+  statement" releases), FOMC minutes (the minutes page linked from the "Minutes of the Federal
+  Open Market Committee" release), Board members' speeches and testimony. Regional presidents
+  and press-conference transcripts are not collected (user decision 2026-11-18).
+- Timing: published_at = the Fed's release time. JSON listings (`/json/ne-press|ne-speeches|
+  ne-testimony.json`) give New York wall clock ("11/18/2026 2:00:00 PM"), RSS feeds the same
+  instant in GMT (test checks they agree). Backfill lag 60 s (user decision); live = first seen.
+  Live polls read the two RSS feeds (~15 entries each) every cycle; catch-ups (hourly) and
+  backfills read the JSON listings. Pages cached in `data/raw/fed/<kind>_<page>/`.
+- Market-level source (`config.MARKET_SOURCES`, a constant on purpose): never linked to tickers,
+  never in stories, left out of the derive fingerprint -- so no company scoring, no per-ticker
+  features, and adding it triggered no relink / story rebuild. Coverage is recorded under the
+  pseudo-ticker `FED`.
+- Scoring: one score per document, prompt `fed_v1` (`scoring.fed_prompt_version`), schema
+  `fed/1`: policy_relevance (high/medium/low), stance (-1 dovish .. +1 hawkish, null if no
+  policy direction), rate_path (hike/hold/cut/unclear), inflation / growth / labor (-1..1,
+  null if not discussed), confidence, rationale. Table `fed_scores` (view: first ok draw per
+  cache key = sha256(item_id, model, prompt_hash, text_hash)); usage in `llm_usage`. The live
+  hook scores new Fed documents every collect cycle when `fed` is in `collect.sources`.
+  `build_params` / `PromptSpec.hash` take the schema as an argument; the company defaults are
+  unchanged (`test_company_prompt_hash_is_unchanged` pins score_v1 = 6108c555090fa4b3).
 
 ## Coverage (`coverage.py`)
 - "No rows" must not be read as "no news": the ops `coverage` table records what was collected.
@@ -1245,3 +1271,19 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   little about volatility afterwards. Not a return signal; the reaction mostly happens before
   the first 15:50 decision. Caveat: pre-holdout, so the model may partly recall which filings
   mattered.
+- 2026-11-18 (user decisions) FED DOCUMENTS, forward-looking: new source `fed` (Board site only:
+  FOMC statements, minutes, Governors' speeches and testimony; see "Fed documents" above),
+  backfill 2019-01-01 → 2026-11-18 at release time + 60 s (run 20261118T213404Z-6111f6: 817
+  backfill items, 0 failures; speeches 641, statements 65, minutes 64, testimony 56 incl. the
+  live ones). Parser fed/2 (some speech pages end in an attachments column that fed/1 took as
+  the body; 97 texts fixed) and fed/3 (HTML entities in titles; 30) re-parsed with timing kept
+  verbatim; max_tokens 24k (12 minutes had hit 16k; now none truncated). Slip: fed was briefly
+  in `collect.sources` while being built, and one collector cycle (run 20261118T213237Z-f03072)
+  ingested 9 live items (Nov 10–18, first seen 21:33 UTC, truthful) and live-scored them
+  ($0.007) before the user's OK; kept. History is context / baselines only: any test of Fed
+  scores against returns is pre-registered first and uses documents from the live start
+  (fed added to `collect.sources` 2026-11-18 22:58 UTC) on. Scoring (run
+  20261118T225316Z-8b852d, prompt fed_v1/8ff3b06318a23853, Haiku 5.5, live): 819 documents,
+  815 ok, 4 max_tokens (speeches; the 2,048-token output cap used up; final), $0.54. Sanity:
+  statement stance -1.0 for the March 2020 emergency cuts, +0.7 for the 2026-09 hike; 307 of
+  643 speeches policy_relevance low (stance null).

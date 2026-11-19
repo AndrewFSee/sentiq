@@ -219,8 +219,49 @@ class TranscriptsConfig(_Strict):
     poll_lookback_days: int = Field(10, gt=0)
 
 
+class FedConfig(_Strict):
+    """Federal Reserve Board documents from federalreserve.gov (source ``fed``): FOMC statements,
+    FOMC minutes, Board members' speeches and congressional testimony. Market-level documents:
+    never linked to companies, no stories, scored by their own prompt (``scoring.fed_prompt_
+    version``) into ``fed_scores``. Live polls read two small RSS feeds; catch-ups and backfills
+    read the site's JSON listings (release times in New York wall-clock time)."""
+
+    base_url: str = "https://www.federalreserve.gov"
+    # generic client name (no contact details are needed for this site)
+    user_agent: str = "newsfeed-research/0.1"
+    max_requests_per_second: float = Field(2.0, gt=0, le=5)
+    timeout_seconds: float = Field(30, gt=0)
+    max_retries: int = Field(5, gt=0)
+    feeds: list[str] = Field(
+        default_factory=lambda: ["/feeds/press_monetary.xml", "/feeds/speeches_and_testimony.xml"]
+    )
+    listings: dict[str, str] = Field(
+        default_factory=lambda: {
+            "press": "/json/ne-press.json",
+            "speech": "/json/ne-speeches.json",
+            "testimony": "/json/ne-testimony.json",
+        }
+    )
+    poll_lookback_days: float = Field(14, gt=0)  # feed entries older than this are ignored
+    catch_up_every_minutes: float = Field(60, gt=0)  # JSON listings re-read (beyond the feeds)
+    # market minutes without any new feed entry; speeches are irregular (days apart is normal)
+    silence_alert_minutes: float = Field(100_000, gt=0)
+    max_tokens: int = Field(24_000, gt=0)  # minutes median ~14k est. tokens, 2019-22 up to ~20k
+    chars_per_token: float = Field(4.0, gt=0)
+    flush_every: int = Field(25, gt=0)
+
+
+# Sources whose documents are about the market or the economy, not about companies: never
+# linked to tickers, never in stories (so never company-scored and never in per-ticker
+# features), left out of the derive fingerprint. A constant, not config: it is deliberately not
+# part of the linker id or the dedupe config hash, so adding a market source (no existing items)
+# triggers no relink and no full story rebuild.
+MARKET_SOURCES: tuple[str, ...] = ("fed",)
+
+
 class SourcesConfig(_Strict):
     edgar: EdgarConfig = Field(default_factory=EdgarConfig)
+    fed: FedConfig = Field(default_factory=FedConfig)
     # 10-K / 10-Q annual and quarterly reports: full text, separate from 8-K features/scoring
     edgar_periodic: EdgarConfig = Field(default_factory=_periodic_default)
     news_api: NewsApiConfig = Field(default_factory=NewsApiConfig)
@@ -299,6 +340,7 @@ class ScoringConfig(_Strict):
     model: str = "claude-haiku-5-5"
     validation_model: str = "claude-sonnet-5-5"
     prompt_version: str = "score_v1"
+    fed_prompt_version: str = "fed_v1"  # Fed documents (source fed), own schema and table
     effort: Effort = "low"
     thinking: Literal["adaptive", "disabled"] = "adaptive"
     max_tokens: int = Field(2048, gt=0)  # includes thinking tokens

@@ -32,6 +32,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from datasketch import MinHash, MinHashLSH
 
+from newsfeed.config import MARKET_SOURCES
 from newsfeed.timeutil import ensure_utc, utcnow
 
 if TYPE_CHECKING:
@@ -225,7 +226,9 @@ def rebuild_stories(
                    FROM item_tickers GROUP BY item_id) t USING (item_id)
         WHERE i.source NOT IN (SELECT unnest($excluded))
         """,
-        {"excluded": list(cfg.excluded_sources) or [""]},
+        # market-level sources (config.MARKET_SOURCES) never form stories; a constant outside
+        # the dedupe config hash, so adding one does not force a full story rebuild
+        {"excluded": [*cfg.excluded_sources, *MARKET_SOURCES]},
     ).to_dicts()
     if not meta:
         return {"assigned": 0, "months_rewritten": 0}

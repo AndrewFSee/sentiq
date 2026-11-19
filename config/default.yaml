@@ -103,6 +103,7 @@ timing:
     transcripts_qa: 0
     transcripts_prep: 0
     edgar_periodic: 60
+    fed: 60                           # Fed release time + 60 s (user decision 2026-11-18)
 
 sources:
   edgar:
@@ -162,9 +163,17 @@ sources:
     max_tokens: 16000                 # median call ~10k tokens
     flush_every: 200
 
+  fed:                                # Federal Reserve Board documents (ingest/fed.py), 2026-11-18
+    # FOMC statements + minutes, Board members' speeches + testimony; market-level (no tickers,
+    # no stories), scored by scoring.fed_prompt_version into fed_scores
+    max_requests_per_second: 2        # polite to federalreserve.gov (generic User-Agent, no contact)
+    catch_up_every_minutes: 60        # JSON listings (~1.5 MB) hourly; RSS feeds every cycle
+    silence_alert_minutes: 100000     # speeches are irregular: days without one are normal
+    max_tokens: 24000                 # minutes median ~14k est. tokens (16k cut 12 of 64)
+
 collect:
   interval_seconds: 120              # = Task Scheduler period for `collect --once` (sentiq-collect)
-  sources: [edgar, transcripts]
+  sources: [edgar, transcripts, fed]   # fed live from 2026-11-18 (user decision)
   max_consecutive_failures: 3
   stalled_after_intervals: 3
   realert_minutes: 60

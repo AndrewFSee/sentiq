@@ -175,6 +175,42 @@ SCORES_SCHEMA = pa.schema(
     ]
 )
 
+# Fed documents (source fed): one score per document (no company), own schema (fed/1)
+FED_SCORES_SCHEMA = pa.schema(
+    [
+        ("cache_key", pa.string()),  # sha256(item_id, model, prompt_hash, text_hash)
+        ("item_id", pa.string()),
+        ("kind", pa.string()),  # fomc_statement | fomc_minutes | speech | testimony
+        ("model", pa.string()),
+        ("prompt_version", pa.string()),
+        ("prompt_hash", pa.string()),
+        ("schema_version", pa.string()),
+        ("text_hash", pa.string()),
+        ("run_id", pa.string()),
+        ("mode", pa.string()),
+        ("request_id", pa.string()),
+        ("status", pa.string()),  # ok | invalid | refusal | max_tokens | empty
+        ("error", pa.string()),
+        ("policy_relevance", pa.string()),  # high | medium | low
+        ("stance", pa.float64()),  # -1 dovish .. +1 hawkish; null if no policy direction
+        ("rate_path", pa.string()),  # hike | hold | cut | unclear
+        ("inflation", pa.float64()),  # -1 easing / below goal .. +1 rising / upside risk
+        ("growth", pa.float64()),  # -1 weakening .. +1 strengthening
+        ("labor", pa.float64()),  # -1 weakening .. +1 tightening
+        ("confidence", pa.float64()),
+        ("rationale", pa.string()),
+        ("stop_reason", pa.string()),
+        ("input_tokens", pa.int64()),
+        ("cache_creation_input_tokens", pa.int64()),
+        ("cache_read_input_tokens", pa.int64()),
+        ("output_tokens", pa.int64()),
+        ("cost_usd", pa.float64()),
+        ("user_text_hash", pa.string()),
+        ("raw_response", pa.string()),
+        ("scored_at", TS),
+    ]
+)
+
 BASELINES_SCHEMA = pa.schema(
     [
         ("item_id", pa.string()),
@@ -437,6 +473,7 @@ class Store:
         self.tickers_dir = self.lake / "item_tickers"
         self.story_dir = self.lake / "item_story"
         self.scores_dir = self.lake / "scores"
+        self.fed_scores_dir = self.lake / "fed_scores"
         self.baselines_dir = self.lake / "baselines"
         self.embeddings_dir = self.lake / "embeddings"
         self.features_dir = self.lake / "features"
@@ -449,6 +486,7 @@ class Store:
             self.embeddings_dir,
             self.features_dir,
             self.scores_dir,
+            self.fed_scores_dir,
             self.state_dir,
         ):
             d.mkdir(parents=True, exist_ok=True)
@@ -665,6 +703,17 @@ class Store:
             ) = 1
             """
         )
+        fed_src = self._source_sql("fed_scores", self.fed_scores_dir, FED_SCORES_SCHEMA)
+        self.q.execute(f"CREATE OR REPLACE VIEW fed_scores_all AS SELECT * FROM {fed_src}")
+        self.q.execute(
+            """
+            CREATE OR REPLACE VIEW fed_scores AS
+            SELECT * FROM fed_scores_all
+            QUALIFY row_number() OVER (
+                PARTITION BY cache_key ORDER BY (status = 'ok') DESC, scored_at, run_id
+            ) = 1
+            """
+        )
 
     # ----------------------------------------------------------------- items
     def known_ids(self) -> set[str]:
@@ -779,6 +828,15 @@ class Store:
             return 0
         table = pa.Table.from_pylist(list(rows), schema=SCORES_SCHEMA)
         write_table_atomic(table, self._part_path(self.scores_dir, run_id))
+        self.refresh_views()
+        return len(rows)
+
+    def write_fed_scores(self, rows: Sequence[dict[str, Any]], run_id: str) -> int:
+        """Append Fed-document score rows (append-only; ``fed_scores`` picks the canonical)."""
+        if not rows:
+            return 0
+        table = pa.Table.from_pylist(list(rows), schema=FED_SCORES_SCHEMA)
+        write_table_atomic(table, self._part_path(self.fed_scores_dir, run_id))
         self.refresh_views()
         return len(rows)
 

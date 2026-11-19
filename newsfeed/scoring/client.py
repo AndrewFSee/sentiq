@@ -21,13 +21,13 @@ from __future__ import annotations
 import json
 import logging
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from newsfeed.config import PricingConfig
 from newsfeed.scoring.prompt import GenerationSettings
-from newsfeed.scoring.schema import OUTPUT_JSON_SCHEMA, ScoreOutput, parse_output
+from newsfeed.scoring.schema import OUTPUT_JSON_SCHEMA, parse_output
 
 log = logging.getLogger(__name__)
 
@@ -35,9 +35,15 @@ NO_THINKING_OFF = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"}
 
 
 def build_params(
-    *, model: str, system: str, user: str, settings: GenerationSettings
+    *,
+    model: str,
+    system: str,
+    user: str,
+    settings: GenerationSettings,
+    schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Messages API request body (identical for live, batch and count_tokens)."""
+    """Messages API request body (identical for live, batch and count_tokens). ``schema``:
+    the structured-output schema (default: the company score schema)."""
     if settings.thinking == "disabled" and model in NO_THINKING_OFF:
         raise ValueError(f"{model} rejects thinking={{'type': 'disabled'}}; use adaptive")
     params: dict[str, Any] = {
@@ -48,7 +54,7 @@ def build_params(
         "thinking": {"type": settings.thinking},
         "output_config": {
             "effort": settings.effort,
-            "format": {"type": "json_schema", "schema": OUTPUT_JSON_SCHEMA},
+            "format": {"type": "json_schema", "schema": schema or OUTPUT_JSON_SCHEMA},
         },
     }
     return params
@@ -63,7 +69,7 @@ def count_params(params: dict[str, Any]) -> dict[str, Any]:
 @dataclass
 class Outcome:
     status: str  # ok | invalid | refusal | max_tokens | empty
-    output: ScoreOutput | None
+    output: Any  # ScoreOutput (or the parser's model, e.g. FedScoreOutput) | None
     error: str | None
     stop_reason: str | None
     usage: dict[str, int]
@@ -84,8 +90,11 @@ def usage_dict(usage: Any) -> dict[str, int]:
     }
 
 
-def parse_message(message: Any) -> Outcome:
-    """Classify an SDK ``Message`` (or equivalent) into an Outcome."""
+def parse_message(
+    message: Any, parser: Callable[[str], tuple[Any, str | None]] = parse_output
+) -> Outcome:
+    """Classify an SDK ``Message`` (or equivalent) into an Outcome; ``parser`` validates the
+    JSON text (default: the company score schema)."""
     raw = message.to_json() if hasattr(message, "to_json") else json.dumps(message, default=str)
     usage = usage_dict(getattr(message, "usage", None))
     stop = getattr(message, "stop_reason", None)
@@ -99,7 +108,7 @@ def parse_message(message: Any) -> Outcome:
         return Outcome("max_tokens", None, "hit max_tokens", stop, usage, rid, raw)
     if not text:
         return Outcome("empty", None, "no text block", stop, usage, rid, raw)
-    out, err = parse_output(text)
+    out, err = parser(text)
     if out is None:
         return Outcome("invalid", None, err, stop, usage, rid, raw)
     return Outcome("ok", out, None, stop, usage, rid, raw)

@@ -20,7 +20,7 @@ import typer
 
 from newsfeed import coverage
 from newsfeed.collect import Collector, check_states
-from newsfeed.config import AppConfig, load_config, load_secrets
+from newsfeed.config import MARKET_SOURCES, AppConfig, load_config, load_secrets
 from newsfeed.derive import derive as run_derive
 from newsfeed.distill import dataset as distill_ds
 from newsfeed.eval.caps import load_shares, market_caps
@@ -88,6 +88,7 @@ log = logging.getLogger("newsfeed")
 SOURCES = (
     "edgar",
     "edgar_periodic",
+    "fed",
     "news_api",
     "transcripts",
     "transcripts_qa",
@@ -245,6 +246,19 @@ class Context:
         }
 
     def adapter(self, source: str) -> SourceAdapter:
+        if source == "fed":
+            from newsfeed.ingest.fed import FedAdapter
+
+            fc = self.cfg.sources.fed
+            http = self.stack.enter_context(
+                HttpClient(
+                    user_agent=fc.user_agent,
+                    rate_per_sec=fc.max_requests_per_second,
+                    timeout=fc.timeout_seconds,
+                    max_retries=fc.max_retries,
+                )
+            )
+            return FedAdapter(fc, http, self.store.raw)
         if source == "edgar":
             return EdgarAdapter(
                 self.cfg.sources.edgar, self.http(), self.universe(), self.store.raw
@@ -312,6 +326,10 @@ class Context:
                     retry.touch()
                 else:
                     retry.unlink(missing_ok=True)
+            # Fed documents are not derived (market source), so the derive fingerprint never
+            # sees them: plan them every cycle (a cheap read of the small fed partition)
+            if self.cfg.scoring.live_in_collect and "fed" in self.cfg.collect.sources:
+                out["fed_scoring"] = self.score_fed_recent(run_id)
             return out
 
         return fn
@@ -352,6 +370,18 @@ class Context:
             sources=job.item_sources,
         )
         return job.run_live(targets).as_dict() if targets else {"calls": 0}
+
+    def score_fed_recent(self, run_id: str) -> dict[str, Any]:
+        """Collect-loop hook: score new Fed documents (same look-back as company scoring)."""
+        from newsfeed.scoring.fed import FedScorer
+
+        since = utcnow() - timedelta(hours=self.cfg.scoring.live_lookback_hours)
+        scorer = FedScorer(self.cfg, self.store, None, run_id=run_id)
+        targets = scorer.plan(start=since)
+        if not targets:
+            return {"calls": 0}
+        scorer.client = self.llm_client()
+        return scorer.run_live(targets).as_dict()
 
 
 def _run(
@@ -399,7 +429,8 @@ def backfill(
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
         adapter = ctx.adapter(source)
         before = getattr(getattr(cfg.sources, source), "ingest_margin_before_days", None)
-        windows = ctx.cik_windows(t0, t1, before) if source != "news_api" else None
+        company = source not in ("news_api", *MARKET_SOURCES)
+        windows = ctx.cik_windows(t0, t1, before) if company else None
         if windows is not None:
             adapter.cik_windows = windows
             stats["cik_windows"] = len(windows)
@@ -548,31 +579,36 @@ def inspect(config: ConfigOpt = None, limit: int = 10) -> None:
 
 @app.command()
 def reparse(
-    source: Annotated[str, typer.Option(help="Only edgar supports re-parsing")] = "edgar",
+    source: Annotated[str, typer.Option(help="edgar | fed")] = "edgar",
     everything: Annotated[bool, typer.Option("--all", help="Also items already current")] = False,
     config: ConfigOpt = None,
     verbose: bool = False,
 ) -> None:
     """Re-parse stored items with the current parser (from the raw cache; timing preserved),
-    then rebuild links and stories. Scores of changed items are re-planned automatically."""
+    then rebuild links and stories (edgar; fed items have neither). Scores of changed items
+    are re-planned automatically (their text hash changes)."""
+    from newsfeed.ingest.fed import PARSER_VERSION as FED_PARSER_VERSION
+
     _setup_logging(verbose)
     cfg = load_config(config)
-    if source != "edgar":
-        raise typer.BadParameter("only --source edgar supports re-parsing")
+    versions = {"edgar": EDGAR_PARSER_VERSION, "fed": FED_PARSER_VERSION}
+    if source not in versions:
+        raise typer.BadParameter("only --source edgar or fed supports re-parsing")
 
     def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
-        adapter = ctx.adapter("edgar")
+        adapter = ctx.adapter(source)
         stats["reparse"] = reparse_source(
             ctx.store,
-            "edgar",
+            source,
             adapter,
-            EDGAR_PARSER_VERSION,
+            versions[source],
             calendar=ctx.calendar,
             run_id=run_id,
             everything=everything,
         )
         stats["failed"] = len(stats["reparse"]["failed"])
-        stats["derive"] = ctx.derive_fn(run_id, full=True)()
+        if source not in MARKET_SOURCES:
+            stats["derive"] = ctx.derive_fn(run_id, full=True)()
 
     _run("reparse", cfg, {"source": source, "all": everything}, body)
 
@@ -691,6 +727,59 @@ def score_batches(
         typer.echo(stats["collect"])
 
     _run("score-batches", cfg, {"wait": wait}, body)
+
+
+@app.command("score-fed")
+def score_fed(
+    model: Annotated[str | None, typer.Option(help="Default: scoring.model")] = None,
+    start: Annotated[str | None, typer.Option(help="tradable_at >= this UTC date")] = None,
+    end: Annotated[str | None, typer.Option(help="tradable_at < this UTC date")] = None,
+    limit: Annotated[int | None, typer.Option(help="Cap the number of requests")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Estimate cost, call nothing")] = False,
+    yes: Annotated[bool, typer.Option("--yes", help="Confirm jobs above the cost limit")] = False,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Score Federal Reserve documents (source fed) with the Fed prompt (live API, cached:
+    re-runs never re-pay). One score per document: policy relevance, hawkish/dovish stance,
+    signalled rate path, inflation / growth / labor assessments."""
+    from newsfeed.scoring.fed import FedScorer
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        scorer = FedScorer(
+            cfg, ctx.store, ctx.llm_client(required=not dry_run), run_id=run_id, model=model
+        )
+        targets = scorer.plan(
+            start=_parse_day(start) if start else None,
+            end=_parse_day(end) if end else None,
+            limit=limit,
+        )
+        typer.echo(
+            f"model={scorer.model} prompt={scorer.prompt.version}/{scorer.prompt_hash} -> "
+            f"{len(targets)} Fed documents to score"
+        )
+        if not targets:
+            return
+        est = scorer.estimate(targets)
+        typer.echo(est.summary())
+        stats["estimate"] = est.__dict__
+        if dry_run:
+            return
+        if est.cost_live_no_cache > cfg.scoring.confirm_above_usd and not yes:
+            typer.echo(
+                f"Estimated up to ${est.cost_live_no_cache:.2f} > scoring.confirm_above_usd "
+                f"(${cfg.scoring.confirm_above_usd:.2f}). Re-run with --yes to proceed."
+            )
+            raise typer.Exit(3)
+        scorer.run_live(targets)
+        stats["scoring"] = scorer.stats.as_dict()
+        stats["failed"] = scorer.stats.by_status.get("error", 0)
+
+    params = {"model": model, "start": start, "end": end, "limit": limit, "dry_run": dry_run}
+    _run("score-fed", cfg, params, body)
 
 
 @app.command()

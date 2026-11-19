@@ -55,13 +55,21 @@ class PromptSpec:
             body=body.strip(),
         )
 
-    def hash(self, settings: GenerationSettings) -> str:
+    def hash(
+        self,
+        settings: GenerationSettings,
+        *,
+        schema: dict | None = None,
+        schema_version: str | None = None,
+    ) -> str:
+        """Defaults = the company score schema (the hash of every existing prompt is unchanged);
+        other prompt families (Fed documents) pass their own schema and version."""
         blob = json.dumps(
             {
                 "system": self.system,
                 "user_template": self.user_template,
-                "schema_version": SCHEMA_VERSION,
-                "schema": OUTPUT_JSON_SCHEMA,
+                "schema_version": schema_version or SCHEMA_VERSION,
+                "schema": schema or OUTPUT_JSON_SCHEMA,
                 "settings": settings.__dict__,
             },
             sort_keys=True,
