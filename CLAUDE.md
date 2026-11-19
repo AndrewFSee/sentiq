@@ -1286,4 +1286,5 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   20261118T225316Z-8b852d, prompt fed_v1/8ff3b06318a23853, Haiku 5.5, live): 819 documents,
   815 ok, 4 max_tokens (speeches; the 2,048-token output cap used up; final), $0.54. Sanity:
   statement stance -1.0 for the March 2020 emergency cuts, +0.7 for the 2026-09 hike; 307 of
-  643 speeches policy_relevance low (stance null).
+  643 speeches policy_relevance low (stance null). Dashboard: "Federal Reserve" section on the
+  hub page (stance chart, latest documents; `fed` frame from publish_news_to_hub.py; no returns).

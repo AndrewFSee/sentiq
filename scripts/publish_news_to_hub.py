@@ -8,6 +8,8 @@ Read-only over this project's store (nothing is fetched, scored or written back)
   earnings-call transcripts, unmasked canonical Haiku scores (replicate 0, first ok draw).
 * ``daily``    -- per ET date x group x event type: count and mean sentiment (relevance >=
   secondary), from 2019 on.
+* ``fed``      -- one row per scored Fed document (statements, minutes, Governors' speeches and
+  testimony; fed_scores, prompt fed_v1): stance, rate path, inflation / growth / labor.
 * ``health``   -- collector state per source, cycle durations (24 h), alerts (7 days), LLM spend.
 * ``research`` -- the pre-registered tests and their results (a static table kept here, in
   step with the decisions log in CLAUDE.md), plus holdout progress as event *counts* only.
@@ -49,6 +51,7 @@ MODULE = "sentiq"
 ET = "America/New_York"
 SOURCES = ("edgar", "transcripts")
 HOLDOUT_START = date(2026, 7, 1)
+FED_LIVE_SINCE = "2026-11-18T22:58:00+00:00"  # fed added to collect.sources (decisions log)
 # S&P 500 companies on dates outside their membership spell (ingest margins; scores kept under a
 # CIK's current canonical ticker, e.g. FB-era filings under META's ticker history)
 OUTSIDE = "S&P 500 (outside membership)"
@@ -259,6 +262,42 @@ def load_filings(store: Store, cfg) -> pl.DataFrame:
     return df.sort("tradable_at", descending=True)
 
 
+FED_DOC = {
+    "fomc_statement": "FOMC statement",
+    "fomc_minutes": "FOMC minutes",
+    "speech": "Speech",
+    "testimony": "Testimony",
+}
+
+
+def load_fed(store: Store, cfg) -> pl.DataFrame:
+    """One row per scored Fed document (fed_scores, first ok draw, the configured model)."""
+    rel = store.items_relation(["fed"])
+    df = store.query(
+        f"""
+        SELECT i.item_id, f.kind, i.title, i.url, i.meta, i.published_at, i.first_seen_at,
+               i.tradable_at, i.ingest_mode, f.scored_at, f.policy_relevance, f.stance,
+               f.rate_path, f.inflation, f.growth, f.labor, f.confidence, f.rationale
+        FROM fed_scores f JOIN {rel} i ON i.item_id = f.item_id AND i.text_hash = f.text_hash
+        WHERE f.status = 'ok' AND f.model = $m
+        """,
+        {"m": cfg.scoring.model},
+    )
+    meta = [json.loads(m) if m else {} for m in df["meta"].to_list()]
+    speaker = [
+        "Committee" if k.startswith("fomc_") else (m.get("speaker") or "")
+        for k, m in zip(df["kind"], meta, strict=True)
+    ]
+    return (
+        df.with_columns(
+            pl.Series("speaker", speaker, dtype=pl.Utf8),
+            pl.col("kind").replace_strict(FED_DOC, default=pl.col("kind")).alias("doc"),
+        )
+        .drop("meta")
+        .sort("tradable_at", descending=True)
+    )
+
+
 def usable_at() -> pl.Expr:
     """When the *score* was usable: tradable_at, or max(tradable_at, scored_at) for live items
     (the research's t_use)."""
@@ -353,7 +392,7 @@ def holdout_progress(df: pl.DataFrame) -> dict[str, int]:
 
 def health(store: Store, now: datetime) -> dict:
     state = {}
-    for src in SOURCES:
+    for src in (*SOURCES, "fed"):
         p = store.state_dir / f"collect-{src}.json"
         if p.exists():
             s = json.loads(p.read_text())
@@ -465,6 +504,7 @@ def main() -> int:
     now = datetime.now(UTC)
     with Store(cfg.paths) as store:
         df = effect_window(load_filings(store, cfg), cfg)
+        fed = load_fed(store, cfg)
         h = health(store, now)
     out = df.select(
         "item_id",
@@ -497,6 +537,7 @@ def main() -> int:
     hub.save_frame(MODULE, "filings", out.to_pandas())
     hub.save_frame(MODULE, "daily", daily(df).to_pandas())
     hub.save_frame(MODULE, "tone_monthly", tone_monthly(df).to_pandas())
+    hub.save_frame(MODULE, "fed", fed.to_pandas())
     hub.save_json(MODULE, "health", h)
     prog = holdout_progress(df)
     hub.save_frame(
@@ -525,6 +566,9 @@ def main() -> int:
             "latest": _ts(out["tradable_at"].max()) if out.height else None,
             "model": cfg.scoring.model,
             "prompt_version": cfg.scoring.prompt_version,
+            "fed_documents": int(fed.height),
+            "fed_prompt_version": cfg.scoring.fed_prompt_version,
+            "fed_live_since": FED_LIVE_SINCE,
         },
     )
     print(
