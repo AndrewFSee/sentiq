@@ -100,12 +100,12 @@ class HttpClient:
             ),
             before_sleep=_log_retry,
             reraise=True,
-        )(self._get_once)
+        )(self._request_once)
 
-    def _get_once(self, url: str) -> httpx.Response:
+    def _request_once(self, url: str, method: str = "GET") -> httpx.Response:
         self.limiter.acquire()
         self.request_count += 1
-        resp = self._client.get(url)
+        resp = self._client.request(method, url)
         if resp.status_code in RETRY_STATUS:
             raise RetryableHTTPError(resp)
         if resp.status_code == 403:
@@ -115,6 +115,10 @@ class HttpClient:
 
     def get(self, url: str) -> httpx.Response:
         return self._get(url)
+
+    def head(self, url: str) -> httpx.Response:
+        """HEAD with the same rate limit and retries (headers only, e.g. Last-Modified)."""
+        return self._get(url, "HEAD")
 
     def close(self) -> None:
         self._client.close()

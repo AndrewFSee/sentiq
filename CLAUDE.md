@@ -50,7 +50,7 @@ uv sync --extra finbert                   # install (Python >=3.11; extra = CUDA
 "$PY" scripts/nf.py score-batches [--wait]    # collect submitted batches
 "$PY" scripts/nf.py score-fed --dry-run       # Fed documents (own prompt fed_v1 -> fed_scores)
 "$PY" scripts/nf.py backfill --source fed --start 2019-01-01 --end 2026-11-19
-"$PY" scripts/nf.py scripts/record_fed_fixtures.py     # re-record Fed test fixtures (network)
+"$PY" scripts/nf.py scripts/record_fed_fixtures.py [--presconf-only]  # Fed test fixtures (network)
 "$PY" scripts/nf.py agreement --compare masked|model|replicates
 "$PY" scripts/nf.py cost                      # spend per run from the usage ledger
 "$PY" scripts/nf.py coverage [--rebuild-from-runs]   # collected ranges per source/ticker
@@ -183,8 +183,23 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
 ## Fed documents (`ingest/fed.py`, `scoring/fed.py`, source `fed`)
 - federalreserve.gov, Board site only: FOMC statements ("Federal Reserve issues FOMC
   statement" releases), FOMC minutes (the minutes page linked from the "Minutes of the Federal
-  Open Market Committee" release), Board members' speeches and testimony. Regional presidents
-  and press-conference transcripts are not collected (user decision 2026-11-18).
+  Open Market Committee" release), Board members' speeches and testimony, FOMC press
+  conferences (added 2026-11-18, see below). Regional presidents are not collected (user
+  decision 2026-11-18).
+- Press conferences (verified 2026-11-18, HTTP headers + Wayback captures): one PDF per meeting,
+  `/mediacenter/files/FOMCpresconf<YYYYMMDD>.pdf`, posted twice -- PRELIMINARY = the Chair's
+  opening statement only (~1,000 words), up that afternoon (2026-10-28: Last-Modified 15:06 ET,
+  during the Q&A); FINAL = opening + Q&A (~5-9k words), 1 day to 3 weeks later, sometimes
+  re-uploaded much later (June 2026's FINAL is dated Oct 5). Kinds `presconf_opening` /
+  `presconf_transcript`, one item each per meeting (`<kind>_<date>`; FINAL re-uploads are
+  ignored once a transcript is stored). published_at = the version's HTTP Last-Modified (the
+  text we hold provably existed then); live = first seen. Detection by HEAD: every poll for
+  `presconf_live_days` (2) after an FOMC statement in the feed, every catch-up for
+  `presconf_catch_up_days` (30) from statements + the calendar page; each version is downloaded
+  once (`data/raw/fed/presconf_<date>/v<Last-Modified>.pdf`). PDF text via pypdf, running page
+  headers removed; the Chair is the scoring SPEAKER. History has only the FINAL (backfill:
+  today's file at Last-Modified + 60 s; user decision 2026-11-18); same-day opening statements
+  exist only from live collection on.
 - Timing: published_at = the Fed's release time. JSON listings (`/json/ne-press|ne-speeches|
   ne-testimony.json`) give New York wall clock ("11/18/2026 2:00:00 PM"), RSS feeds the same
   instant in GMT (test checks they agree). Backfill lag 60 s (user decision); live = first seen.
@@ -1288,3 +1303,16 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   statement stance -1.0 for the March 2020 emergency cuts, +0.7 for the 2026-09 hike; 307 of
   643 speeches policy_relevance low (stance null). Dashboard: "Federal Reserve" section on the
   hub page (stance chart, latest documents; `fed` frame from publish_news_to_hub.py; no returns).
+- 2026-11-18 (user decisions) FOMC PRESS CONFERENCES added to `fed` (after declining live YouTube
+  transcription: the book's evidence was 5 press conferences with overlapping 60-s windows and
+  in-sample thresholds, and a 30-s horizon is beyond daily bars and our latency). Found while
+  building: the same-day PDF is PRELIMINARY = opening statement only; the Q&A arrives in the
+  FINAL 1 day to 3 weeks later (Last-Modified of all 92 PDFs since 2012; Wayback first captures
+  same afternoon for most). User choices: collect both versions as separate documents, each
+  timed by when we first see it live; history = FINAL only at its Last-Modified + 60 s (no
+  Wayback recovery of past opening statements). Backfill run 20261119T014651Z-54f2e0: 63
+  transcripts 2019-01-30 .. 2026-10-28, 0 failures. Scored (run 20261119T015316Z-3b28c9,
+  fed_v1/8ff3b06318a23853 unchanged by the new doc-type labels): 63 ok, $0.106. Descriptive:
+  press-conference stance vs the same meeting's statement r 0.93; largest gaps are cuts the
+  Chair framed hawkishly (2025-10 -0.3 vs +0.1, 2025-12 -0.3 vs +0.2). A test of the Q&A's
+  incremental content would need the live era (opening statements exist only from Dec 2026 on).

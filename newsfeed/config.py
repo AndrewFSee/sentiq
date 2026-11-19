@@ -242,6 +242,13 @@ class FedConfig(_Strict):
             "testimony": "/json/ne-testimony.json",
         }
     )
+    # FOMC press-conference PDFs (/mediacenter/files/FOMCpresconf<date>.pdf): meeting dates from
+    # the calendar pages; probed by HEAD every poll for presconf_live_days after a statement
+    # (same-day opening statement), on catch-ups for presconf_catch_up_days (FINAL with Q&A)
+    presconf_calendar: str = "/monetarypolicy/fomccalendars.htm"
+    presconf_historical: str = "/monetarypolicy/fomchistorical{year}.htm"
+    presconf_live_days: float = Field(2, gt=0)
+    presconf_catch_up_days: float = Field(30, gt=0)
     poll_lookback_days: float = Field(14, gt=0)  # feed entries older than this are ignored
     catch_up_every_minutes: float = Field(60, gt=0)  # JSON listings re-read (beyond the feeds)
     # market minutes without any new feed entry; speeches are irregular (days apart is normal)

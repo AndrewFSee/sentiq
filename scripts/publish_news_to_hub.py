@@ -267,6 +267,8 @@ FED_DOC = {
     "fomc_minutes": "FOMC minutes",
     "speech": "Speech",
     "testimony": "Testimony",
+    "presconf_opening": "Press conference (opening)",
+    "presconf_transcript": "Press conference (full)",
 }
 
 

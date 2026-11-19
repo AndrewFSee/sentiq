@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import httpx
@@ -13,10 +14,12 @@ from newsfeed.dedupe import rebuild_stories
 from newsfeed.derive import relink
 from newsfeed.ingest.fed import (
     FedAdapter,
+    FedRef,
     page_parts,
     parse_feed,
     parse_listing,
     parse_listing_time,
+    parse_presconf_pdf,
 )
 from newsfeed.ingest.runner import ingest, new_stats
 from newsfeed.scoring.fed import FED_OUTPUT_JSON_SCHEMA, FedScorer, parse_fed_output
@@ -38,23 +41,39 @@ ROUTES = {
     "/monetarypolicy/fomcminutes20261028.htm": "minutes_page.htm",
     "/newsevents/speech/waller20261117a.htm": "speech.htm",
     "/newsevents/testimony/warsh20260714a.htm": "testimony.htm",
+    "/monetarypolicy/fomccalendars.htm": "fomccalendars.htm",
 }
+PC = json.loads((FED / "presconf.json").read_text())  # date + the two Last-Modified headers
+PC_PDF = f"/mediacenter/files/FOMCpresconf{PC['date']}.pdf"
 
 
 class FedTransport(httpx.MockTransport):
     """Serves the recorded Fed fixtures; pages that were not recorded get a minimal article.
-    ``on_listing`` runs when a feed / listing is requested (to move a fake clock)."""
+    ``on_listing`` runs when a feed / listing is requested (to move a fake clock).
+    ``presconf`` maps a meeting date to (fixture PDF, Last-Modified) -- 404 until set."""
 
     def __init__(self, on_listing=None):
         self.paths: list[str] = []
+        self.calls: list[tuple[str, str]] = []
         self.on_listing = on_listing
+        self.presconf: dict[str, tuple[str, str]] = {}
         super().__init__(self._handle)
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         self.paths.append(path)
+        self.calls.append((request.method, path))
         if path.startswith(("/feeds/", "/json/")) and self.on_listing:
             self.on_listing()
+        if path.startswith("/mediacenter/files/FOMCpresconf"):
+            got = self.presconf.get(path[-12:-4])
+            if got is None:
+                return httpx.Response(404)
+            data = (FED / got[0]).read_bytes()
+            headers = {"last-modified": got[1], "content-type": "application/pdf"}
+            if request.method == "HEAD":
+                return httpx.Response(200, headers={**headers, "content-length": str(len(data))})
+            return httpx.Response(200, content=data, headers=headers)
         if path in ROUTES:
             return httpx.Response(200, content=(FED / ROUTES[path]).read_bytes())
         if path.endswith(".htm"):
@@ -174,9 +193,14 @@ def test_backfill_fetches_documents_and_caches_pages(cfg, store):
     assert sp.meta["speaker"] == "Governor Christopher J. Waller"
     assert all(i.tickers == [] and i.ingest_mode == "backfill" for i in items)
     assert all(start <= i.published_at < end for i in items)
-    n_pages = len([p for p in t.paths if p.endswith(".htm")])
+
+    def pages():  # documents, not the calendar pages (listings: re-read on every run)
+        cal = ("/fomccalendars", "/fomchistorical")
+        return [p for p in t.paths if p.endswith(".htm") and not any(c in p for c in cal)]
+
+    n_pages = len(pages())
     list(a.backfill(start, end, skip=lambda _id: False))  # pages now come from the raw store
-    assert len([p for p in t.paths if p.endswith(".htm")]) == n_pages
+    assert len(pages()) == n_pages
 
 
 def test_poll_stamps_first_seen_after_the_listing_response(cfg, store):
@@ -315,6 +339,131 @@ def test_invalid_and_error_outcomes(cfg, store, calendar):
 
 
 def test_fixtures_exist():
-    for name in set(ROUTES.values()):
+    for name in {*ROUTES.values(), "presconf_prelim.pdf", "presconf_final.pdf"}:
         assert (FED / name).is_file(), name
     assert Path(FED / "speech.htm").stat().st_size < 200_000
+
+
+# ------------------------------------------------------------------ press conferences
+def _lm(s: str) -> datetime:
+    return parsedate_to_datetime(s).astimezone(UTC)
+
+
+def test_presconf_pdf_versions():
+    """Same-day PRELIMINARY = opening statement only; FINAL adds the Q&A. Running page headers
+    ("<date> Chairman X's Press Conference FINAL", "Page n of m") are removed."""
+    op = parse_presconf_pdf((FED / "presconf_prelim.pdf").read_bytes())
+    tr = parse_presconf_pdf((FED / "presconf_final.pdf").read_bytes())
+    assert (op["version"], op["kind"]) == ("PRELIMINARY", "presconf_opening")
+    assert (tr["version"], tr["kind"]) == ("FINAL", "presconf_transcript")
+    assert op["speaker"] == tr["speaker"] == "Chairman Warsh"
+    assert op["title"].endswith("Opening Statement")
+    assert len(op["body"].split()) < 1_500 < 4_000 < len(tr["body"].split())
+    assert "COLBY SMITH" in tr["body"] and "COLBY SMITH" not in op["body"]
+    for p in (op, tr):
+        lines = p["body"].splitlines()
+        assert not [ln for ln in lines if ln.startswith("Page ") and " of " in ln]
+        assert not [ln for ln in lines if ln.endswith(("PRELIMINARY", "FINAL"))]
+
+
+def test_presconf_candidates():
+    adapter = FedAdapter(_cfg_fed(), make_http(FedTransport()), None)
+    st = FedRef("fomc_statement", "/newsevents/pressreleases/monetary20261028a.htm",
+                "Federal Reserve issues FOMC statement", datetime(2026, 10, 28, 18, tzinfo=UTC),
+                "x")  # fmt: skip
+    sp = FedRef("speech", "/newsevents/speech/x20261028a.htm", "S",
+                datetime(2026, 10, 28, 18, tzinfo=UTC), "x")  # fmt: skip
+    day = datetime(2026, 10, 28, 19, tzinfo=UTC)
+    assert adapter.presconf_candidates([st, sp], day, catch_up=False) == ["20261028"]
+    later = datetime(2026, 11, 5, tzinfo=UTC)  # past the 2-day live window ...
+    assert adapter.presconf_candidates([st], later, catch_up=False) == []
+    # ... but catch-ups keep probing for ~3 weeks (FINAL), also from the calendar page
+    assert adapter.presconf_candidates([], later, catch_up=True) == ["20261028"]
+
+
+def _cfg_fed():
+    from newsfeed.config import load_config
+
+    return load_config(None).sources.fed
+
+
+def test_presconf_live_opening_then_transcript(cfg, store, calendar):
+    t = FedTransport()
+    clock = FakeClock(datetime(2026, 10, 28, 18, 45, tzinfo=UTC))  # 14:45 ET, presser running
+    a = _adapter(cfg, store, t, clock)
+
+    def run():
+        ingest(a.presconf_items([PC["date"]], store.has_item, None, ingest_mode="live"),
+               store=store, cfg=cfg, calendar=calendar, run_id="r", flush_every=10,
+               stats=new_stats())  # fmt: skip
+
+    def rows():
+        return store.query(
+            "SELECT native_id, published_at, first_seen_at, tradable_at, tradable_rule, meta "
+            "FROM items ORDER BY first_seen_at"
+        )
+
+    run()  # nothing posted yet
+    assert rows().height == 0
+    t.presconf[PC["date"]] = ("presconf_prelim.pdf", PC["prelim_last_modified"])
+    clock.now = datetime(2026, 10, 28, 19, 10, tzinfo=UTC)
+    run()
+    op = rows().row(0, named=True)
+    assert op["native_id"] == f"presconf_opening_{PC['date']}"
+    assert op["published_at"] == _lm(PC["prelim_last_modified"])  # the file's own time
+    assert op["first_seen_at"] == op["tradable_at"] == clock.now  # live, in session
+    assert op["tradable_rule"].startswith("live:")
+    assert json.loads(op["meta"])["pdf_version"] == "PRELIMINARY"
+    run()  # same version: no new item, and the PDF is not downloaded again
+    assert rows().height == 1
+    assert [c for c in t.calls if c == ("GET", PC_PDF)] == [("GET", PC_PDF)]
+    # the FINAL with the Q&A appears 13 days later
+    t.presconf[PC["date"]] = ("presconf_final.pdf", PC["final_last_modified"])
+    clock.now = datetime(2026, 11, 10, 15, tzinfo=UTC)
+    run()
+    df = rows()
+    assert df.height == 2
+    tr = df.row(1, named=True)
+    assert tr["native_id"] == f"presconf_transcript_{PC['date']}"
+    assert tr["tradable_at"] == clock.now and tr["published_at"] == _lm(PC["final_last_modified"])
+    n = len(t.calls)
+    run()  # transcript stored: the meeting is done, no further requests
+    assert len(t.calls) == n and rows().height == 2
+
+    # scoring: own document types, the Chair as speaker
+    llm = FakeLLM(respond=lambda p: make_message(_fed_out()))
+    FedScorer(cfg, store, llm, run_id="s").run_live(FedScorer(cfg, store, None, run_id="p").plan())
+    users = [c["messages"][0]["content"] for c in llm.calls]
+    assert len(users) == 2 and all("SPEAKER: Chairman Warsh" in u for u in users)
+    assert any("opening statement of the Federal Reserve Chair" in u for u in users)
+    assert any("answers to reporters' questions" in u for u in users)
+
+
+def test_presconf_backfill_times_final_at_last_modified(cfg, store, calendar):
+    """History: today's PDF (FINAL) timed at its Last-Modified + 60 s, then the session push;
+    re-parsing from the raw store keeps the timing."""
+    from newsfeed.ingest.reparse import reparse_source
+
+    t = FedTransport()
+    t.presconf[PC["date"]] = ("presconf_final.pdf", PC["final_last_modified"])
+    clock = FakeClock(datetime(2026, 11, 18, 22, tzinfo=UTC))
+    a = _adapter(cfg, store, t, clock)
+    ingest(a.backfill(datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 11, 19, tzinfo=UTC),
+                      skip=store.has_item),
+           store=store, cfg=cfg, calendar=calendar, run_id="r", flush_every=10,
+           stats=new_stats())  # fmt: skip
+    q = (
+        "SELECT published_at, tradable_at, tradable_rule, ingest_mode FROM items "
+        f"WHERE native_id = 'presconf_transcript_{PC['date']}'"
+    )
+    row = store.query(q).row(0, named=True)
+    assert row["ingest_mode"] == "backfill"
+    assert row["published_at"] == _lm(PC["final_last_modified"])  # Tue 2026-11-10 13:57:24 UTC
+    assert row["tradable_at"] == datetime(2026, 11, 10, 14, 30, tzinfo=UTC)  # +60 s -> 09:30 ET
+    assert row["tradable_rule"] == "backfill:published+60s+session"
+    # other calendar meetings in the window have no PDF here (404): skipped, not failed
+    n_pc = store.query("SELECT count(*) AS n FROM items WHERE native_id LIKE 'presconf%'")["n"][0]
+    assert n_pc == 1
+    out = reparse_source(store, "fed", a, "fed/99", calendar=calendar, run_id="rp")
+    assert not out["failed"]
+    assert store.query(q).row(0, named=True) == row

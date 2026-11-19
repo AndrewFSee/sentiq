@@ -42,6 +42,10 @@ DOC_TYPES = {
     "fomc_minutes": "minutes of a Federal Open Market Committee meeting",
     "speech": "speech by a member of the Federal Reserve Board",
     "testimony": "congressional testimony by a member of the Federal Reserve Board",
+    "presconf_opening": "opening statement of the Federal Reserve Chair at the FOMC press "
+    "conference (released the same day; no questions and answers)",
+    "presconf_transcript": "transcript of the Federal Reserve Chair's FOMC press conference "
+    "(opening statement and answers to reporters' questions)",
 }
 COMMITTEE = "Federal Open Market Committee"
 
