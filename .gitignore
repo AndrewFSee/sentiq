@@ -10,3 +10,6 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 dist/
+
+# third-party books / papers kept locally for reading; never commit (copyright)
+references/
