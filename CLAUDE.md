@@ -1316,3 +1316,63 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   press-conference stance vs the same meeting's statement r 0.93; largest gaps are cuts the
   Chair framed hawkishly (2025-10 -0.3 vs +0.1, 2025-12 -0.3 vs +0.2). A test of the Q&A's
   incremental content would need the live era (opening statements exist only from Dec 2026 on).
+- 2026-11-22 PRE-REGISTERED test 14 (user-approved; market-level media tone vs the market, after
+  Tetlock 2007, the gap found against "Machine Learning for Trading" 7.1; no LLM cost; written
+  before any return was computed for it; `newsfeed media-tone --describe` counted documents
+  only). Documents: Massive news story founders minus test 4b's title regex (law firms,
+  market-research releases), all event types, masked Haiku 5.5 prompt 6108c555090fa4b3, company
+  pairs with relevance >= secondary; article tone = mean over its pairs; session i = first 15:50
+  decision >= t_use (`config/variants/media_tone.yaml`). **Measure**: session mean article tone
+  minus the mean of the previous 20 sessions (>= 15 with a tone); sessions with < 10 articles
+  dropped. **Target**: SPY total return close[i] -> close[i+1]. **Statistic**: partial rank
+  correlation across sessions given SPY returns of sessions i, i-1, .., i-4 (Tetlock's lagged
+  returns; r_i ends at close[i], 10 min after the decision, which daily bars cannot resolve --
+  it removes "news reports today's move" and leaks nothing about the target), circular block
+  bootstrap over sessions (block 2), 10,000 reps, two-sided p. **Primary**: partial corr > 0
+  with p < 0.05. Sample: ~405 sessions 2024-11 .. 2026-06, targets ending before 2026-07-01;
+  holdout sessions never enter the statistics or the saved table. Secondary (reported, not
+  tested): (a) reversal close[i+1] -> close[i+5] (expected negative) and close[i] -> close[i+5];
+  (b) tradable controls only (r_{i-1..i-5} + today's gap); (c) raw (not demeaned) tone,
+  unmasked scores; (d) LM negative-word share (Tetlock's measure; expected negative) and LM
+  tone over all filtered news founders; (e) the same on all 8-K founders (unmasked, 2019-2026,
+  ~1,760 sessions) and earnings 8-Ks (raw tone; only 475 sessions with >= 10 releases); (f)
+  pessimism and |tone| vs log next-day SPY volume / its 20-day mean, given the return controls
+  + today's volume ratio. Expectation: null is the base case -- Tetlock's effect was ~ -8 bp per
+  sd of pessimism (corr ~0.08), power ~35% at ~405 sessions; the feed is company-tagged Motley
+  Fool / wires / Benzinga, not a market column; Haiku may recall the period's market (positive =
+  upper bound); no holdout path (news is not collected live). Pre-holdout counts: news masked
+  29,309 articles / 427 sessions (median 64), LM 41,843 / 428, 8-K 50,570 / 1,880.
+- 2026-11-22 RESULT test 14 (run 17cc3c, 10,000 reps; 411 primary sessions 2024-11-04 ..
+  2026-06-29): primary FAILS -- masked news tone (demeaned) vs next-day SPY, partial corr
+  -0.035 (CI [-0.135, +0.068], p 0.49; raw -0.038): wrong sign, n.s. News secondaries all n.s.:
+  reversal days 2-5 +0.063, tradable controls -0.046, raw tone -0.025, unmasked -0.050; LM
+  negative share +0.085 (p 0.070 -- more negative words, *higher* next day: Tetlock's sign
+  reversed, as LM tone keeps leaning the wrong way here), LM tone -0.061. Volume: pessimism vs
+  next-day volume -0.134 (p 0.008; raw -0.022, i.e. only given today's volume ratio): upbeat news
+  days precede *higher* volume, the opposite of Tetlock; |tone| +0.025 n.s. **8-K secondary
+  (e)**: daily tone of all 8-K founders (1,703 sessions 2019-2026) vs next-day SPY +0.085
+  (CI [+0.037, +0.133], p 0.001; raw +0.080; days 2-5 +0.046, n.s. -- no reversal); earnings
+  8-Ks only (raw tone, 475 sessions) +0.102 (p 0.026). Not pre-registered as a primary, one of 13
+  secondary cells (p 0.001 < 0.05/13). Unlike test 12 (monthly earnings tone vs next month,
+  negative): at the daily horizon, upbeat filing days precede better SPY days. Caveats: unmasked
+  and pre-holdout (Haiku may recall the period, and the filing dates are visible); session
+  composition (earnings-heavy days have higher tone) is not controlled; r0 ends at close[i].
+  A candidate for a live/holdout test (8-Ks are collected live), not a finding.
+- 2026-11-22 PRE-SPECIFIED (EXPLORATORY, before running; user-approved) test 14 follow-up on the
+  8-K secondary, `scripts/media_tone_explore.py`, same construction / target / bootstrap as test
+  14 (8-K founders, unmasked, session tone demeaned over 20 sessions, next-day SPY, block 2,
+  10,000 reps): (1) controls r0..r4 + the session's earnings share (share of its 8-K documents
+  with an earnings pair) + log document count; (2) non-earnings 8-Ks only; (3) halves
+  2019-2022 / 2023-2026; (4) earnings 8-Ks raw tone, masked scores (leakage check A rescore)
+  vs unmasked on identical sessions. Descriptive; decides how a holdout hypothesis H4 is
+  defined, not a finding.
+- 2026-11-22 RESULT test 14 follow-up (exploratory, run 2a20d0, 10,000 reps; daily 8-K tone vs
+  next-day SPY, partial corr given r0..r4): reproduces (e) +0.085 (p 0.0006). (1) Not
+  composition: + earnings share + log document count +0.085 (p 0.0002); the earnings share alone
+  +0.021 (n.s.). (2) Non-earnings 8-Ks alone +0.068 (p 0.010; +0.067 with composition). (3)
+  Both halves: 2019-2022 +0.097 (p 0.003, 916 sessions), 2023-2026 +0.073 (p 0.047, 787). (4)
+  Earnings 8-Ks raw tone on identical sessions: unmasked +0.096, masked +0.092 (p 0.036 /
+  0.049): masking names does not lower it (dates stay visible, so recall through dates is not
+  excluded). Reading: a broad daily effect across filing types, stable over time, not driven by
+  earnings-heavy days -- the candidate for a holdout hypothesis H4 (pre-holdout estimate likely
+  inflated: picked from 13 secondaries).

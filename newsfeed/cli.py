@@ -3007,5 +3007,205 @@ def materiality_impact_cmd(
     _run("materiality-impact", cfg, {"reps": reps}, body)
 
 
+def _session_docs(ev: pl.DataFrame, grid: list[datetime], value: str) -> pl.DataFrame:
+    """Documents (item_id, t_use, ``value``) -> date = New York date of the first decision
+    >= t_use; ``value`` averaged over a document's rows (an article's company pairs)."""
+    from newsfeed.eval.clusters import decision_times
+
+    doc = ev.group_by("item_id").agg(pl.col("t_use").first(), pl.col(value).mean())
+    as_of = decision_times(doc["t_use"].to_list(), grid)
+    return (
+        doc.with_columns(pl.Series("as_of", as_of, dtype=pl.Datetime("us", "UTC")))
+        .drop_nulls("as_of")
+        .select(
+            pl.col("as_of").dt.convert_time_zone("America/New_York").dt.date().alias("date"),
+            value,
+        )
+    )
+
+
+@app.command("media-tone")
+def media_tone_cmd(
+    reps: Annotated[int, typer.Option(help="Bootstrap repetitions")] = 10_000,
+    min_docs: Annotated[int, typer.Option(help="Sessions with fewer documents are dropped")] = 10,
+    demean: Annotated[int, typer.Option(help="Tone minus the mean of N prior sessions")] = 20,
+    describe: Annotated[bool, typer.Option(help="Document counts only (no prices)")] = False,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """Test 14 (pre-registered 2026-11-22, after Tetlock 2007): does the day's market-wide news
+    tone predict SPY's next-day return? Partial rank correlation across sessions given SPY's
+    returns of the last five sessions, block bootstrap over sessions, pre-holdout targets only."""
+    from newsfeed.eval.media import (
+        CONTROLS,
+        CONTROLS_TRADABLE,
+        VOLUME_CONTROLS,
+        market_daily,
+        market_table,
+        session_tone,
+    )
+    from newsfeed.eval.prices import price_panel
+    from newsfeed.eval.report import partial_rank_corr
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    rx = cfg.features.exclude_title_regex
+    params = {"reps": reps, "min_docs": min_docs, "demean": demean, "describe": describe}
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        if cfg.universe.all_extra_members():
+            raise typer.BadParameter("use an S&P 500-only config (the pre-registered universe)")
+        if not rx:
+            raise typer.BadParameter("config has no features.exclude_title_regex (test 4b filter)")
+        store = ctx.store
+        news = store.query(
+            "SELECT i.item_id, i.title, i.text_hash, i.tradable_at AS t_use "
+            f"FROM {store.items_relation(['news_api'])} i "
+            "JOIN item_story s ON s.item_id = i.item_id AND s.story_id = i.item_id"
+        ).filter(~pl.col("title").str.contains("(?i)" + rx))
+        keep = news.select("item_id")
+        series: dict[str, pl.DataFrame] = {}
+        grids: dict[str, list[datetime]] = {}
+        for label, masked in (("news_masked", True), ("news_unmasked", False)):
+            ev, grid = _llm_events(ctx, cfg, "news_api", [], masked=masked)
+            grids["news"] = grid
+            series[label] = _session_docs(ev.join(keep, on="item_id"), grid, "sentiment")
+        lm_version = feature_sources(ctx).lm_version
+        if lm_version is None:
+            raise typer.BadParameter("no LM dictionary (features.lm_dictionary)")
+        lm = store.query(
+            "SELECT item_id, text_hash, neg_prop, score AS lm_tone FROM baselines "
+            "WHERE method = 'lm' AND method_version = $v",
+            {"v": lm_version},
+        )
+        lm_docs = news.join(lm, on=["item_id", "text_hash"])
+        series["news_lm_neg"] = _session_docs(lm_docs, grids["news"], "neg_prop")
+        series["news_lm_tone"] = _session_docs(lm_docs, grids["news"], "lm_tone")
+        ev8, grid8 = _llm_events(ctx, cfg, "edgar", [], masked=False)
+        series["8k_all"] = _session_docs(ev8, grid8, "sentiment")
+        earn = ev8.filter(pl.col("event_type") == "earnings")
+        series["8k_earnings"] = _session_docs(earn, grid8, "sentiment")
+
+        hold = cfg.eval.holdout_start
+        if describe:  # documents only: no prices are loaded
+            for k, v in series.items():
+                pre = v.filter(pl.col("date") < hold)
+                per = pre.group_by("date").len()["len"]
+                typer.echo(
+                    f"{k}: {pre.height} pre-holdout documents, {per.len()} sessions "
+                    f"({(per >= min_docs).sum()} with >= {min_docs}), median {per.median():.0f}"
+                    f"/session, {pre['date'].min()} .. {pre['date'].max()}"
+                )
+            return
+        first = min(s["date"].min() for s in series.values())
+        bars = price_panel(
+            _price_caches(cfg)["tradier"],
+            [cfg.eval.market_etf],
+            first - timedelta(days=60),
+            utcnow().date(),
+        ).filter(pl.col("symbol") == cfg.eval.market_etf)
+        # holdout sessions never enter the statistics or the saved table
+        mkt = market_table(market_daily(bars), hold).filter(pl.col("date") < hold)
+        sessions = mkt["date"].to_list()
+        sidx = np.arange(len(sessions))
+        tones = {
+            k: session_tone(v, sessions, value=v.columns[1], min_docs=min_docs, demean=demean)
+            for k, v in series.items()
+        }
+        rng = np.random.default_rng(cfg.eval.seed)
+
+        def col(frame: pl.DataFrame, name: str) -> np.ndarray:
+            return frame[name].cast(pl.Float64).fill_null(np.nan).to_numpy()
+
+        def ctl(names: list[str]) -> np.ndarray:
+            return np.column_stack([col(mkt, c) for c in names])
+
+        # (tier, label, series, measure, transform, target, controls, block)
+        plan: list[tuple[str, str, str, str, str, str, list[str], int]] = [
+            ("primary", "Tetlock", "news_masked", "tone_dm", "", "fwd1", CONTROLS, 2),
+            ("secondary (a)", "reversal days 2-5", "news_masked", "tone_dm", "", "rev",
+             CONTROLS, 5),
+            ("secondary (a)", "close[i] -> close[i+5]", "news_masked", "tone_dm", "", "fwd5",
+             CONTROLS, 6),
+            ("secondary (b)", "tradable controls", "news_masked", "tone_dm", "", "fwd1",
+             CONTROLS_TRADABLE, 2),
+            ("secondary (c)", "raw tone", "news_masked", "tone", "", "fwd1", CONTROLS, 2),
+            ("secondary (c)", "unmasked", "news_unmasked", "tone_dm", "", "fwd1", CONTROLS, 2),
+            ("secondary (d)", "LM negative share", "news_lm_neg", "tone_dm", "", "fwd1",
+             CONTROLS, 2),
+            ("secondary (d)", "LM tone", "news_lm_tone", "tone_dm", "", "fwd1", CONTROLS, 2),
+            ("secondary (e)", "8-K all", "8k_all", "tone_dm", "", "fwd1", CONTROLS, 2),
+            ("secondary (e)", "8-K all, days 2-5", "8k_all", "tone_dm", "", "rev", CONTROLS, 5),
+            # earnings releases cluster in seasons: too few sessions for a 20-session demean
+            ("secondary (e)", "8-K earnings", "8k_earnings", "tone", "", "fwd1", CONTROLS, 2),
+            ("secondary (f)", "pessimism -> volume", "news_masked", "tone_dm", "neg", "vol_next",
+             VOLUME_CONTROLS, 2),
+            ("secondary (f)", "|tone| -> volume", "news_masked", "tone_dm", "abs", "vol_next",
+             VOLUME_CONTROLS, 2),
+        ]  # fmt: skip
+        rows = []
+        for tier, label, key, measure, tf, target, ctl_names, block in plan:
+            x = col(tones[key], measure)
+            x = -x if tf == "neg" else np.abs(x) if tf == "abs" else x
+            r = partial_rank_corr(
+                x, col(mkt, target), ctl(ctl_names), sidx, block=block, reps=reps, rng=rng
+            )
+            ok = ~(np.isnan(x) | np.isnan(col(mkt, target)))
+            rows.append({
+                "tier": tier, "label": label, "series": key, "measure": measure + tf,
+                "target": target, "controls": ",".join(ctl_names), "block": block,
+                "first": sessions[int(np.argmax(ok))] if ok.any() else None,
+                "last": sessions[len(ok) - 1 - int(np.argmax(ok[::-1]))] if ok.any() else None,
+                **r,
+            })  # fmt: skip
+            log.info("media-tone %s %s: %s", tier, label, r)
+        res = pl.DataFrame(rows)
+        prim = res.row(0, named=True)
+        docs_per = tones["news_masked"].filter(pl.col("tone").is_not_null())["n"]
+        lines = [
+            f"# Media tone vs the market {run_id}",
+            "",
+            "- documents: Massive news story founders without test 4b's law-firm / market-"
+            "research titles; article tone = mean Haiku sentiment of its company pairs with "
+            f"relevance >= {cfg.features.min_relevance} (masked primary); session i = first "
+            "15:50 decision >= t_use. 8-K rows: unmasked 8-K founders. LM rows: all filtered "
+            "news founders.",
+            f"- tone_dm = session mean minus the mean of the previous {demean} sessions (>= 15 "
+            f"with a tone); sessions with < {min_docs} documents dropped. Median "
+            f"{docs_per.median():.0f} news articles per kept session.",
+            "- targets (SPY total return): fwd1 = close[i] -> close[i+1]; rev = close[i+1] -> "
+            "close[i+5]; fwd5 = close[i] -> close[i+5]; vol_next = log volume[i+1] vs its mean "
+            f"over i-19..i. Only sessions and targets ending before {hold}.",
+            "- statistic: partial rank correlation given the controls (r0 = SPY return of "
+            "session i, r1..r5 earlier sessions, gap = today's open vs yesterday's close, "
+            f"vol_today), circular block bootstrap over sessions, {reps} reps, two-sided p.",
+            f"- primary: {prim['n']} sessions, {prim['first']} .. {prim['last']}.",
+            "",
+            "| tier | test | series | measure | target | controls | n | raw corr | partial | "
+            "95% CI | p |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['tier']} | {r['label']} | {r['series']} | {r['measure']} | {r['target']} "
+                f"| {r['controls']} | {r['n']} | {_num(r['ic'])} | {_num(r['partial_ic'])} | "
+                f"[{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | {_num(r['p'], '.3f')} |"
+            )
+        out = cfg.paths.data_dir / "reports" / f"media-tone-{run_id}-sessions.parquet"
+        frame = mkt
+        for k, t in tones.items():
+            frame = frame.join(
+                t.select("date", pl.col("n").alias(f"{k}_n"), pl.col("tone").alias(f"{k}_tone"),
+                         pl.col("tone_dm").alias(f"{k}_dm")),
+                on="date", how="left",
+            )  # fmt: skip
+        frame.write_parquet(out)
+        path = _write_report(cfg, f"media-tone-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), sessions=prim["n"])
+        _record_experiment(ctx, "media_tone", f"media-tone:{run_id}", run_id, params)
+
+    _run("media-tone", cfg, params, body)
+
+
 if __name__ == "__main__":
     app()
