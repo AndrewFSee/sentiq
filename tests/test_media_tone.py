@@ -6,7 +6,14 @@ import numpy as np
 import polars as pl
 import pytest
 
-from newsfeed.eval.media import market_daily, market_table, session_tone
+from newsfeed.eval.media import (
+    H4_EARLIEST_LOOK,
+    check_h4_look,
+    h4_test,
+    market_daily,
+    market_table,
+    session_tone,
+)
 
 
 def _sessions(n: int, start: date = date(2025, 1, 6)) -> list[date]:
@@ -80,3 +87,61 @@ def test_market_table_alignment_and_holdout_cut():
             val = t.row(j, named=True)[col]
             if j + k >= 40 or s[j + k] >= hold:
                 assert val is None, (col, j)
+
+
+def test_h4_look_is_refused_before_the_pre_registered_date():
+    with pytest.raises(ValueError):
+        check_h4_look(H4_EARLIEST_LOOK - timedelta(days=1))
+    check_h4_look(H4_EARLIEST_LOOK)
+
+
+def _h4_world(n: int = 160, hold_at: int = 100, seed: int = 3):
+    s = _sessions(n)
+    rng = np.random.default_rng(seed)
+    daily = pl.DataFrame(
+        {"date": s, "r": rng.normal(0, 0.01, n), "gap": rng.normal(0, 0.005, n),
+         "volume": rng.uniform(1, 2, n)}
+    )  # fmt: skip
+    docs = pl.DataFrame(
+        {"date": [d for d in s for _ in range(12)], "v": rng.normal(0, 1, n * 12)},
+        schema={"date": pl.Date, "v": pl.Float64},
+    )
+    return s, daily, docs, s[hold_at]
+
+
+def _h4(docs, daily, hold, look):
+    return h4_test(docs, daily, holdout=hold, look=look, reps=200,
+                   rng=np.random.default_rng(0), min_docs=10, demean=20)  # fmt: skip
+
+
+def test_h4_pre_holdout_mode_never_sees_holdout_returns_or_documents():
+    s, daily, docs, hold = _h4_world()
+    base = _h4(docs, daily, hold, None)
+    assert base["last"] < hold and base["n"] > 30
+    later = pl.col("date") >= hold
+    daily2 = daily.with_columns(pl.when(later).then(pl.col("r") * 50).otherwise(pl.col("r")))
+    docs2 = docs.with_columns(pl.when(later).then(pl.col("v") + 7).otherwise(pl.col("v")))
+    assert _h4(docs2, daily2, hold, None)["partial_ic"] == pytest.approx(base["partial_ic"])
+    # the last pre-holdout session's target (close[i] -> close[i+1]) would end in the holdout
+    assert base["last"] == s[s.index(hold) - 2]
+
+
+def test_h4_holdout_look_uses_holdout_sessions_with_targets_before_the_look():
+    s, daily, docs, hold = _h4_world()
+    look = s[140]
+    res = _h4(docs, daily, hold, look)
+    assert res["first"] == hold  # the demean reaches back into pre-holdout tone
+    assert res["last"] == s[138]  # its target ends at s[139] < look
+    after = pl.col("date") >= look
+    daily2 = daily.with_columns(pl.when(after).then(pl.col("r") * 50).otherwise(pl.col("r")))
+    docs2 = docs.with_columns(pl.when(after).then(pl.col("v") - 5).otherwise(pl.col("v")))
+    again = _h4(docs2, daily2, hold, look)
+    assert again["partial_ic"] == pytest.approx(res["partial_ic"]) and again["n"] == res["n"]
+    # a planted signal passes
+    fwd = daily.sort("date")["r"].to_numpy()
+    sig = (
+        pl.DataFrame({"date": s[:-1], "v": fwd[1:] * 100})
+        .join(pl.DataFrame({"k": range(12)}), how="cross")
+        .select("date", "v")
+    )
+    assert _h4(sig, daily, hold, look)["pass"]

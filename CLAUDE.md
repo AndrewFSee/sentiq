@@ -22,8 +22,9 @@ speed and polish.** It is not a trading system.
   daily IC / quintile view) + exploratory per-type and text-cluster breakdowns (results in
   the decisions log). Ongoing: live collection of 8-Ks, transcripts and Fed documents
   (`scripts\collect_window.cmd`) for the holdout; `transcripts-latency` once the Q3-2026
-  season has data; the single pre-registered holdout look (H1 earnings, H2 guidance, ≥ 10,000
-  bootstrap reps) is on/after 2027-08-31.
+  season has data; the single pre-registered holdout look (H1 earnings, H2 guidance, H4 daily
+  8-K tone → SPY, ≥ 10,000 bootstrap reps) is on/after 2027-08-31; H3 (S&P 1000) stage 1
+  on/after 2027-05-31.
 - Every command that calls the model costs money: run `score --dry-run` first; jobs estimated
   above `scoring.confirm_above_usd` need `--yes`. Never run paid jobs without the user's OK.
 
@@ -57,6 +58,8 @@ uv sync --extra finbert                   # install (Python >=3.11; extra = CUDA
 "$PY" scripts/nf.py features --start 2025-01-01 --end 2026-10-01   # build + store a feature set
 "$PY" scripts/nf.py eval [--feature-set ID]   # pre-holdout grid report -> data/reports/
 "$PY" scripts/nf.py eval --use-holdout        # FINAL test on the frozen holdout (each look counts)
+"$PY" scripts/nf.py media-tone-h4 --config config/variants/media_tone.yaml  # H4 pre-holdout check;
+                                              # --use-holdout = THE H4 look (refused before 2027-08-31)
 "$PY" scripts/nf.py distill-data              # distillation dataset (data/distill/v1)
 "$PY" scripts/nf.py scripts/distill_train.py --name X ... # train a student (needs the finbert extra)
 bash scripts/distill_walkforward.sh                 # walk-forward students wf1-wf4 (skips finished)
@@ -1376,3 +1379,29 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   excluded). Reading: a broad daily effect across filing types, stable over time, not driven by
   earnings-heavy days -- the candidate for a holdout hypothesis H4 (pre-holdout estimate likely
   inflated: picked from 13 secondaries).
+- 2026-11-22 PRE-REGISTERED **H4** (user decisions: holdout hypothesis from test 14 (e); own α
+  family), written before any holdout return was computed for it; holdout still unseen. Daily
+  market-wide tone of S&P 500 members' 8-Ks predicts SPY's next-day return. **Documents:** 8-K
+  story founders (`edgar`, all event types, 8-K and 8-K/A as stored), unmasked Haiku 5.5 prompt
+  6108c555090fa4b3 (if retired: re-planned, not switched), company pairs with relevance >=
+  secondary whose filer is an S&P 500 member on the decision date (PIT membership, member
+  tickers via the date-aware fan-out; the S&P 1000 / Nasdaq extras never count; config
+  `config/variants/media_tone.yaml`, no extras); document tone = mean sentiment over its member
+  pairs; t_use = tradable_at (backfill rule) or max(tradable_at, scored_at) (live); session i =
+  first 15:50 decision >= t_use. **Measure:** session mean document tone minus the mean of the
+  previous 20 sessions (>= 15 with a tone; may reach back before 2026-07-01, tone only);
+  sessions with < 10 documents dropped. **Target:** SPY total return close[i] -> close[i+1].
+  **Statistic:** partial rank correlation given SPY returns of sessions i, i-1, .., i-4 (r0..r4,
+  as test 14), circular block bootstrap over sessions (block 2), >= 10,000 reps. **Sample:**
+  sessions from 2026-07-01 whose target ends before the look date. **Look:** ONE, on/after
+  **2027-08-31** (with H1 / H2), `newsfeed media-tone-h4 --use-holdout --config
+  config/variants/media_tone.yaml` (refuses earlier dates, other model / prompt, < 10,000 reps,
+  extras; records the look in `experiments`, kind `media_tone_h4`). **Pass:** partial corr > 0
+  with one-sided p < **0.025** (two-sided < 0.05). **α:** H4 is its own family (as H3); H1, H2
+  and H3 keep their thresholds. The member filter is the one change from test 14 (e) (the
+  S&P 1000 is now collected live): pre-holdout replication run 0707b9 (10,000 reps): +0.088
+  (CI [+0.040, +0.136], p 0.0004, 1,687 sessions) vs +0.085 under the test-14 definition.
+  Planning (assumed): ~290 holdout sessions by the look → power ~30% if the true value were
+  0.085, much less after the winner's curse (picked from 13 secondaries; Haiku may recall the
+  pre-holdout period). Live-era caveats: collector gaps shift documents to when we first saw
+  them (no earlier); live scoring outages delay t_use (11-09..11-12).

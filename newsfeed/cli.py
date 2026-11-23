@@ -3207,5 +3207,129 @@ def media_tone_cmd(
     _run("media-tone", cfg, params, body)
 
 
+H4_PROMPT_HASH = "6108c555090fa4b3"  # score_v1, frozen with H1 / H2 / H3
+
+
+@app.command("media-tone-h4")
+def media_tone_h4_cmd(
+    use_holdout: Annotated[
+        bool, typer.Option("--use-holdout", help="THE single pre-registered H4 look")
+    ] = False,
+    reps: Annotated[int, typer.Option(help="Bootstrap repetitions (>= 10,000)")] = 10_000,
+    config: ConfigOpt = None,
+    verbose: bool = False,
+) -> None:
+    """H4 (pre-registered 2026-11-22): daily tone of S&P 500 members' 8-Ks vs SPY's next-day
+    return. Default: pre-holdout replication (test 14 (e) with the member filter). With
+    --use-holdout: the one holdout look, refused before 2027-08-31."""
+    from newsfeed.eval.media import (
+        H4_ALPHA_ONE_SIDED,
+        H4_EARLIEST_LOOK,
+        check_h4_look,
+        h4_test,
+        market_daily,
+    )
+    from newsfeed.eval.prices import price_panel
+
+    _setup_logging(verbose)
+    cfg = load_config(config)
+    today = utcnow().astimezone(NY_TZ).date()
+    params = {"reps": reps, "holdout": use_holdout}
+    if reps < 10_000:
+        raise typer.BadParameter("H4 is pre-registered with >= 10,000 bootstrap reps")
+    if use_holdout:
+        check_h4_look(today)
+
+    def body(ctx: Context, run_id: str, stats: dict[str, Any]) -> None:
+        store = ctx.store
+        if cfg.universe.all_extra_members() or cfg.universe.mode != "sp500_pit":
+            raise typer.BadParameter("use an S&P 500-only PIT config (the pre-registered one)")
+        src = feature_sources(ctx)
+        if src.llm_model != "claude-haiku-5-5" or not src.llm_prompt_hash.startswith(
+            H4_PROMPT_HASH
+        ):
+            raise typer.BadParameter(
+                f"H4 is frozen on claude-haiku-5-5 / {H4_PROMPT_HASH}; got {src.llm_model} / "
+                f"{src.llm_prompt_hash} (re-plan, don't switch)"
+            )
+        if cfg.features.min_relevance != "secondary":
+            raise typer.BadParameter("H4 uses features.min_relevance = secondary")
+        prior = store.ops_query(
+            "SELECT count(*) AS n FROM experiments WHERE kind = 'media_tone_h4' "
+            "AND json_extract(details, '$.holdout') = true"
+        )["n"][0]
+        if use_holdout:
+            typer.echo(
+                f"WARNING: H4 holdout look (pre-registered: ONE look on/after {H4_EARLIEST_LOOK});"
+                f" {prior} earlier look(s) recorded."
+            )
+        ev, grid = _llm_events(ctx, cfg, "edgar", [], masked=False)
+        # documents of S&P 500 members on the decision date only (8-Ks of other companies,
+        # e.g. the S&P 1000 collected for H3, never count)
+        mem = (
+            _dated_events(ctx, ev, grid)
+            .unique(["item_id", "canon"])
+            .group_by("item_id")
+            .agg(pl.col("date").first(), pl.col("sentiment").mean())
+            .select("date", "sentiment")
+        )
+        variants = {"H4 (member filings)": mem}
+        if not use_holdout:  # replication check vs test 14 (e) (no member filter)
+            variants["test 14 (e) definition"] = _session_docs(ev, grid, "sentiment")
+        hold = cfg.eval.holdout_start
+        bars = price_panel(
+            _price_caches(cfg)["tradier"],
+            [cfg.eval.market_etf],
+            min(v["date"].min() for v in variants.values()) - timedelta(days=60),
+            today,
+        ).filter(pl.col("symbol") == cfg.eval.market_etf)
+        daily = market_daily(bars)
+        look = today if use_holdout else None
+        rows = []
+        for label, docs in variants.items():
+            rng = np.random.default_rng(cfg.eval.seed)
+            r = h4_test(docs, daily, holdout=hold, look=look, reps=reps, rng=rng)
+            rows.append({"test": label, **r})
+            typer.echo(
+                f"{label}: n {r['n']} sessions {r['first']} .. {r['last']} (median "
+                f"{r['median_docs']:.0f} docs), partial {r['partial_ic']:+.3f} "
+                f"[{r['ci_lo']:+.3f}, {r['ci_hi']:+.3f}], two-sided p {r['p']:.4f}, one-sided "
+                f"{r['p_one_sided']:.4f}" + (f" -> PASS={r['pass']}" if use_holdout else "")
+            )
+        res = pl.DataFrame(rows)
+        what = f"HOLDOUT LOOK (look date {today})" if use_holdout else "pre-holdout replication"
+        span = (
+            f"from {hold}, targets ending before {today}"
+            if use_holdout
+            else f"sessions and targets before {hold}"
+        )
+        lines = [
+            f"# H4 media tone (8-K) {run_id}: {what}",
+            "",
+            "- S&P 500 members' 8-K story founders, unmasked Haiku 5.5 "
+            f"{H4_PROMPT_HASH}, relevance >= secondary; document tone = mean over its member "
+            "pairs; session = first 15:50 decision >= t_use; tone minus the mean of the previous"
+            " 20 sessions (>= 15); sessions with < 10 documents dropped.",
+            "- target SPY close[i] -> close[i+1]; partial rank corr given r0..r4; circular "
+            f"block bootstrap (block 2), {reps} reps. Pass = partial > 0 and one-sided p < "
+            f"{H4_ALPHA_ONE_SIDED}.",
+            f"- sessions: {span}.",
+            "",
+            "| test | n | first | last | raw | partial | 95% CI | p two-sided | p one-sided |",
+            "|---|---|---|---|---|---|---|---|---|",
+        ]  # fmt: skip
+        for r in res.iter_rows(named=True):
+            lines.append(
+                f"| {r['test']} | {r['n']} | {r['first']} | {r['last']} | {_num(r['ic'])} | "
+                f"{_num(r['partial_ic'])} | [{_num(r['ci_lo'])}, {_num(r['ci_hi'])}] | "
+                f"{_num(r['p'], '.4f')} | {_num(r['p_one_sided'], '.4f')} |"
+            )
+        path = _write_report(cfg, f"media-tone-h4-{run_id}", "\n".join(lines) + "\n", res)
+        stats.update(report=str(path), sessions=rows[0]["n"])
+        _record_experiment(ctx, "media_tone_h4", f"media-tone-h4:{run_id}", run_id, params)
+
+    _run("media-tone-h4", cfg, params, body)
+
+
 if __name__ == "__main__":
     app()

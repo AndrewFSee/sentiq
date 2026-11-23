@@ -100,3 +100,62 @@ def market_table(daily: pl.DataFrame, holdout: date) -> pl.DataFrame:
         pl.Series("vol_next", np.where(exit_ok[1], vol_next, np.nan)),
     )
     return out.with_columns(pl.col(pl.Float64).fill_nan(None))
+
+
+# --------------------------------------------------------------------- H4 (holdout hypothesis)
+H4_EARLIEST_LOOK = date(2027, 8, 31)  # pre-registered 2026-11-22, with H1 / H2
+H4_ALPHA_ONE_SIDED = 0.025  # own family
+
+
+def check_h4_look(today: date) -> None:
+    """The single H4 holdout look is allowed on/after ``H4_EARLIEST_LOOK`` only."""
+    if today < H4_EARLIEST_LOOK:
+        raise ValueError(f"H4 holdout look is pre-registered for on/after {H4_EARLIEST_LOOK}")
+
+
+def h4_test(
+    docs: pl.DataFrame,
+    daily: pl.DataFrame,
+    *,
+    holdout: date,
+    look: date | None,
+    reps: int,
+    rng: np.random.Generator,
+    min_docs: int = 10,
+    demean: int = 20,
+) -> dict:
+    """H4 statistic: session 8-K tone (demeaned over the previous ``demean`` sessions) vs SPY
+    close[i] -> close[i+1], partial rank correlation given r0..r4, block 2.
+
+    ``look`` None = pre-holdout replication: sessions and targets before ``holdout`` only.
+    ``look`` = the holdout look: sessions from ``holdout`` on whose target ends before
+    ``look``; the demean and the controls may reach back before the holdout (tone and past
+    returns only)."""
+    from newsfeed.eval.report import partial_rank_corr
+
+    cut = holdout if look is None else look
+    mkt = market_table(daily, cut).filter(pl.col("date") < cut)
+    sessions = mkt["date"].to_list()
+    tone = session_tone(docs, sessions, value=docs.columns[1], min_docs=min_docs, demean=demean)
+    rows = (pl.col("date") < holdout) if look is None else (pl.col("date") >= holdout)
+    m = mkt.with_columns(tone["tone_dm"], tone["n"]).filter(rows)
+
+    def a(c: str) -> np.ndarray:
+        return m[c].cast(pl.Float64).fill_null(np.nan).to_numpy()
+
+    x, y = a("tone_dm"), a("fwd1")
+    r = partial_rank_corr(
+        x, y, np.column_stack([a(c) for c in CONTROLS]), np.arange(m.height),
+        block=2, reps=reps, rng=rng,
+    )  # fmt: skip
+    ok = ~(np.isnan(x) | np.isnan(y))
+    used = m.filter(pl.Series(ok))
+    p_one = r["p"] / 2 if r["partial_ic"] > 0 else 1 - r["p"] / 2
+    return {
+        **r,
+        "p_one_sided": p_one,
+        "pass": bool(r["partial_ic"] > 0 and p_one < H4_ALPHA_ONE_SIDED),
+        "first": used["date"].min(),
+        "last": used["date"].max(),
+        "median_docs": used["n"].median(),
+    }
