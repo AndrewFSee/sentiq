@@ -1,6 +1,6 @@
 # One-time setup (run in an ADMIN PowerShell; registering "run whether logged on or not" tasks
 # needs elevation):
-#   powershell -ExecutionPolicy Bypass -File C:\Users\andre\projects\sentiq\scripts\install_boot_collector.ps1
+#   powershell -ExecutionPolicy Bypass -File <projects>\sentiq\scripts\install_boot_collector.ps1
 #
 # 1. \Sentiq\Collector: scripts\collect_service.py --mode boot at system start (1 min delay),
 #    as user andre without a stored password (S4U), normal priority, no time limit, restarted on
@@ -21,7 +21,7 @@ if (-not $me.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
 $Root = Split-Path -Parent $PSScriptRoot                      # ...\projects\sentiq
 $Py = 'C:\Users\andre\AppData\Roaming\uv\python\cpython-3.11.12-windows-x86_64-none\python.exe'
 $Sid = 'S-1-5-21-818495848-3786255412-2037946006-1001'        # andre (same as the hub's tasks)
-$Hub = 'C:\Users\andre\projects\market-compass'
+$Hub = Join-Path (Split-Path -Parent $Root) 'market-compass'   # sibling project
 if (-not (Test-Path $Py)) { throw "Base Python not found: $Py" }
 
 $collectorXml = @"
