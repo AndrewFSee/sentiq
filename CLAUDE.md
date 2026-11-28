@@ -1405,3 +1405,18 @@ bash scripts/distill_walkforward.sh                 # walk-forward students wf1-
   0.085, much less after the winner's curse (picked from 13 secondaries; Haiku may recall the
   pre-holdout period). Live-era caveats: collector gaps shift documents to when we first saw
   them (no earlier); live scoring outages delay t_use (11-09..11-12).
+- 2026-11-26 DRIVE MOVE: projects moved to D:\projects (new internal SSD; repo D:\projects\sentiq);
+  the Seagate external drive is now F:. D:\sentiq-archive and D:\sentiq-data were copied from
+  it (identical), so the config's D:/ paths are unchanged; scheduled tasks re-pointed to D:. Live
+  gap 2026-11-26 01:46 -> 03:20 UTC (94 min, after the close; > 60 min, so it stays a gap).
+- 2026-11-27 (user decision) NIGHTLY MIRROR to the Seagate: task `\Sentiq\Mirror` (S4U, low
+  priority; admin-only installer `scripts/install_mirror_task.ps1`) runs
+  `scripts/mirror_to_external.ps1` daily at 02:00 and 1 min after the drive is connected
+  (Partition/Diagnostic event 1006, serial NT36K7T3); at most one copy per night (due = no
+  success since the latest 02:00), so a night without the drive is copied on the next
+  connection. Robocopy, new/changed files only, never deletes on the Seagate (files removed on
+  D: stay there): `data\` -> `<Seagate>\sentiq-mirror\data`, D:\sentiq-data and D:\sentiq-archive
+  -> same names. Drive found by label "Seagate Portable Drive", not letter; skips *.tmp /
+  *.part / *.lock. Exit >= 8 = failure (last_success not advanced, retried next trigger).
+  Status `data/state/mirror-status.json`, log `data/mirror.log`. First full copy 3.3 h (266k
+  files, 11.9 GB); nightly incremental ~50 min, mostly scanning.
